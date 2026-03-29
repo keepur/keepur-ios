@@ -14,8 +14,11 @@ final class ChatViewModel: ObservableObject {
     @Published var isAuthenticated = true
 
     let ws = WebSocketManager()
+    let speechManager = SpeechManager()
+    var autoReadAloud = false
     private var modelContext: ModelContext?
     private var streamingMessageId: String?
+    private var lastCompletedMessageId: String?
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
@@ -44,6 +47,13 @@ final class ChatViewModel: ObservableObject {
 
         ws.send(.message(text: text, sessionId: sessionId))
         messageText = ""
+    }
+
+    func sendVoiceText() {
+        let text = speechManager.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        messageText = text
+        sendText()
     }
 
     func newSession(workspace: String? = nil) {
@@ -125,6 +135,16 @@ final class ChatViewModel: ObservableObject {
                     try? context.save()
                 }
             }
+            // Read aloud the completed response
+            if autoReadAloud, let completedId = streamingMessageId ?? lastCompletedMessageId {
+                let descriptor = FetchDescriptor<Message>(
+                    predicate: #Predicate { $0.id == completedId }
+                )
+                if let msg = try? context.fetch(descriptor).first, msg.role == "assistant" {
+                    speechManager.speak(msg.text)
+                }
+            }
+            lastCompletedMessageId = streamingMessageId
             streamingMessageId = nil
             return
         }

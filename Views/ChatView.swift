@@ -4,14 +4,15 @@ import UIKit
 
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Message.timestamp) private var messages: [Message]
+    let sessionId: String
+    @Query(sort: \Message.timestamp) private var allMessages: [Message]
     @State private var showSettings = false
+    @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
+        didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
+    }
 
-    // Filter messages client-side by session. Acceptable for v1 single-user volume.
-    private var sessionMessages: [Message] {
-        guard let sessionId = viewModel.currentSessionId else { return [] }
-        return messages.filter { $0.sessionId == sessionId }
+    private var messages: [Message] {
+        allMessages.filter { $0.sessionId == sessionId }
     }
 
     var body: some View {
@@ -19,12 +20,13 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(sessionMessages, id: \.id) { message in
+                        ForEach(messages, id: \.id) { message in
                             MessageBubble(message: message)
                                 .id(message.id)
                         }
 
-                        if viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running" {
+                        if viewModel.currentSessionId == sessionId &&
+                            (viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running") {
                             StatusIndicator(status: viewModel.currentStatus)
                                 .id("status")
                         }
@@ -32,9 +34,9 @@ struct ChatView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                 }
-                .onChange(of: sessionMessages.count) {
+                .onChange(of: messages.count) {
                     withAnimation {
-                        proxy.scrollTo(sessionMessages.last?.id ?? "status", anchor: .bottom)
+                        proxy.scrollTo(messages.last?.id ?? "status", anchor: .bottom)
                     }
                 }
                 .onChange(of: viewModel.currentStatus) {
@@ -48,23 +50,25 @@ struct ChatView: View {
 
             Divider()
 
-            inputBar
+            if viewModel.currentSessionId == sessionId {
+                inputBar
+            } else {
+                readOnlyBar
+            }
         }
         .navigationTitle(viewModel.currentWorkspace.isEmpty ? "Keepur" : viewModel.currentWorkspace)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Circle()
-                    .fill(viewModel.ws.isConnected ? .green : .red)
-                    .frame(width: 8, height: 8)
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    // Read aloud toggle
                     Button {
-                        viewModel.newSession()
+                        autoReadAloud.toggle()
                     } label: {
-                        Image(systemName: "plus.message")
+                        Image(systemName: autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                            .font(.subheadline)
                     }
+                    .foregroundStyle(autoReadAloud ? Color.accentColor : Color.secondary)
 
                     Button {
                         showSettings = true
@@ -85,12 +89,23 @@ struct ChatView: View {
             )
             .interactiveDismissDisabled()
         }
+        .onAppear {
+            viewModel.autoReadAloud = autoReadAloud
+        }
+        .onChange(of: autoReadAloud) {
+            viewModel.autoReadAloud = autoReadAloud
+        }
     }
 
-    // MARK: - Input Bar
+    // MARK: - Input Bar (active session)
 
     private var inputBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            // Voice button
+            VoiceButton(speechManager: viewModel.speechManager) {
+                viewModel.sendVoiceText()
+            }
+
             TextField("Message...", text: $viewModel.messageText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 12)
@@ -112,12 +127,25 @@ struct ChatView: View {
             }
             .disabled(
                 viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || viewModel.currentSessionId == nil
                 || viewModel.currentStatus == "session_ended"
             )
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+    }
+
+    // MARK: - Read-only Bar (old sessions)
+
+    private var readOnlyBar: some View {
+        HStack {
+            Spacer()
+            Text("Session ended — read only")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 12)
         .background(.ultraThinMaterial)
     }
 }

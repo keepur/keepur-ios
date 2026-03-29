@@ -8,9 +8,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if KeychainManager.hasToken && viewModel.isAuthenticated {
-                NavigationStack {
-                    ChatView(viewModel: viewModel)
-                }
+                SessionListView(viewModel: viewModel)
             } else {
                 SetupView {
                     viewModel.isAuthenticated = true
