@@ -6,14 +6,36 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
+		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A1ABEBC12F79E16C009B0AFC /* Keepur.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keepur.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepurApp.swift; sourceTree = "<group>"; };
+		A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A1ABEBC32F79E16C009B0AFC /* Keepur */ = {
+		A1ABEBED2F79E24E009B0AFC /* Managers */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Keepur;
+			path = Managers;
+			sourceTree = "<group>";
+		};
+		A1ABEBF12F79E24E009B0AFC /* Models */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A1ABEBF32F79E24E009B0AFC /* ViewModels */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A1ABEBFA2F79E24E009B0AFC /* Views */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Views;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,8 +54,13 @@
 		A1ABEBB82F79E16C009B0AFC = {
 			isa = PBXGroup;
 			children = (
-				A1ABEBC32F79E16C009B0AFC /* Keepur */,
 				A1ABEBC22F79E16C009B0AFC /* Products */,
+				A1ABEBED2F79E24E009B0AFC /* Managers */,
+				A1ABEBF12F79E24E009B0AFC /* Models */,
+				A1ABEBF32F79E24E009B0AFC /* ViewModels */,
+				A1ABEBFA2F79E24E009B0AFC /* Views */,
+				A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */,
+				A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -61,7 +88,10 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A1ABEBC32F79E16C009B0AFC /* Keepur */,
+				A1ABEBED2F79E24E009B0AFC /* Managers */,
+				A1ABEBF12F79E24E009B0AFC /* Models */,
+				A1ABEBF32F79E24E009B0AFC /* ViewModels */,
+				A1ABEBFA2F79E24E009B0AFC /* Views */,
 			);
 			name = Keepur;
 			packageProductDependencies = (
@@ -109,6 +139,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +150,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -272,15 +304,15 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.keepur.Keepur;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -316,15 +348,15 @@
 				PRODUCT_BUNDLE_IDENTIFIER = io.keepur.Keepur;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
