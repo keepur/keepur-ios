@@ -30,8 +30,17 @@ enum APIManager {
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.requestFailed
+        }
+
+        guard http.statusCode == 200 else {
+            throw http.statusCode >= 500 || http.statusCode == 429
+                ? APIError.requestFailed
+                : PairError.invalidCode
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let token = json["token"] as? String,
               let deviceId = json["deviceId"] as? String,
               let deviceName = json["deviceName"] as? String else {
