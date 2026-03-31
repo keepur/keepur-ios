@@ -3,10 +3,30 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showUnpairConfirmation = false
 
     var body: some View {
         NavigationStack {
             List {
+                Section("Device") {
+                    HStack {
+                        Text("Name")
+                        Spacer()
+                        Text(KeychainManager.deviceName ?? "Unknown")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let deviceId = KeychainManager.deviceId {
+                        HStack {
+                            Text("Device ID")
+                            Spacer()
+                            Text(String(deviceId.prefix(8)))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Connection") {
                     HStack {
                         Text("Status")
@@ -31,27 +51,6 @@ struct SettingsView: View {
                     }
                 }
 
-                if !viewModel.availableWorkspaces.isEmpty {
-                    Section("Workspace") {
-                        ForEach(viewModel.availableWorkspaces, id: \.self) { (workspace: String) in
-                            Button {
-                                viewModel.newSession(workspace: workspace)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(workspace)
-                                    Spacer()
-                                    if workspace == viewModel.currentWorkspace {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(Color.accentColor)
-                                    }
-                                }
-                            }
-                            .foregroundStyle(.primary)
-                        }
-                    }
-                }
-
                 Section {
                     Button(viewModel.ws.isConnected ? "Disconnect" : "Reconnect") {
                         if viewModel.ws.isConnected {
@@ -61,9 +60,20 @@ struct SettingsView: View {
                         }
                     }
 
-                    Button("Clear Token & Disconnect", role: .destructive) {
-                        viewModel.clearToken()
-                        dismiss()
+                    Button("Unpair Device", role: .destructive) {
+                        showUnpairConfirmation = true
+                    }
+                    .confirmationDialog(
+                        "Unpair this device?",
+                        isPresented: $showUnpairConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Unpair", role: .destructive) {
+                            viewModel.unpair()
+                            dismiss()
+                        }
+                    } message: {
+                        Text("You will need a new pairing code from your admin to reconnect.")
                     }
                 }
             }

@@ -111,7 +111,7 @@ final class WebSocketManager: ObservableObject {
     }
 
     private func scheduleReconnect() {
-        guard KeychainManager.hasToken, !isReconnecting else { return }
+        guard KeychainManager.isPaired, !isReconnecting else { return }
         isReconnecting = true
         reconnectAttempts += 1
         let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)

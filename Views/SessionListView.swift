@@ -6,10 +6,32 @@ struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Session.createdAt, order: .reverse) private var sessions: [Session]
     @State private var selectedSessionId: String?
+    @State private var daysRemaining: Int?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
             List {
+                if let daysRemaining, daysRemaining >= 0, daysRemaining <= 7 {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(daysRemaining == 0
+                                ? "Device pairing expires today"
+                                : daysRemaining == 1
+                                    ? "Device pairing expires in 1 day"
+                                    : "Device pairing expires in \(daysRemaining) days")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    }
+                    .listRowBackground(Color.orange.opacity(0.1))
+                }
+
                 ForEach(sessions, id: \.id) { session in
                     SessionRow(
                         session: session,
@@ -38,6 +60,14 @@ struct SessionListView: View {
                     Circle()
                         .fill(viewModel.ws.isConnected ? .green : .red)
                         .frame(width: 8, height: 8)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -76,6 +106,14 @@ struct SessionListView: View {
             }
             .navigationDestination(item: $selectedSessionId) { sessionId in
                 ChatView(viewModel: viewModel, sessionId: sessionId)
+            }
+            .onAppear {
+                if let expiry = KeychainManager.tokenExpiryDate {
+                    daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(viewModel: viewModel)
             }
         }
     }
