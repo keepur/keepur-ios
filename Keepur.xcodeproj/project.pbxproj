@@ -9,12 +9,15 @@
 /* Begin PBXBuildFile section */
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
+		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A1ABEBC12F79E16C009B0AFC /* Keepur.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keepur.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepurApp.swift; sourceTree = "<group>"; };
 		A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
+		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -40,8 +43,25 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXContainerItemProxy section */
+		B23E89F17DFC4710A2B88174 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1ABEBB92F79E16C009B0AFC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1ABEBC02F79E16C009B0AFC;
+			remoteInfo = Keepur;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		A1ABEBBE2F79E16C009B0AFC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FEF1D9C33E6946E9A1F7E1B9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -61,6 +81,7 @@
 				A1ABEBFA2F79E24E009B0AFC /* Views */,
 				A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */,
 				A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */,
+				B293D6AC70744BEAB61BD645 /* KeeperTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -68,8 +89,17 @@
 			isa = PBXGroup;
 			children = (
 				A1ABEBC12F79E16C009B0AFC /* Keepur.app */,
+				F14E65891B51453D96E01CF1 /* KeeperTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B293D6AC70744BEAB61BD645 /* KeeperTests */ = {
+			isa = PBXGroup;
+			children = (
+				CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */,
+			);
+			path = KeeperTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -100,6 +130,24 @@
 			productReference = A1ABEBC12F79E16C009B0AFC /* Keepur.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F3927C9EB6BA4611BA776573 /* KeeperTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1479D63C06B4466FAD737E1E /* Build configuration list for PBXNativeTarget "KeeperTests" */;
+			buildPhases = (
+				FA3F17F88ADF48199EFCC81D /* Sources */,
+				FEF1D9C33E6946E9A1F7E1B9 /* Frameworks */,
+				68A30D46C2284755B287ACEC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				536B3D3764094448ABD35BD0 /* PBXTargetDependency */,
+			);
+			name = KeeperTests;
+			productName = KeeperTests;
+			productReference = F14E65891B51453D96E01CF1 /* KeeperTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -112,6 +160,10 @@
 				TargetAttributes = {
 					A1ABEBC02F79E16C009B0AFC = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					F3927C9EB6BA4611BA776573 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = A1ABEBC02F79E16C009B0AFC;
 					};
 				};
 			};
@@ -130,6 +182,7 @@
 			projectRoot = "";
 			targets = (
 				A1ABEBC02F79E16C009B0AFC /* Keepur */,
+				F3927C9EB6BA4611BA776573 /* KeeperTests */,
 			);
 		};
 /* End PBXProject section */
@@ -140,6 +193,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		68A30D46C2284755B287ACEC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,7 +214,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FA3F17F88ADF48199EFCC81D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		536B3D3764094448ABD35BD0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1ABEBC02F79E16C009B0AFC /* Keepur */;
+			targetProxy = B23E89F17DFC4710A2B88174 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A1ABEBCA2F79E16D009B0AFC /* Debug */ = {
@@ -363,6 +439,46 @@
 			};
 			name = Release;
 		};
+		2C9F49E0BD4A4B7CB1884D6A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N3L37G6KTL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.keepur.KeeperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keepur.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Keepur";
+			};
+			name = Debug;
+		};
+		4D9707E67F5B4351A927A318 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N3L37G6KTL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.keepur.KeeperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keepur.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Keepur";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -380,6 +496,15 @@
 			buildConfigurations = (
 				A1ABEBCD2F79E16D009B0AFC /* Debug */,
 				A1ABEBCE2F79E16D009B0AFC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1479D63C06B4466FAD737E1E /* Build configuration list for PBXNativeTarget "KeeperTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2C9F49E0BD4A4B7CB1884D6A /* Debug */,
+				4D9707E67F5B4351A927A318 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

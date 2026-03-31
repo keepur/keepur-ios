@@ -7,7 +7,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if KeychainManager.isPaired && viewModel.isPaired {
+            if KeychainManager.isPaired && viewModel.isAuthenticated {
                 SessionListView(viewModel: viewModel)
                     .task {
                         do {
@@ -20,7 +20,7 @@ struct RootView: View {
                     }
             } else {
                 PairingView(onPaired: {
-                    viewModel.isPaired = true
+                    viewModel.isAuthenticated = true
                     viewModel.configure(context: modelContext)
                 })
             }

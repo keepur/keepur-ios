@@ -33,9 +33,8 @@ struct ChatView: View {
                                 .id(message.id)
                         }
 
-                        if viewModel.currentSessionId == sessionId &&
-                            (viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running") {
-                            StatusIndicator(status: viewModel.currentStatus)
+                        if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" {
+                            StatusIndicator(status: viewModel.statusFor(sessionId))
                                 .id("status")
                         }
                     }
@@ -47,8 +46,8 @@ struct ChatView: View {
                         proxy.scrollTo(messages.last?.id ?? "status", anchor: .bottom)
                     }
                 }
-                .onChange(of: viewModel.currentStatus) {
-                    if viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running" {
+                .onChange(of: viewModel.sessionStatuses[sessionId]) {
+                    if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" {
                         withAnimation {
                             proxy.scrollTo("status", anchor: .bottom)
                         }
@@ -91,16 +90,14 @@ struct ChatView: View {
         }
         .sheet(item: Binding(
             get: {
-                guard let approval = viewModel.pendingApproval,
-                      approval.sessionId == nil || approval.sessionId == sessionId else { return nil }
-                return approval
+                viewModel.pendingApprovals[sessionId]
             },
-            set: { viewModel.pendingApproval = $0 }
+            set: { viewModel.pendingApprovals[sessionId] = $0 }
         )) { approval in
             ToolApprovalView(
                 approval: approval,
-                onApprove: { viewModel.approve(toolUseId: approval.id) },
-                onDeny: { viewModel.deny(toolUseId: approval.id) }
+                onApprove: { viewModel.approve(toolUseId: approval.id, sessionId: sessionId) },
+                onDeny: { viewModel.deny(toolUseId: approval.id, sessionId: sessionId) }
             )
             .interactiveDismissDisabled()
         }
