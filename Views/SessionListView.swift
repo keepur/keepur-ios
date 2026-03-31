@@ -6,6 +6,7 @@ struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Session.createdAt, order: .reverse) private var sessions: [Session]
     @State private var selectedSessionId: String?
+    @State private var showWorkspacePicker = false
 
     var body: some View {
         NavigationStack {
@@ -16,15 +17,19 @@ struct SessionListView: View {
                         isActive: session.id == viewModel.currentSessionId,
                         modelContext: modelContext
                     )
+                    .opacity(session.isStale ? 0.5 : 1.0)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         viewModel.currentSessionId = session.id
-                        viewModel.currentWorkspace = session.workspace
                         selectedSessionId = session.id
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            deleteSession(session)
+                            if session.isStale {
+                                deleteLocalSession(session)
+                            } else {
+                                viewModel.clearSession(sessionId: session.id)
+                            }
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -40,22 +45,8 @@ struct SessionListView: View {
                         .frame(width: 8, height: 8)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if viewModel.availableWorkspaces.isEmpty {
-                            Button {
-                                viewModel.newSession()
-                            } label: {
-                                Label("New Session", systemImage: "plus")
-                            }
-                        } else {
-                            ForEach(viewModel.availableWorkspaces, id: \.self) { (ws: String) in
-                                Button {
-                                    viewModel.newSession(workspace: ws)
-                                } label: {
-                                    Label(ws, systemImage: "folder")
-                                }
-                            }
-                        }
+                    Button {
+                        showWorkspacePicker = true
                     } label: {
                         Image(systemName: "square.and.pencil")
                             .font(.title3)
@@ -69,7 +60,7 @@ struct SessionListView: View {
                     } description: {
                         Text("Start a new session to chat with Claude Code")
                     } actions: {
-                        Button("New Session") { viewModel.newSession() }
+                        Button("New Session") { showWorkspacePicker = true }
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -77,10 +68,13 @@ struct SessionListView: View {
             .navigationDestination(item: $selectedSessionId) { sessionId in
                 ChatView(viewModel: viewModel, sessionId: sessionId)
             }
+            .sheet(isPresented: $showWorkspacePicker) {
+                WorkspacePickerView(viewModel: viewModel)
+            }
         }
     }
 
-    private func deleteSession(_ session: Session) {
+    private func deleteLocalSession(_ session: Session) {
         let sid = session.id
         let descriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sid }
@@ -112,10 +106,18 @@ struct SessionRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(session.workspace)
+                    Text(session.displayName)
                         .font(.body)
                         .fontWeight(.medium)
-                    if isActive {
+                    if session.isStale {
+                        Text("Stale")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.2))
+                            .clipShape(Capsule())
+                            .foregroundStyle(.orange)
+                    } else if isActive {
                         Text("Active")
                             .font(.caption2)
                             .padding(.horizontal, 6)
@@ -125,6 +127,11 @@ struct SessionRow: View {
                             .foregroundStyle(.green)
                     }
                 }
+
+                Text(session.path)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
 
                 if let preview = lastMessagePreview {
                     Text(preview)

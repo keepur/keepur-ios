@@ -6,24 +6,29 @@ import Combine
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
-    @Published var currentStatus: String = "idle"
-    @Published var currentWorkspace: String = ""
-    @Published var availableWorkspaces: [String] = []
     @Published var currentSessionId: String?
     @Published var pendingApproval: ToolApproval?
     @Published var isAuthenticated = true
+
+    // Per-session status: sessionId -> state
+    @Published var sessionStatuses: [String: String] = [:]
+
+    // Browse state
+    @Published var browseEntries: [BrowseEntry] = []
+    @Published var browsePath: String = ""
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
     var autoReadAloud = false
     private var modelContext: ModelContext?
-    private var streamingMessageId: String?
-    private var lastCompletedMessageId: String?
+    private var streamingMessageIds: [String: String] = [:]  // sessionId -> messageId
+    private var lastCompletedMessageIds: [String: String] = [:]
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
         let tool: String
         let input: String
+        let sessionId: String
     }
 
     func configure(context: ModelContext) {
@@ -35,6 +40,10 @@ final class ChatViewModel: ObservableObject {
             self?.isAuthenticated = false
         }
         ws.connect()
+    }
+
+    func statusFor(_ sessionId: String) -> String {
+        sessionStatuses[sessionId] ?? "idle"
     }
 
     func sendText() {
@@ -56,8 +65,20 @@ final class ChatViewModel: ObservableObject {
         sendText()
     }
 
-    func newSession(workspace: String? = nil) {
-        ws.send(.newSession(workspace: workspace))
+    func newSession(path: String) {
+        ws.send(.newSession(path: path))
+    }
+
+    func clearSession(sessionId: String) {
+        ws.send(.clearSession(sessionId: sessionId))
+    }
+
+    func listSessions() {
+        ws.send(.listSessions)
+    }
+
+    func browse(path: String? = nil) {
+        ws.send(.browse(path: path))
     }
 
     func approve(toolUseId: String) {
@@ -85,36 +106,54 @@ final class ChatViewModel: ObservableObject {
         case .message(let text, let sessionId, let final):
             handleStreamingMessage(text: text, sessionId: sessionId, final: final, context: context)
 
-        case .toolApproval(let toolUseId, let tool, let input):
-            pendingApproval = ToolApproval(id: toolUseId, tool: tool, input: input)
+        case .toolApproval(let toolUseId, let tool, let input, let sessionId):
+            pendingApproval = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
-        case .status(let state):
-            currentStatus = state
-            if state == "session_ended" {
-                if let sessionId = currentSessionId {
-                    let divider = Message(sessionId: sessionId, text: "Session ended", role: "system")
-                    context.insert(divider)
-                    try? context.save()
-                }
-                streamingMessageId = nil
-            }
+        case .status(let state, let sessionId):
+            sessionStatuses[sessionId] = state
 
-        case .sessionInfo(let sessionId, let workspace, let workspaces):
-            if sessionId != currentSessionId {
-                let session = Session(id: sessionId, workspace: workspace)
+        case .sessionInfo(let sessionId, let path):
+            // Upsert session
+            let descriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == sessionId }
+            )
+            if (try? context.fetch(descriptor).first) == nil {
+                let session = Session(id: sessionId, path: path)
                 context.insert(session)
                 try? context.save()
             }
-            currentSessionId = sessionId
-            currentWorkspace = workspace
-            if !workspaces.isEmpty {
-                availableWorkspaces = workspaces
-            }
-            currentStatus = "idle"
 
-        case .error(let message):
-            if let sessionId = currentSessionId {
-                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: "system")
+            // Remember workspace
+            let wsDescriptor = FetchDescriptor<Workspace>(
+                predicate: #Predicate { $0.path == path }
+            )
+            if let existing = try? context.fetch(wsDescriptor).first {
+                existing.lastUsed = .now
+            } else {
+                context.insert(Workspace(path: path))
+            }
+            try? context.save()
+
+            currentSessionId = sessionId
+            sessionStatuses[sessionId] = "idle"
+
+        case .sessionList(let sessions):
+            syncSessions(serverSessions: sessions, context: context)
+
+        case .sessionCleared(let sessionId):
+            deleteLocalSession(sessionId: sessionId, context: context)
+            if currentSessionId == sessionId {
+                currentSessionId = nil
+            }
+
+        case .browseResult(let path, let entries):
+            browsePath = path
+            browseEntries = entries
+
+        case .error(let message, let sessionId):
+            let targetSessionId = sessionId ?? currentSessionId
+            if let sid = targetSessionId {
+                let msg = Message(sessionId: sid, text: "Error: \(message)", role: "system")
                 context.insert(msg)
                 try? context.save()
             }
@@ -124,9 +163,59 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    private func syncSessions(serverSessions: [ServerSession], context: ModelContext) {
+        let serverIds = Set(serverSessions.map(\.sessionId))
+
+        // Mark local sessions not on server as stale
+        let descriptor = FetchDescriptor<Session>()
+        if let localSessions = try? context.fetch(descriptor) {
+            for session in localSessions {
+                session.isStale = !serverIds.contains(session.id)
+            }
+        }
+
+        // Create local sessions for any server sessions we don't have
+        for serverSession in serverSessions {
+            let sid = serverSession.sessionId
+            let check = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == sid }
+            )
+            if (try? context.fetch(check).first) == nil {
+                let session = Session(id: serverSession.sessionId, path: serverSession.path)
+                context.insert(session)
+            }
+            sessionStatuses[serverSession.sessionId] = serverSession.state
+        }
+        try? context.save()
+
+        // Clear current session if it became stale
+        if let current = currentSessionId, !serverIds.contains(current) {
+            currentSessionId = nil
+        }
+    }
+
+    private func deleteLocalSession(sessionId: String, context: ModelContext) {
+        let sid = sessionId
+        let msgDescriptor = FetchDescriptor<Message>(
+            predicate: #Predicate { $0.sessionId == sid }
+        )
+        if let messages = try? context.fetch(msgDescriptor) {
+            for msg in messages { context.delete(msg) }
+        }
+        let sessionDescriptor = FetchDescriptor<Session>(
+            predicate: #Predicate { $0.id == sid }
+        )
+        if let session = try? context.fetch(sessionDescriptor).first {
+            context.delete(session)
+        }
+        try? context.save()
+        streamingMessageIds.removeValue(forKey: sessionId)
+        sessionStatuses.removeValue(forKey: sessionId)
+    }
+
     private func handleStreamingMessage(text: String, sessionId: String, final: Bool, context: ModelContext) {
         if final {
-            if !text.isEmpty, let existingId = streamingMessageId {
+            if !text.isEmpty, let existingId = streamingMessageIds[sessionId] {
                 let descriptor = FetchDescriptor<Message>(
                     predicate: #Predicate { $0.id == existingId }
                 )
@@ -136,7 +225,7 @@ final class ChatViewModel: ObservableObject {
                 }
             }
             // Read aloud the completed response
-            if autoReadAloud, let completedId = streamingMessageId ?? lastCompletedMessageId {
+            if autoReadAloud, let completedId = streamingMessageIds[sessionId] ?? lastCompletedMessageIds[sessionId] {
                 let descriptor = FetchDescriptor<Message>(
                     predicate: #Predicate { $0.id == completedId }
                 )
@@ -144,12 +233,12 @@ final class ChatViewModel: ObservableObject {
                     speechManager.speak(msg.text)
                 }
             }
-            lastCompletedMessageId = streamingMessageId
-            streamingMessageId = nil
+            lastCompletedMessageIds[sessionId] = streamingMessageIds[sessionId]
+            streamingMessageIds.removeValue(forKey: sessionId)
             return
         }
 
-        if let existingId = streamingMessageId {
+        if let existingId = streamingMessageIds[sessionId] {
             let descriptor = FetchDescriptor<Message>(
                 predicate: #Predicate { $0.id == existingId }
             )
@@ -161,7 +250,7 @@ final class ChatViewModel: ObservableObject {
             let msg = Message(sessionId: sessionId, text: text, role: "assistant")
             context.insert(msg)
             try? context.save()
-            streamingMessageId = msg.id
+            streamingMessageIds[sessionId] = msg.id
         }
     }
 }

@@ -1,8 +1,11 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Workspace.lastUsed, order: .reverse) private var savedWorkspaces: [Workspace]
 
     var body: some View {
         NavigationStack {
@@ -31,23 +34,28 @@ struct SettingsView: View {
                     }
                 }
 
-                if !viewModel.availableWorkspaces.isEmpty {
-                    Section("Workspace") {
-                        ForEach(viewModel.availableWorkspaces, id: \.self) { (workspace: String) in
-                            Button {
-                                viewModel.newSession(workspace: workspace)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(workspace)
-                                    Spacer()
-                                    if workspace == viewModel.currentWorkspace {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(Color.accentColor)
-                                    }
+                if !savedWorkspaces.isEmpty {
+                    Section("Saved Workspaces") {
+                        ForEach(savedWorkspaces, id: \.path) { workspace in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(workspace.displayName)
+                                        .font(.body)
+                                    Text(workspace.path)
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
                                 }
+                                Spacer()
+                                Text(workspace.lastUsed, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
                             }
-                            .foregroundStyle(.primary)
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                modelContext.delete(savedWorkspaces[index])
+                            }
+                            try? modelContext.save()
                         }
                     }
                 }

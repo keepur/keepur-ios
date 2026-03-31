@@ -6,6 +6,7 @@ struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
     @Query(sort: \Message.timestamp) private var allMessages: [Message]
+    @Query private var allSessions: [Session]
     @State private var showSettings = false
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
@@ -13,6 +14,10 @@ struct ChatView: View {
 
     private var messages: [Message] {
         allMessages.filter { $0.sessionId == sessionId }
+    }
+
+    private var sessionStatus: String {
+        viewModel.statusFor(sessionId)
     }
 
     var body: some View {
@@ -26,8 +31,8 @@ struct ChatView: View {
                         }
 
                         if viewModel.currentSessionId == sessionId &&
-                            (viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running") {
-                            StatusIndicator(status: viewModel.currentStatus)
+                            (sessionStatus == "thinking" || sessionStatus == "tool_running") {
+                            StatusIndicator(status: sessionStatus)
                                 .id("status")
                         }
                     }
@@ -39,8 +44,8 @@ struct ChatView: View {
                         proxy.scrollTo(messages.last?.id ?? "status", anchor: .bottom)
                     }
                 }
-                .onChange(of: viewModel.currentStatus) {
-                    if viewModel.currentStatus == "thinking" || viewModel.currentStatus == "tool_running" {
+                .onChange(of: sessionStatus) {
+                    if sessionStatus == "thinking" || sessionStatus == "tool_running" {
                         withAnimation {
                             proxy.scrollTo("status", anchor: .bottom)
                         }
@@ -56,12 +61,11 @@ struct ChatView: View {
                 readOnlyBar
             }
         }
-        .navigationTitle(viewModel.currentWorkspace.isEmpty ? "Keepur" : viewModel.currentWorkspace)
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 8) {
-                    // Read aloud toggle
                     Button {
                         autoReadAloud.toggle()
                     } label: {
@@ -81,7 +85,7 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(viewModel: viewModel)
         }
-        .sheet(item: $viewModel.pendingApproval) { approval in
+        .sheet(item: pendingApprovalBinding) { approval in
             ToolApprovalView(
                 approval: approval,
                 onApprove: { viewModel.approve(toolUseId: approval.id) },
@@ -97,11 +101,25 @@ struct ChatView: View {
         }
     }
 
+    private var navigationTitle: String {
+        allSessions.first { $0.id == sessionId }?.displayName ?? "Keepur"
+    }
+
+    private var pendingApprovalBinding: Binding<ChatViewModel.ToolApproval?> {
+        Binding(
+            get: {
+                guard let approval = viewModel.pendingApproval,
+                      approval.sessionId == sessionId else { return nil }
+                return approval
+            },
+            set: { viewModel.pendingApproval = $0 }
+        )
+    }
+
     // MARK: - Input Bar (active session)
 
     private var inputBar: some View {
         HStack(spacing: 8) {
-            // Voice button
             VoiceButton(speechManager: viewModel.speechManager) {
                 viewModel.sendVoiceText()
             }
@@ -127,7 +145,6 @@ struct ChatView: View {
             }
             .disabled(
                 viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || viewModel.currentStatus == "session_ended"
             )
         }
         .padding(.horizontal, 12)
@@ -140,7 +157,7 @@ struct ChatView: View {
     private var readOnlyBar: some View {
         HStack {
             Spacer()
-            Text("Session ended — read only")
+            Text("Viewing past session — read only")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
