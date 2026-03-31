@@ -8,6 +8,7 @@ struct SessionListView: View {
     @State private var selectedSessionId: String?
     @State private var daysRemaining: Int?
     @State private var showSettings = false
+    @State private var showWorkspacePicker = false
 
     var body: some View {
         NavigationStack {
@@ -38,15 +39,17 @@ struct SessionListView: View {
                         isActive: session.id == viewModel.currentSessionId,
                         modelContext: modelContext
                     )
+                    .opacity(session.isStale ? 0.5 : 1.0)
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        guard !session.isStale else { return }
                         viewModel.currentSessionId = session.id
-                        viewModel.currentWorkspace = session.workspace
+                        viewModel.currentPath = session.path
                         selectedSessionId = session.id
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            deleteSession(session)
+                            viewModel.clearSession(sessionId: session.id)
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -70,22 +73,8 @@ struct SessionListView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if viewModel.availableWorkspaces.isEmpty {
-                            Button {
-                                viewModel.newSession()
-                            } label: {
-                                Label("New Session", systemImage: "plus")
-                            }
-                        } else {
-                            ForEach(viewModel.availableWorkspaces, id: \.self) { (ws: String) in
-                                Button {
-                                    viewModel.newSession(workspace: ws)
-                                } label: {
-                                    Label(ws, systemImage: "folder")
-                                }
-                            }
-                        }
+                    Button {
+                        showWorkspacePicker = true
                     } label: {
                         Image(systemName: "square.and.pencil")
                             .font(.title3)
@@ -99,7 +88,7 @@ struct SessionListView: View {
                     } description: {
                         Text("Start a new session to chat with Claude Code")
                     } actions: {
-                        Button("New Session") { viewModel.newSession() }
+                        Button("New Session") { showWorkspacePicker = true }
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -115,19 +104,10 @@ struct SessionListView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(viewModel: viewModel)
             }
+            .sheet(isPresented: $showWorkspacePicker) {
+                WorkspacePickerView(viewModel: viewModel)
+            }
         }
-    }
-
-    private func deleteSession(_ session: Session) {
-        let sid = session.id
-        let descriptor = FetchDescriptor<Message>(
-            predicate: #Predicate { $0.sessionId == sid }
-        )
-        if let messages = try? modelContext.fetch(descriptor) {
-            for msg in messages { modelContext.delete(msg) }
-        }
-        modelContext.delete(session)
-        try? modelContext.save()
     }
 }
 
@@ -150,7 +130,7 @@ struct SessionRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(session.workspace)
+                    Text(displayName)
                         .font(.body)
                         .fontWeight(.medium)
                     if isActive {
@@ -162,7 +142,21 @@ struct SessionRow: View {
                             .clipShape(Capsule())
                             .foregroundStyle(.green)
                     }
+                    if session.isStale {
+                        Text("Stale")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.2))
+                            .clipShape(Capsule())
+                            .foregroundStyle(.orange)
+                    }
                 }
+
+                Text(session.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
                 if let preview = lastMessagePreview {
                     Text(preview)
@@ -179,6 +173,10 @@ struct SessionRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+    }
+
+    private var displayName: String {
+        URL(fileURLWithPath: session.path).lastPathComponent
     }
 
     private var lastMessagePreview: String? {
