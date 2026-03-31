@@ -88,8 +88,8 @@ struct ChatView: View {
         .sheet(item: pendingApprovalBinding) { approval in
             ToolApprovalView(
                 approval: approval,
-                onApprove: { viewModel.approve(toolUseId: approval.id) },
-                onDeny: { viewModel.deny(toolUseId: approval.id) }
+                onApprove: { viewModel.approve(toolUseId: approval.id, sessionId: sessionId) },
+                onDeny: { viewModel.deny(toolUseId: approval.id, sessionId: sessionId) }
             )
             .interactiveDismissDisabled()
         }
@@ -107,12 +107,14 @@ struct ChatView: View {
 
     private var pendingApprovalBinding: Binding<ChatViewModel.ToolApproval?> {
         Binding(
-            get: {
-                guard let approval = viewModel.pendingApproval,
-                      approval.sessionId == sessionId else { return nil }
-                return approval
-            },
-            set: { viewModel.pendingApproval = $0 }
+            get: { viewModel.pendingApprovals[sessionId] },
+            set: { newValue in
+                if let newValue {
+                    viewModel.pendingApprovals[sessionId] = newValue
+                } else {
+                    viewModel.pendingApprovals.removeValue(forKey: sessionId)
+                }
+            }
         )
     }
 

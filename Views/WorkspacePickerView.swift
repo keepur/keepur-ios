@@ -21,7 +21,30 @@ struct WorkspacePickerView: View {
                 Divider()
 
                 // Directory listing
-                directoryList
+                if !viewModel.ws.isConnected {
+                    ContentUnavailableView {
+                        Label("Not Connected", systemImage: "wifi.slash")
+                    } description: {
+                        Text("Connect to the server to browse directories")
+                    } actions: {
+                        Button("Reconnect") { viewModel.ws.connect() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if let error = viewModel.browseError {
+                    ContentUnavailableView {
+                        Label("Error", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { viewModel.browse() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if viewModel.browsePath.isEmpty {
+                    ProgressView("Loading…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    directoryList
+                }
             }
             .navigationTitle("Choose Workspace")
             .navigationBarTitleDisplayMode(.inline)

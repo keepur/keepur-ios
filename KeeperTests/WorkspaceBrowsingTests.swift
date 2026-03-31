@@ -180,6 +180,126 @@ struct ErrorDecodingTests {
     }
 }
 
+// MARK: - WSOutgoing Other Encoding
+
+@Suite("WSOutgoing Other Encoding")
+struct OtherEncodingTests {
+
+    @Test("newSession encodes type and path")
+    func newSession() throws {
+        let data = try WSOutgoing.newSession(path: "/Users/may/projects/hive").encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(json["type"] as? String == "new_session")
+        #expect(json["path"] as? String == "/Users/may/projects/hive")
+    }
+
+    @Test("clearSession encodes type and sessionId")
+    func clearSession() throws {
+        let data = try WSOutgoing.clearSession(sessionId: "sess-1").encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(json["type"] as? String == "clear_session")
+        #expect(json["sessionId"] as? String == "sess-1")
+    }
+
+    @Test("listSessions encodes type only")
+    func listSessions() throws {
+        let data = try WSOutgoing.listSessions.encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(json["type"] as? String == "list_sessions")
+        #expect(json.count == 1)
+    }
+}
+
+// MARK: - WSIncoming Session Decoding
+
+@Suite("WSIncoming Session Decoding")
+struct SessionDecodingTests {
+
+    private func jsonData(_ dict: [String: Any]) -> Data {
+        try! JSONSerialization.data(withJSONObject: dict)
+    }
+
+    @Test("decodes session_info")
+    func decodeSessionInfo() {
+        let data = jsonData([
+            "type": "session_info",
+            "sessionId": "sess-42",
+            "path": "/Users/may/projects/hive"
+        ])
+        guard case .sessionInfo(let sessionId, let path) = WSIncoming.decode(from: data) else {
+            Issue.record("Expected sessionInfo")
+            return
+        }
+        #expect(sessionId == "sess-42")
+        #expect(path == "/Users/may/projects/hive")
+    }
+
+    @Test("decodes session_list with multiple sessions")
+    func decodeSessionList() {
+        let data = jsonData([
+            "type": "session_list",
+            "sessions": [
+                ["sessionId": "s1", "path": "/a", "state": "idle"],
+                ["sessionId": "s2", "path": "/b", "state": "thinking"]
+            ]
+        ])
+        guard case .sessionList(let sessions) = WSIncoming.decode(from: data) else {
+            Issue.record("Expected sessionList")
+            return
+        }
+        #expect(sessions.count == 2)
+        #expect(sessions[0].sessionId == "s1")
+        #expect(sessions[0].path == "/a")
+        #expect(sessions[0].state == "idle")
+        #expect(sessions[1].sessionId == "s2")
+        #expect(sessions[1].state == "thinking")
+    }
+
+    @Test("decodes session_list with empty array")
+    func decodeSessionListEmpty() {
+        let data = jsonData([
+            "type": "session_list",
+            "sessions": [] as [[String: Any]]
+        ])
+        guard case .sessionList(let sessions) = WSIncoming.decode(from: data) else {
+            Issue.record("Expected sessionList")
+            return
+        }
+        #expect(sessions.isEmpty)
+    }
+
+    @Test("decodes session_cleared")
+    func decodeSessionCleared() {
+        let data = jsonData([
+            "type": "session_cleared",
+            "sessionId": "sess-99"
+        ])
+        guard case .sessionCleared(let sessionId) = WSIncoming.decode(from: data) else {
+            Issue.record("Expected sessionCleared")
+            return
+        }
+        #expect(sessionId == "sess-99")
+    }
+
+    @Test("session_list skips malformed entries")
+    func decodeSessionListMalformed() {
+        let data = jsonData([
+            "type": "session_list",
+            "sessions": [
+                ["sessionId": "s1", "path": "/a", "state": "idle"],
+                ["sessionId": "s2", "path": "/b"],  // missing state
+                ["bogus": true]
+            ]
+        ])
+        guard case .sessionList(let sessions) = WSIncoming.decode(from: data) else {
+            Issue.record("Expected sessionList")
+            return
+        }
+        #expect(sessions.count == 1)
+        #expect(sessions[0].sessionId == "s1")
+    }
+}
+
 // MARK: - WSIncoming General Decoding Edge Cases
 
 @Suite("WSIncoming General Decoding")
@@ -201,5 +321,14 @@ struct GeneralDecodingTests {
     func decodeMissingType() {
         let data = try! JSONSerialization.data(withJSONObject: ["foo": "bar"])
         #expect(WSIncoming.decode(from: data) == nil)
+    }
+
+    @Test("decodes pong")
+    func decodePong() {
+        let data = try! JSONSerialization.data(withJSONObject: ["type": "pong"])
+        guard case .pong = WSIncoming.decode(from: data) else {
+            Issue.record("Expected pong")
+            return
+        }
     }
 }

@@ -7,7 +7,7 @@ import Combine
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
     @Published var currentSessionId: String?
-    @Published var pendingApproval: ToolApproval?
+    @Published var pendingApprovals: [String: ToolApproval] = [:]
     @Published var isAuthenticated = true
 
     // Per-session status: sessionId -> state
@@ -16,6 +16,7 @@ final class ChatViewModel: ObservableObject {
     // Browse state
     @Published var browseEntries: [BrowseEntry] = []
     @Published var browsePath: String = ""
+    @Published var browseError: String?
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -78,17 +79,18 @@ final class ChatViewModel: ObservableObject {
     }
 
     func browse(path: String? = nil) {
+        browseError = nil
         ws.send(.browse(path: path))
     }
 
-    func approve(toolUseId: String) {
+    func approve(toolUseId: String, sessionId: String) {
         ws.send(.approve(toolUseId: toolUseId))
-        pendingApproval = nil
+        pendingApprovals.removeValue(forKey: sessionId)
     }
 
-    func deny(toolUseId: String) {
+    func deny(toolUseId: String, sessionId: String) {
         ws.send(.deny(toolUseId: toolUseId))
-        pendingApproval = nil
+        pendingApprovals.removeValue(forKey: sessionId)
     }
 
     func clearToken() {
@@ -107,10 +109,13 @@ final class ChatViewModel: ObservableObject {
             handleStreamingMessage(text: text, sessionId: sessionId, final: final, context: context)
 
         case .toolApproval(let toolUseId, let tool, let input, let sessionId):
-            pendingApproval = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
+            pendingApprovals[sessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
         case .status(let state, let sessionId):
             sessionStatuses[sessionId] = state
+            if state == "session_ended" {
+                streamingMessageIds.removeValue(forKey: sessionId)
+            }
 
         case .sessionInfo(let sessionId, let path):
             // Upsert session
@@ -151,6 +156,9 @@ final class ChatViewModel: ObservableObject {
             browseEntries = entries
 
         case .error(let message, let sessionId):
+            if sessionId == nil {
+                browseError = message
+            }
             let targetSessionId = sessionId ?? currentSessionId
             if let sid = targetSessionId {
                 let msg = Message(sessionId: sid, text: "Error: \(message)", role: "system")
