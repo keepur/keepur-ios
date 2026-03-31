@@ -6,7 +6,11 @@ import Combine
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
-    @Published var currentStatus: String = "idle"
+    @Published var sessionStatuses: [String: String] = [:]
+
+    func statusFor(_ sessionId: String) -> String {
+        sessionStatuses[sessionId] ?? "idle"
+    }
     @Published var currentPath: String = ""
     @Published var currentSessionId: String?
     @Published var pendingApprovals: [String: ToolApproval] = [:]
@@ -109,8 +113,10 @@ final class ChatViewModel: ObservableObject {
             pendingApprovals[effectiveSessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
         case .status(let state, let sessionId):
-            if sessionId == nil || sessionId == currentSessionId {
-                currentStatus = state
+            if let sessionId {
+                sessionStatuses[sessionId] = state
+            } else if let currentSessionId {
+                sessionStatuses[currentSessionId] = state
             }
 
         case .sessionInfo(let sessionId, let path):
@@ -127,7 +133,7 @@ final class ChatViewModel: ObservableObject {
             try? context.save()
             currentSessionId = sessionId
             currentPath = path
-            currentStatus = "idle"
+            sessionStatuses[sessionId] = "idle"
             saveWorkspace(path: path, context: context)
 
         case .sessionList(let sessions):
