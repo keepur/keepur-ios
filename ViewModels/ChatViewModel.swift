@@ -110,11 +110,17 @@ final class ChatViewModel: ObservableObject {
             }
 
         case .sessionInfo(let sessionId, let path):
-            if sessionId != currentSessionId {
+            let existingDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == sessionId }
+            )
+            if let existing = try? context.fetch(existingDescriptor).first {
+                existing.path = path
+                existing.isStale = false
+            } else {
                 let session = Session(id: sessionId, path: path)
                 context.insert(session)
-                try? context.save()
             }
+            try? context.save()
             currentSessionId = sessionId
             currentPath = path
             currentStatus = "idle"
@@ -194,9 +200,7 @@ final class ChatViewModel: ObservableObject {
         guard let localSessions = try? context.fetch(descriptor) else { return }
 
         for local in localSessions {
-            if !serverIds.contains(local.id) {
-                local.isStale = true
-            }
+            local.isStale = !serverIds.contains(local.id)
         }
 
         let localIds = Set(localSessions.map(\.id))
@@ -214,6 +218,9 @@ final class ChatViewModel: ObservableObject {
 
     private func deleteLocalSession(sessionId: String) {
         guard let context = modelContext else { return }
+
+        streamingMessageIds[sessionId] = nil
+        lastCompletedMessageIds[sessionId] = nil
 
         let msgDescriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sessionId }

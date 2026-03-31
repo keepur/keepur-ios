@@ -42,6 +42,7 @@ struct SessionListView: View {
                     .opacity(session.isStale ? 0.5 : 1.0)
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        guard !session.isStale else { return }
                         viewModel.currentSessionId = session.id
                         viewModel.currentPath = session.path
                         selectedSessionId = session.id

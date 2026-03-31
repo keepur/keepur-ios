@@ -64,9 +64,10 @@ struct WorkspacePickerView: View {
 
                         ForEach(viewModel.browseEntries.filter(\.isDirectory), id: \.name) { entry in
                             Button {
-                                let childPath = viewModel.browsePath == "/"
-                                    ? "/\(entry.name)"
-                                    : "\(viewModel.browsePath)/\(entry.name)"
+                                let base = viewModel.browsePath
+                                let childPath = base == "/" ? "/\(entry.name)"
+                                    : base.hasSuffix("/") ? "\(base)\(entry.name)"
+                                    : "\(base)/\(entry.name)"
                                 viewModel.browse(path: childPath)
                             } label: {
                                 HStack {
@@ -97,6 +98,8 @@ struct WorkspacePickerView: View {
                 }
             }
             .onAppear {
+                viewModel.browsePath = ""
+                viewModel.browseEntries = []
                 viewModel.browse()
             }
         }
