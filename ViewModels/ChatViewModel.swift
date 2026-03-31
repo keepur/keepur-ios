@@ -17,6 +17,7 @@ final class ChatViewModel: ObservableObject {
     @Published var isPaired = true
     @Published var browseEntries: [BrowseEntry] = []
     @Published var browsePath: String = ""
+    @Published var browseError: String?
     @Published var serverSessions: [ServerSession] = []
 
     let ws = WebSocketManager()
@@ -77,6 +78,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     func browse(path: String? = nil) {
+        browseError = nil
         ws.send(.browse(path: path))
     }
 
@@ -151,6 +153,9 @@ final class ChatViewModel: ObservableObject {
             browseEntries = entries
 
         case .error(let message, let sessionId):
+            if sessionId == nil {
+                browseError = message
+            }
             let targetSessionId = sessionId ?? currentSessionId
             if let targetSessionId {
                 let msg = Message(sessionId: targetSessionId, text: "Error: \(message)", role: "system")

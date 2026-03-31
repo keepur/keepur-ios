@@ -34,10 +34,28 @@ struct WorkspacePickerView: View {
                 }
 
                 Section {
-                    if viewModel.browsePath.isEmpty {
+                    if !viewModel.ws.isConnected {
                         ContentUnavailableView {
-                            Label("Loading...", systemImage: "folder")
+                            Label("Disconnected", systemImage: "wifi.slash")
+                        } description: {
+                            Text("Connect to browse directories")
+                        } actions: {
+                            Button("Reconnect") { viewModel.ws.connect() }
+                                .buttonStyle(.borderedProminent)
                         }
+                    } else if let error = viewModel.browseError {
+                        ContentUnavailableView {
+                            Label("Error", systemImage: "exclamationmark.triangle")
+                        } description: {
+                            Text(error)
+                        } actions: {
+                            Button("Retry") { viewModel.browse() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else if viewModel.browsePath.isEmpty {
+                        ProgressView("Loading…")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 40)
                     } else {
                         HStack {
                             Image(systemName: "folder.fill")
