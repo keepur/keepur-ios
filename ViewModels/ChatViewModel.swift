@@ -11,7 +11,7 @@ final class ChatViewModel: ObservableObject {
     @Published var availableWorkspaces: [String] = []
     @Published var currentSessionId: String?
     @Published var pendingApproval: ToolApproval?
-    @Published var isAuthenticated = true
+    @Published var isPaired = true
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -32,7 +32,7 @@ final class ChatViewModel: ObservableObject {
             self?.handleIncoming(incoming)
         }
         ws.onAuthFailure = { [weak self] in
-            self?.isAuthenticated = false
+            self?.unpair()
         }
         ws.connect()
     }
@@ -70,10 +70,10 @@ final class ChatViewModel: ObservableObject {
         pendingApproval = nil
     }
 
-    func clearToken() {
+    func unpair() {
         ws.disconnect()
-        KeychainManager.clear()
-        isAuthenticated = false
+        KeychainManager.clearAll()
+        isPaired = false
     }
 
     // MARK: - Private
