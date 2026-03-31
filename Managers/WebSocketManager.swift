@@ -15,8 +15,7 @@ final class WebSocketManager: ObservableObject {
     private var reconnectAttempts = 0
     private var isReconnecting = false
     private let maxReconnectDelay: TimeInterval = 30
-    // TODO: switch to wss://beekeeper.dodihome.com for production
-    private let baseURL = "ws://localhost:3099"
+    private let baseURL = "ws://beekeeper.dodihome.com"
 
     func connect() {
         guard !isConnected else { return }
