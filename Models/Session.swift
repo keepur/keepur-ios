@@ -4,12 +4,14 @@ import SwiftData
 @Model
 final class Session {
     @Attribute(.unique) var id: String
-    var workspace: String
+    var path: String
+    var isStale: Bool
     var createdAt: Date
 
-    init(id: String, workspace: String, createdAt: Date = .now) {
+    init(id: String, path: String, isStale: Bool = false, createdAt: Date = .now) {
         self.id = id
-        self.workspace = workspace
+        self.path = path
+        self.isStale = isStale
         self.createdAt = createdAt
     }
 }

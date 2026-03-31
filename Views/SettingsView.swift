@@ -1,9 +1,12 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showUnpairConfirmation = false
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Workspace.lastUsed, order: .reverse) private var savedWorkspaces: [Workspace]
 
     var body: some View {
         NavigationStack {
@@ -47,6 +50,37 @@ struct SettingsView: View {
                             Text(String(sessionId.prefix(8)))
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if !viewModel.currentPath.isEmpty {
+                        HStack {
+                            Text("Workspace")
+                            Spacer()
+                            Text(viewModel.currentPath)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                if !savedWorkspaces.isEmpty {
+                    Section("Saved Workspaces") {
+                        ForEach(savedWorkspaces, id: \.path) { workspace in
+                            VStack(alignment: .leading) {
+                                Text(workspace.displayName)
+                                    .font(.body)
+                                Text(workspace.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                modelContext.delete(savedWorkspaces[index])
+                            }
+                            try? modelContext.save()
                         }
                     }
                 }

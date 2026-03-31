@@ -15,6 +15,14 @@ struct ChatView: View {
         allMessages.filter { $0.sessionId == sessionId }
     }
 
+    @Query private var allSessions: [Session]
+
+    private var navigationTitle: String {
+        guard let session = allSessions.first(where: { $0.id == sessionId }) else { return "Keepur" }
+        let name = URL(fileURLWithPath: session.path).lastPathComponent
+        return name.isEmpty ? "Keepur" : name
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
@@ -56,7 +64,7 @@ struct ChatView: View {
                 readOnlyBar
             }
         }
-        .navigationTitle(viewModel.currentWorkspace.isEmpty ? "Keepur" : viewModel.currentWorkspace)
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -81,7 +89,14 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(viewModel: viewModel)
         }
-        .sheet(item: $viewModel.pendingApproval) { approval in
+        .sheet(item: Binding(
+            get: {
+                guard let approval = viewModel.pendingApproval,
+                      approval.sessionId == nil || approval.sessionId == sessionId else { return nil }
+                return approval
+            },
+            set: { viewModel.pendingApproval = $0 }
+        )) { approval in
             ToolApprovalView(
                 approval: approval,
                 onApprove: { viewModel.approve(toolUseId: approval.id) },
@@ -127,7 +142,6 @@ struct ChatView: View {
             }
             .disabled(
                 viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || viewModel.currentStatus == "session_ended"
             )
         }
         .padding(.horizontal, 12)
