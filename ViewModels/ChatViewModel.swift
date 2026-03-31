@@ -102,6 +102,9 @@ final class ChatViewModel: ObservableObject {
             handleStreamingMessage(text: text, sessionId: sessionId, final: final, context: context)
 
         case .toolApproval(let toolUseId, let tool, let input, let sessionId):
+            if let sessionId, sessionId != currentSessionId {
+                currentSessionId = sessionId
+            }
             pendingApproval = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
         case .status(let state, let sessionId):
@@ -200,7 +203,12 @@ final class ChatViewModel: ObservableObject {
         guard let localSessions = try? context.fetch(descriptor) else { return }
 
         for local in localSessions {
+            let wasStale = local.isStale
             local.isStale = !serverIds.contains(local.id)
+            if local.isStale && !wasStale {
+                streamingMessageIds[local.id] = nil
+                lastCompletedMessageIds[local.id] = nil
+            }
         }
 
         let localIds = Set(localSessions.map(\.id))
