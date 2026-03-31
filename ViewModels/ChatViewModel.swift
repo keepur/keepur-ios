@@ -14,7 +14,7 @@ final class ChatViewModel: ObservableObject {
     @Published var currentPath: String = ""
     @Published var currentSessionId: String?
     @Published var pendingApprovals: [String: ToolApproval] = [:]
-    @Published var isPaired = true
+    @Published var isAuthenticated = true
     @Published var browseEntries: [BrowseEntry] = []
     @Published var browsePath: String = ""
     @Published var browseError: String?
@@ -95,7 +95,7 @@ final class ChatViewModel: ObservableObject {
     func unpair() {
         ws.disconnect()
         KeychainManager.clearAll()
-        isPaired = false
+        isAuthenticated = false
     }
 
     // MARK: - Private
