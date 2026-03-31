@@ -117,8 +117,14 @@ final class ChatViewModel: ObservableObject {
         case .status(let state, let sessionId):
             if let sessionId {
                 sessionStatuses[sessionId] = state
+                if state == "session_ended" {
+                    streamingMessageIds.removeValue(forKey: sessionId)
+                }
             } else if let currentSessionId {
                 sessionStatuses[currentSessionId] = state
+                if state == "session_ended" {
+                    streamingMessageIds.removeValue(forKey: currentSessionId)
+                }
             }
 
         case .sessionInfo(let sessionId, let path):
