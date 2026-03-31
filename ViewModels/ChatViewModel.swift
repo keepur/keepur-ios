@@ -18,6 +18,7 @@ final class ChatViewModel: ObservableObject {
     @Published var browseEntries: [BrowseEntry] = []
     @Published var browsePath: String = ""
     @Published var browseError: String?
+    private var isBrowsePending = false
     @Published var serverSessions: [ServerSession] = []
 
     let ws = WebSocketManager()
@@ -79,6 +80,7 @@ final class ChatViewModel: ObservableObject {
 
     func browse(path: String? = nil) {
         browseError = nil
+        isBrowsePending = true
         ws.send(.browse(path: path))
     }
 
@@ -108,22 +110,23 @@ final class ChatViewModel: ObservableObject {
             handleStreamingMessage(text: text, sessionId: sessionId, final: final, context: context)
 
         case .toolApproval(let toolUseId, let tool, let input, let sessionId):
-            let effectiveSessionId = sessionId ?? currentSessionId ?? ""
+            guard let effectiveSessionId = sessionId ?? currentSessionId else {
+                ws.send(.deny(toolUseId: toolUseId))
+                return
+            }
             if let sessionId, sessionId != currentSessionId {
                 currentSessionId = sessionId
             }
             pendingApprovals[effectiveSessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
         case .status(let state, let sessionId):
-            if let sessionId {
-                sessionStatuses[sessionId] = state
+            let effectiveId = sessionId ?? currentSessionId
+            if let effectiveId {
+                sessionStatuses[effectiveId] = state
                 if state == "session_ended" {
-                    streamingMessageIds.removeValue(forKey: sessionId)
-                }
-            } else if let currentSessionId {
-                sessionStatuses[currentSessionId] = state
-                if state == "session_ended" {
-                    streamingMessageIds.removeValue(forKey: currentSessionId)
+                    streamingMessageIds.removeValue(forKey: effectiveId)
+                    pendingApprovals.removeValue(forKey: effectiveId)
+                    sessionStatuses.removeValue(forKey: effectiveId)
                 }
             }
 
@@ -155,11 +158,13 @@ final class ChatViewModel: ObservableObject {
             }
 
         case .browseResult(let path, let entries):
+            isBrowsePending = false
             browsePath = path
             browseEntries = entries
 
         case .error(let message, let sessionId):
-            if sessionId == nil {
+            if sessionId == nil && isBrowsePending {
+                isBrowsePending = false
                 browseError = message
             }
             let targetSessionId = sessionId ?? currentSessionId

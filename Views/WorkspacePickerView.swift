@@ -40,8 +40,12 @@ struct WorkspacePickerView: View {
                         } description: {
                             Text("Connect to browse directories")
                         } actions: {
-                            Button("Reconnect") { viewModel.ws.connect() }
-                                .buttonStyle(.borderedProminent)
+                            Button("Reconnect") {
+                                viewModel.browseError = nil
+                                viewModel.ws.connect()
+                                viewModel.browse()
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
                     } else if let error = viewModel.browseError {
                         ContentUnavailableView {
@@ -118,6 +122,7 @@ struct WorkspacePickerView: View {
             .onAppear {
                 viewModel.browsePath = ""
                 viewModel.browseEntries = []
+                viewModel.browseError = nil
                 viewModel.browse()
             }
         }
