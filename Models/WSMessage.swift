@@ -72,7 +72,7 @@ enum WSOutgoing {
 enum WSIncoming {
     case message(text: String, sessionId: String, final: Bool)
     case toolApproval(toolUseId: String, tool: String, input: String, sessionId: String?)
-    case status(state: String, sessionId: String?)
+    case status(state: String, sessionId: String?, toolName: String?)
     case sessionInfo(sessionId: String, path: String)
     case sessionList(sessions: [ServerSession])
     case sessionCleared(sessionId: String)
@@ -101,7 +101,8 @@ enum WSIncoming {
         case "status":
             guard let state = json["state"] as? String else { return nil }
             let sessionId = json["sessionId"] as? String
-            return .status(state: state, sessionId: sessionId)
+            let toolName = json["toolName"] as? String
+            return .status(state: state, sessionId: sessionId, toolName: toolName)
         case "session_info":
             guard let sessionId = json["sessionId"] as? String,
                   let path = json["path"] as? String else { return nil }

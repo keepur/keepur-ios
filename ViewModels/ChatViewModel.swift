@@ -7,9 +7,14 @@ import Combine
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
     @Published var sessionStatuses: [String: String] = [:]
+    @Published var sessionToolNames: [String: String] = [:]
 
     func statusFor(_ sessionId: String) -> String {
         sessionStatuses[sessionId] ?? "idle"
+    }
+
+    func toolNameFor(_ sessionId: String) -> String? {
+        sessionToolNames[sessionId]
     }
     @Published var currentPath: String = ""
     @Published var currentSessionId: String?
@@ -141,11 +146,22 @@ final class ChatViewModel: ObservableObject {
             }
             pendingApprovals[effectiveSessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
-        case .status(let state, let sessionId):
+        case .status(let state, let sessionId, let toolName):
             let effectiveId = sessionId ?? currentSessionId
             if let effectiveId {
                 let previousState = sessionStatuses[effectiveId]
                 sessionStatuses[effectiveId] = state
+
+                // Store or clear tool name based on state
+                if state == "tool_running" {
+                    if let toolName {
+                        sessionToolNames[effectiveId] = toolName
+                    } else {
+                        sessionToolNames.removeValue(forKey: effectiveId)
+                    }
+                } else {
+                    sessionToolNames.removeValue(forKey: effectiveId)
+                }
 
                 // Flush pending messages when transitioning away from busy
                 if previousState == "busy" && state != "busy" {
@@ -160,6 +176,7 @@ final class ChatViewModel: ObservableObject {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                     pendingApprovals.removeValue(forKey: effectiveId)
                     sessionStatuses.removeValue(forKey: effectiveId)
+                    sessionToolNames.removeValue(forKey: effectiveId)
                 }
             }
 
@@ -288,6 +305,7 @@ final class ChatViewModel: ObservableObject {
             if local.isStale && !wasStale {
                 streamingMessageIds[local.id] = nil
                 lastCompletedMessageIds[local.id] = nil
+                sessionToolNames.removeValue(forKey: local.id)
             }
         }
 
@@ -309,6 +327,7 @@ final class ChatViewModel: ObservableObject {
 
         streamingMessageIds[sessionId] = nil
         lastCompletedMessageIds[sessionId] = nil
+        sessionToolNames.removeValue(forKey: sessionId)
 
         let msgDescriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sessionId }
