@@ -23,16 +23,22 @@ final class WebSocketManager: ObservableObject {
         guard !isConnected else { return }
         guard let token = KeychainManager.token else {
             // Token unreadable — may be transient Keychain failure.
-            // Retry a few times before giving up.
+            // Retry a few times, then fall through to reconnect backoff.
             if tokenReadRetries < maxTokenReadRetries {
                 tokenReadRetries += 1
-                Task {
+                Task { [weak self] in
                     try? await Task.sleep(for: .seconds(2))
-                    self.connect()
+                    self?.connect()
                 }
+            } else {
+                // Retries exhausted — reset counter and schedule reconnect
+                // so the next cycle gets a fresh set of retries.
+                tokenReadRetries = 0
+                handleDisconnect()
             }
             return
         }
+        tokenReadRetries = 0
 
         cleanupConnection()
 
@@ -44,7 +50,6 @@ final class WebSocketManager: ObservableObject {
 
         isConnected = true
         reconnectAttempts = 0
-        tokenReadRetries = 0
         isReconnecting = false
         startPing()
         receiveMessage()
