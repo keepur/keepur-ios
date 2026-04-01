@@ -32,6 +32,7 @@ enum WSOutgoing {
     case resumeSession(sessionId: String, path: String)
     case approve(toolUseId: String)
     case deny(toolUseId: String)
+    case cancel(sessionId: String)
     case ping
 
     func encode() throws -> Data {
@@ -57,6 +58,8 @@ enum WSOutgoing {
             dict = ["type": "approve", "toolUseId": toolUseId]
         case .deny(let toolUseId):
             dict = ["type": "deny", "toolUseId": toolUseId]
+        case .cancel(let sessionId):
+            dict = ["type": "cancel", "sessionId": sessionId]
         case .ping:
             dict = ["type": "ping"]
         }
@@ -77,6 +80,7 @@ enum WSIncoming {
     case workspaceSessionList(path: String, sessions: [WorkspaceSession])
     case error(message: String, sessionId: String?)
     case pong
+    case unknown(raw: String)
 
     static func decode(from data: Data) -> WSIncoming? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -144,7 +148,15 @@ enum WSIncoming {
         case "pong":
             return .pong
         default:
-            return nil
+            let raw = extractText(from: json) ?? String(data: data, encoding: .utf8) ?? ""
+            return .unknown(raw: raw)
         }
+    }
+
+    private static func extractText(from json: [String: Any]) -> String? {
+        if let text = json["text"] as? String { return text }
+        if let message = json["message"] as? String { return message }
+        if let content = json["content"] as? String { return content }
+        return nil
     }
 }

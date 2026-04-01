@@ -190,6 +190,10 @@ final class ChatViewModel: ObservableObject {
 
         case .pong:
             break
+
+        case .unknown(let raw):
+            // Silently ignore unknown message types
+            break
         }
     }
 
