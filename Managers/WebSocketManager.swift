@@ -52,6 +52,7 @@ final class WebSocketManager: ObservableObject {
 
     func disconnect() {
         isReconnecting = false
+        tokenReadRetries = 0
         pingTimer?.invalidate()
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
