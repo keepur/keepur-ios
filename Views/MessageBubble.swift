@@ -4,6 +4,7 @@ import UIKit
 struct MessageBubble: View {
     let message: Message
     var showWaitingBadge: Bool = false
+    @State private var isPulsing = false
 
     var body: some View {
         switch message.role {
@@ -44,6 +45,9 @@ struct MessageBubble: View {
                                     .fill(Color.secondary)
                             )
                             .offset(x: 4, y: 4)
+                            .opacity(isPulsing ? 0.6 : 1.0)
+                            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
+                            .onAppear { isPulsing = true }
                     }
                 }
 

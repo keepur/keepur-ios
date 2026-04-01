@@ -69,8 +69,7 @@ final class ChatViewModel: ObservableObject {
     func cancelCurrentOperation() {
         guard let sessionId = currentSessionId else { return }
         ws.send(.cancel(sessionId: sessionId))
-        pendingMessages.removeAll()
-        pendingMessageIds.removeAll()
+        clearPendingMessages(for: sessionId)
     }
 
     func sendVoiceText() {
@@ -152,10 +151,9 @@ final class ChatViewModel: ObservableObject {
                 // Flush pending messages when transitioning away from busy
                 if previousState == "busy" && state != "busy" {
                     if state == "session_ended" {
-                        pendingMessages.removeAll { $0.sessionId == effectiveId }
-                        pendingMessageIds.removeAll()
+                        clearPendingMessages(for: effectiveId)
                     } else {
-                        flushPendingMessages()
+                        flushPendingMessages(for: effectiveId)
                     }
                 }
 
@@ -225,13 +223,18 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func flushPendingMessages() {
-        let toSend = pendingMessages
-        pendingMessages.removeAll()
-        pendingMessageIds.removeAll()
+    private func flushPendingMessages(for sessionId: String) {
+        let toSend = pendingMessages.filter { $0.sessionId == sessionId }
+        clearPendingMessages(for: sessionId)
         for pending in toSend {
             ws.send(.message(text: pending.text, sessionId: pending.sessionId))
         }
+    }
+
+    private func clearPendingMessages(for sessionId: String) {
+        let removedIds = Set(pendingMessages.filter { $0.sessionId == sessionId }.map { $0.messageId })
+        pendingMessages.removeAll { $0.sessionId == sessionId }
+        pendingMessageIds.subtract(removedIds)
     }
 
     private func handleStreamingMessage(text: String, sessionId: String, final: Bool, context: ModelContext) {
