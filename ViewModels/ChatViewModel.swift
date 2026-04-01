@@ -305,6 +305,7 @@ final class ChatViewModel: ObservableObject {
             if local.isStale && !wasStale {
                 streamingMessageIds[local.id] = nil
                 lastCompletedMessageIds[local.id] = nil
+                sessionToolNames.removeValue(forKey: local.id)
             }
         }
 
@@ -326,6 +327,7 @@ final class ChatViewModel: ObservableObject {
 
         streamingMessageIds[sessionId] = nil
         lastCompletedMessageIds[sessionId] = nil
+        sessionToolNames.removeValue(forKey: sessionId)
 
         let msgDescriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sessionId }
