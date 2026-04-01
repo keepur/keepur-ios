@@ -153,9 +153,13 @@ final class ChatViewModel: ObservableObject {
                 sessionStatuses[effectiveId] = state
 
                 // Store or clear tool name based on state
-                if state == "tool_running", let toolName {
-                    sessionToolNames[effectiveId] = toolName
-                } else if state != "tool_running" {
+                if state == "tool_running" {
+                    if let toolName {
+                        sessionToolNames[effectiveId] = toolName
+                    } else {
+                        sessionToolNames.removeValue(forKey: effectiveId)
+                    }
+                } else {
                     sessionToolNames.removeValue(forKey: effectiveId)
                 }
 
