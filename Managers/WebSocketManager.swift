@@ -83,14 +83,15 @@ final class WebSocketManager: ObservableObject {
                 case .success(let message):
                     switch message {
                     case .string(let text):
-                        if let data = text.data(using: .utf8),
-                           let incoming = WSIncoming.decode(from: data) {
+                        if let data = text.data(using: .utf8) {
+                            let incoming = WSIncoming.decode(from: data)
+                                ?? .unknown(raw: text)
                             self.onMessage?(incoming)
                         }
                     case .data(let data):
-                        if let incoming = WSIncoming.decode(from: data) {
-                            self.onMessage?(incoming)
-                        }
+                        let incoming = WSIncoming.decode(from: data)
+                            ?? .unknown(raw: String(data: data, encoding: .utf8) ?? "")
+                        self.onMessage?(incoming)
                     @unknown default:
                         break
                     }
