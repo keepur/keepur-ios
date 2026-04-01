@@ -6,6 +6,7 @@ struct KeepurApp: App {
     let modelContainer: ModelContainer
 
     init() {
+        KeychainManager.migrateAccessibility()
         do {
             let schema = Schema([Session.self, Message.self, Workspace.self])
             let config = ModelConfiguration(schema: schema)

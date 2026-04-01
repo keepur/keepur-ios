@@ -64,6 +64,19 @@ enum KeychainManager {
         deviceName = nil
     }
 
+    static func migrateAccessibility() {
+        let migrationKey = "keychain_accessibility_migrated_v1"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        for key in [tokenKey, deviceIdKey, deviceNameKey] {
+            if let value = read(key: key) {
+                save(key: key, value: value)
+            }
+        }
+
+        UserDefaults.standard.set(true, forKey: migrationKey)
+    }
+
     // MARK: - Private
 
     private static func save(key: String, value: String) {
@@ -73,6 +86,7 @@ enum KeychainManager {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecValueData as String: data
         ]
         SecItemAdd(query as CFDictionary, nil)
