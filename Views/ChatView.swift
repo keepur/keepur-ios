@@ -28,7 +28,10 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(messages, id: \.id) { message in
-                            MessageBubble(message: message)
+                            MessageBubble(
+                                message: message,
+                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id)
+                            )
                                 .id(message.id)
                         }
 
