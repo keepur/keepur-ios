@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 
 struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
@@ -7,6 +8,15 @@ struct SettingsView: View {
     @State private var showUnpairConfirmation = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workspace.lastUsed, order: .reverse) private var savedWorkspaces: [Workspace]
+
+    private var englishVoices: [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.lowercased().hasPrefix("en") }
+            .sorted { lhs, rhs in
+                if lhs.quality != rhs.quality { return lhs.quality.rawValue > rhs.quality.rawValue }
+                return lhs.name < rhs.name
+            }
+    }
 
     var body: some View {
         NavigationStack {
@@ -85,6 +95,31 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Voice") {
+                    ForEach(englishVoices, id: \.identifier) { voice in
+                        Button {
+                            viewModel.speechManager.selectedVoiceId = voice.identifier
+                            viewModel.speechManager.speak("Hello, I'm \(voice.name).")
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(voice.name)
+                                        .font(.body)
+                                    Text(qualityLabel(voice.quality))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if viewModel.speechManager.selectedVoiceId == voice.identifier {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.accent)
+                                }
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+
                 Section {
                     Button(viewModel.ws.isConnected ? "Disconnect" : "Reconnect") {
                         if viewModel.ws.isConnected {
@@ -118,6 +153,14 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
+        switch quality {
+        case .premium: "Premium"
+        case .enhanced: "Enhanced"
+        default: "Default"
         }
     }
 }
