@@ -32,8 +32,8 @@ struct ChatView: View {
                                 .id(message.id)
                         }
 
-                        if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" {
-                            StatusIndicator(status: viewModel.statusFor(sessionId))
+                        if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
+                            StatusIndicator(status: viewModel.statusFor(sessionId), onCancel: { viewModel.cancelCurrentOperation() })
                                 .id("status")
                         }
                     }
@@ -46,7 +46,7 @@ struct ChatView: View {
                     }
                 }
                 .onChange(of: viewModel.sessionStatuses[sessionId]) {
-                    if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" {
+                    if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
                         withAnimation {
                             proxy.scrollTo("status", anchor: .bottom)
                         }
@@ -164,6 +164,7 @@ struct ChatView: View {
 
 struct StatusIndicator: View {
     let status: String
+    var onCancel: (() -> Void)? = nil
     @State private var phase = 0.0
 
     var body: some View {
@@ -176,6 +177,13 @@ struct StatusIndicator: View {
                             .frame(width: 8, height: 8)
                             .offset(y: sin(phase + Double(i) * 0.8) * 4)
                     }
+                } else if status == "busy" {
+                    Image(systemName: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Server busy...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else {
                     Image(systemName: "hammer.fill")
                         .font(.caption)
@@ -183,6 +191,14 @@ struct StatusIndicator: View {
                     Text("Running tool...")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                if let onCancel {
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(.horizontal, 16)
