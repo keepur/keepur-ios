@@ -19,8 +19,7 @@ struct ChatView: View {
 
     private var navigationTitle: String {
         guard let session = allSessions.first(where: { $0.id == sessionId }) else { return "Keepur" }
-        let name = URL(fileURLWithPath: session.path).lastPathComponent
-        return name.isEmpty ? "Keepur" : name
+        return session.displayName
     }
 
     var body: some View {

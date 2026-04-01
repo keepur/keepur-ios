@@ -9,6 +9,8 @@ struct SessionListView: View {
     @State private var daysRemaining: Int?
     @State private var showSettings = false
     @State private var showWorkspacePicker = false
+    @State private var renamingSession: Session?
+    @State private var renameText = ""
 
     var body: some View {
         NavigationStack {
@@ -52,6 +54,14 @@ struct SessionListView: View {
                             viewModel.clearSession(sessionId: session.id)
                         } label: {
                             Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .contextMenu {
+                        Button {
+                            renameText = session.name ?? ""
+                            renamingSession = session
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
                         }
                     }
                 }
@@ -107,6 +117,22 @@ struct SessionListView: View {
             .sheet(isPresented: $showWorkspacePicker) {
                 WorkspacePickerView(viewModel: viewModel)
             }
+            .alert("Rename Session", isPresented: Binding(
+                get: { renamingSession != nil },
+                set: { if !$0 { renamingSession = nil } }
+            )) {
+                TextField("Session name", text: $renameText)
+                Button("Save") {
+                    if let session = renamingSession {
+                        session.name = renameText.isEmpty ? nil : renameText
+                        try? modelContext.save()
+                    }
+                    renamingSession = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    renamingSession = nil
+                }
+            }
         }
     }
 }
@@ -130,7 +156,7 @@ struct SessionRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(displayName)
+                    Text(session.displayName)
                         .font(.body)
                         .fontWeight(.medium)
                     if isActive {
@@ -173,10 +199,6 @@ struct SessionRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
-    }
-
-    private var displayName: String {
-        URL(fileURLWithPath: session.path).lastPathComponent
     }
 
     private var lastMessagePreview: String? {
