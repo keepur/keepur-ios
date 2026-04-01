@@ -20,7 +20,8 @@ final class WebSocketManager: ObservableObject {
     func connect() {
         guard !isConnected else { return }
         guard let token = KeychainManager.token else {
-            onAuthFailure?()
+            // Token unreadable — may be transient Keychain failure.
+            // Server auth is validated by the /me REST call in RootView.
             return
         }
 
@@ -97,7 +98,12 @@ final class WebSocketManager: ObservableObject {
                     }
                     self.receiveMessage()
                 case .failure:
-                    self.handleDisconnect()
+                    let closeCode = self.webSocketTask?.closeCode ?? .invalid
+                    if closeCode.rawValue == 4001 {
+                        self.onAuthFailure?()
+                    } else {
+                        self.handleDisconnect()
+                    }
                 }
             }
         }
