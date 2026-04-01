@@ -99,26 +99,7 @@ struct SettingsView: View {
 
                 Section("Voice") {
                     ForEach(englishVoices, id: \.identifier) { voice in
-                        Button {
-                            viewModel.speechManager.selectedVoiceId = voice.identifier
-                            viewModel.speechManager.speak("Hello, I'm \(voice.name).")
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(voice.name)
-                                        .font(.body)
-                                    Text(qualityLabel(voice.quality))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if viewModel.speechManager.selectedVoiceId == voice.identifier {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.accent)
-                                }
-                            }
-                        }
-                        .foregroundStyle(.primary)
+                        voiceRow(voice)
                     }
                 }
 
@@ -158,11 +139,36 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
+        Button {
+            viewModel.speechManager.selectedVoiceId = voice.identifier
+            let preview = "Hello, I'm " + voice.name + "."
+            viewModel.speechManager.speak(preview)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(voice.name)
+                        .font(.body)
+                    Text(qualityLabel(voice.quality))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if viewModel.speechManager.selectedVoiceId == voice.identifier {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+        .foregroundStyle(.primary)
+    }
+
     private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
         switch quality {
-        case .premium: "Premium"
-        case .enhanced: "Enhanced"
-        default: "Default"
+        case .premium: return "Premium"
+        case .enhanced: return "Enhanced"
+        default: return "Default"
         }
     }
 }
