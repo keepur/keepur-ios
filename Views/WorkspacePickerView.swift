@@ -5,6 +5,12 @@ struct WorkspacePickerView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Workspace.lastUsed, order: .reverse) private var recentWorkspaces: [Workspace]
+    @Query(sort: \Session.createdAt, order: .reverse) private var allSessions: [Session]
+
+    private var sessionsAtPath: [Session] {
+        guard !viewModel.browsePath.isEmpty else { return [] }
+        return allSessions.filter { $0.path == viewModel.browsePath && !$0.isStale }
+    }
 
     var body: some View {
         NavigationStack {
@@ -103,6 +109,34 @@ struct WorkspacePickerView: View {
                     }
                 } header: {
                     Text("Browse")
+                }
+
+                if !sessionsAtPath.isEmpty {
+                    Section("Existing Sessions") {
+                        ForEach(sessionsAtPath, id: \.id) { session in
+                            Button {
+                                viewModel.currentSessionId = session.id
+                                viewModel.currentPath = session.path
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .foregroundStyle(.green)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(session.id.prefix(8) + "…")
+                                            .font(.body)
+                                        Text(session.createdAt, style: .relative)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.right.circle")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
                 }
             }
             .navigationTitle("Select Workspace")
