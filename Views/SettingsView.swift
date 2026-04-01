@@ -10,12 +10,14 @@ struct SettingsView: View {
     @Query(sort: \Workspace.lastUsed, order: .reverse) private var savedWorkspaces: [Workspace]
 
     private var englishVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
+        let voices = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.lowercased().hasPrefix("en") }
-            .sorted { lhs, rhs in
-                if lhs.quality != rhs.quality { return lhs.quality.rawValue > rhs.quality.rawValue }
-                return lhs.name < rhs.name
+        return voices.sorted { (lhs: AVSpeechSynthesisVoice, rhs: AVSpeechSynthesisVoice) -> Bool in
+            if lhs.quality.rawValue != rhs.quality.rawValue {
+                return lhs.quality.rawValue > rhs.quality.rawValue
             }
+            return lhs.name < rhs.name
+        }
     }
 
     var body: some View {
