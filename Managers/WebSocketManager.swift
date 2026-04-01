@@ -15,14 +15,30 @@ final class WebSocketManager: ObservableObject {
     private var reconnectAttempts = 0
     private var isReconnecting = false
     private let maxReconnectDelay: TimeInterval = 30
+    private var tokenReadRetries = 0
+    private let maxTokenReadRetries = 3
     private let baseURL = "ws://beekeeper.dodihome.com"
 
     func connect() {
         guard !isConnected else { return }
         guard let token = KeychainManager.token else {
-            onAuthFailure?()
+            // Token unreadable — may be transient Keychain failure.
+            // Retry a few times, then fall through to reconnect backoff.
+            if tokenReadRetries < maxTokenReadRetries {
+                tokenReadRetries += 1
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(2))
+                    self?.connect()
+                }
+            } else {
+                // Retries exhausted — reset counter and schedule reconnect
+                // so the next cycle gets a fresh set of retries.
+                tokenReadRetries = 0
+                handleDisconnect()
+            }
             return
         }
+        tokenReadRetries = 0
 
         cleanupConnection()
 
@@ -41,6 +57,7 @@ final class WebSocketManager: ObservableObject {
 
     func disconnect() {
         isReconnecting = false
+        tokenReadRetries = 0
         pingTimer?.invalidate()
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -97,7 +114,12 @@ final class WebSocketManager: ObservableObject {
                     }
                     self.receiveMessage()
                 case .failure:
-                    self.handleDisconnect()
+                    let closeCode = self.webSocketTask?.closeCode ?? .invalid
+                    if closeCode.rawValue == 4001 {
+                        self.onAuthFailure?()
+                    } else {
+                        self.handleDisconnect()
+                    }
                 }
             }
         }

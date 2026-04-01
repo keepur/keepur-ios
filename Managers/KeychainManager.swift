@@ -64,6 +64,26 @@ enum KeychainManager {
         deviceName = nil
     }
 
+    static func migrateAccessibility() {
+        let migrationKey = "keychain_accessibility_migrated_v1"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        var migrated = false
+        for key in [tokenKey, deviceIdKey, deviceNameKey] {
+            if let value = read(key: key) {
+                save(key: key, value: value)
+                migrated = true
+            }
+        }
+
+        // Only mark complete if items were actually migrated.
+        // On cold boot before first unlock, old items may be unreadable —
+        // we need to retry on next launch.
+        if migrated {
+            UserDefaults.standard.set(true, forKey: migrationKey)
+        }
+    }
+
     // MARK: - Private
 
     private static func save(key: String, value: String) {
@@ -73,6 +93,7 @@ enum KeychainManager {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecValueData as String: data
         ]
         SecItemAdd(query as CFDictionary, nil)
