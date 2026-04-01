@@ -79,10 +79,10 @@ final class KeychainTransientTests: XCTestCase {
         XCTAssertEqual(KeychainManager.deviceName, "My iPhone")
     }
 
-    func testMigrateAccessibilityHandlesEmptyKeychain() {
-        // No items saved — migration should complete without error
+    func testMigrateAccessibilityDoesNotMarkCompleteWhenEmpty() {
+        // No items saved — migration should NOT mark complete so it retries next launch
         KeychainManager.migrateAccessibility()
-        XCTAssertTrue(UserDefaults.standard.bool(forKey: "keychain_accessibility_migrated_v1"))
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "keychain_accessibility_migrated_v1"))
     }
 
     // MARK: - Nil Token Doesn't Pair

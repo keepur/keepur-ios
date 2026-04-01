@@ -68,13 +68,20 @@ enum KeychainManager {
         let migrationKey = "keychain_accessibility_migrated_v1"
         guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
 
+        var migrated = false
         for key in [tokenKey, deviceIdKey, deviceNameKey] {
             if let value = read(key: key) {
                 save(key: key, value: value)
+                migrated = true
             }
         }
 
-        UserDefaults.standard.set(true, forKey: migrationKey)
+        // Only mark complete if items were actually migrated.
+        // On cold boot before first unlock, old items may be unreadable —
+        // we need to retry on next launch.
+        if migrated {
+            UserDefaults.standard.set(true, forKey: migrationKey)
+        }
     }
 
     // MARK: - Private

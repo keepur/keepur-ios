@@ -15,13 +15,22 @@ final class WebSocketManager: ObservableObject {
     private var reconnectAttempts = 0
     private var isReconnecting = false
     private let maxReconnectDelay: TimeInterval = 30
+    private var tokenReadRetries = 0
+    private let maxTokenReadRetries = 3
     private let baseURL = "ws://beekeeper.dodihome.com"
 
     func connect() {
         guard !isConnected else { return }
         guard let token = KeychainManager.token else {
             // Token unreadable — may be transient Keychain failure.
-            // Server auth is validated by the /me REST call in RootView.
+            // Retry a few times before giving up.
+            if tokenReadRetries < maxTokenReadRetries {
+                tokenReadRetries += 1
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    self.connect()
+                }
+            }
             return
         }
 
@@ -35,6 +44,7 @@ final class WebSocketManager: ObservableObject {
 
         isConnected = true
         reconnectAttempts = 0
+        tokenReadRetries = 0
         isReconnecting = false
         startPing()
         receiveMessage()
