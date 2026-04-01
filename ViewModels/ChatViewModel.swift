@@ -7,9 +7,14 @@ import Combine
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
     @Published var sessionStatuses: [String: String] = [:]
+    @Published var sessionToolNames: [String: String] = [:]
 
     func statusFor(_ sessionId: String) -> String {
         sessionStatuses[sessionId] ?? "idle"
+    }
+
+    func toolNameFor(_ sessionId: String) -> String? {
+        sessionToolNames[sessionId]
     }
     @Published var currentPath: String = ""
     @Published var currentSessionId: String?
@@ -141,11 +146,18 @@ final class ChatViewModel: ObservableObject {
             }
             pendingApprovals[effectiveSessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
-        case .status(let state, let sessionId):
+        case .status(let state, let sessionId, let toolName):
             let effectiveId = sessionId ?? currentSessionId
             if let effectiveId {
                 let previousState = sessionStatuses[effectiveId]
                 sessionStatuses[effectiveId] = state
+
+                // Store or clear tool name based on state
+                if state == "tool_running", let toolName {
+                    sessionToolNames[effectiveId] = toolName
+                } else if state != "tool_running" {
+                    sessionToolNames.removeValue(forKey: effectiveId)
+                }
 
                 // Flush pending messages when transitioning away from busy
                 if previousState == "busy" && state != "busy" {
@@ -160,6 +172,7 @@ final class ChatViewModel: ObservableObject {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                     pendingApprovals.removeValue(forKey: effectiveId)
                     sessionStatuses.removeValue(forKey: effectiveId)
+                    sessionToolNames.removeValue(forKey: effectiveId)
                 }
             }
 

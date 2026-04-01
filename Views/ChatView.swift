@@ -36,7 +36,7 @@ struct ChatView: View {
                         }
 
                         if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
-                            StatusIndicator(status: viewModel.statusFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
+                            StatusIndicator(status: viewModel.statusFor(sessionId), toolName: viewModel.toolNameFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
                                 .id("status")
                         }
                     }
@@ -167,6 +167,7 @@ struct ChatView: View {
 
 struct StatusIndicator: View {
     let status: String
+    var toolName: String? = nil
     var onCancel: (() -> Void)? = nil
     @State private var phase = 0.0
 
@@ -191,7 +192,7 @@ struct StatusIndicator: View {
                     Image(systemName: "hammer.fill")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Running tool...")
+                    Text("Running \(toolName ?? "tool")...")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
