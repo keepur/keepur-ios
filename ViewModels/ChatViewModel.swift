@@ -66,8 +66,7 @@ final class ChatViewModel: ObservableObject {
         messageText = ""
     }
 
-    func cancelCurrentOperation() {
-        guard let sessionId = currentSessionId else { return }
+    func cancelCurrentOperation(for sessionId: String) {
         ws.send(.cancel(sessionId: sessionId))
         clearPendingMessages(for: sessionId)
     }

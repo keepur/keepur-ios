@@ -36,7 +36,7 @@ struct ChatView: View {
                         }
 
                         if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
-                            StatusIndicator(status: viewModel.statusFor(sessionId), onCancel: { viewModel.cancelCurrentOperation() })
+                            StatusIndicator(status: viewModel.statusFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
                                 .id("status")
                         }
                     }
