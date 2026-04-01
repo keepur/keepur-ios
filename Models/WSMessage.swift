@@ -127,6 +127,7 @@ enum WSIncoming {
             guard let path = json["path"] as? String,
                   let sessionsArray = json["sessions"] as? [[String: Any]] else { return nil }
             let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let sessions = sessionsArray.compactMap { dict -> WorkspaceSession? in
                 guard let sessionId = dict["sessionId"] as? String,
                       let lastActiveStr = dict["lastActiveAt"] as? String,
