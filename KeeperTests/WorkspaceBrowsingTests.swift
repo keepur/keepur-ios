@@ -181,10 +181,13 @@ final class WorkspaceBrowsingTests: XCTestCase {
 
     // MARK: - Edge Cases
 
-    func testUnknownTypeReturnsNil() {
+    func testUnknownTypeReturnsUnknown() {
         let json: [String: Any] = ["type": "unknown_event"]
         let data = try! JSONSerialization.data(withJSONObject: json)
-        XCTAssertNil(WSIncoming.decode(from: data))
+        guard case .unknown(let raw) = WSIncoming.decode(from: data) else {
+            XCTFail("Expected unknown"); return
+        }
+        XCTAssertFalse(raw.isEmpty)
     }
 
     func testMissingTypeReturnsNil() {

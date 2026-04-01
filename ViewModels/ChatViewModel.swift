@@ -21,6 +21,7 @@ final class ChatViewModel: ObservableObject {
     private var isBrowsePending = false
     @Published var serverSessions: [ServerSession] = []
     @Published var workspaceSessions: [WorkspaceSession] = []
+    @Published var pendingMessageIds: Set<String> = []
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -28,6 +29,7 @@ final class ChatViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
     private var lastCompletedMessageIds: [String: String] = [:]
+    private var pendingMessages: [(text: String, messageId: String, sessionId: String)] = []
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
@@ -55,8 +57,18 @@ final class ChatViewModel: ObservableObject {
         context.insert(message)
         try? context.save()
 
-        ws.send(.message(text: text, sessionId: sessionId))
+        if statusFor(sessionId) == "busy" {
+            pendingMessages.append((text: text, messageId: message.id, sessionId: sessionId))
+            pendingMessageIds.insert(message.id)
+        } else {
+            ws.send(.message(text: text, sessionId: sessionId))
+        }
         messageText = ""
+    }
+
+    func cancelCurrentOperation(for sessionId: String) {
+        ws.send(.cancel(sessionId: sessionId))
+        clearPendingMessages(for: sessionId)
     }
 
     func sendVoiceText() {
@@ -132,7 +144,18 @@ final class ChatViewModel: ObservableObject {
         case .status(let state, let sessionId):
             let effectiveId = sessionId ?? currentSessionId
             if let effectiveId {
+                let previousState = sessionStatuses[effectiveId]
                 sessionStatuses[effectiveId] = state
+
+                // Flush pending messages when transitioning away from busy
+                if previousState == "busy" && state != "busy" {
+                    if state == "session_ended" {
+                        clearPendingMessages(for: effectiveId)
+                    } else {
+                        flushPendingMessages(for: effectiveId)
+                    }
+                }
+
                 if state == "session_ended" {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                     pendingApprovals.removeValue(forKey: effectiveId)
@@ -190,7 +213,27 @@ final class ChatViewModel: ObservableObject {
 
         case .pong:
             break
+
+        case .unknown(let raw):
+            let targetSessionId = currentSessionId ?? "unknown"
+            let msg = Message(sessionId: targetSessionId, text: raw, role: "unknown")
+            context.insert(msg)
+            try? context.save()
         }
+    }
+
+    private func flushPendingMessages(for sessionId: String) {
+        let toSend = pendingMessages.filter { $0.sessionId == sessionId }
+        clearPendingMessages(for: sessionId)
+        for pending in toSend {
+            ws.send(.message(text: pending.text, sessionId: pending.sessionId))
+        }
+    }
+
+    private func clearPendingMessages(for sessionId: String) {
+        let removedIds = Set(pendingMessages.filter { $0.sessionId == sessionId }.map { $0.messageId })
+        pendingMessages.removeAll { $0.sessionId == sessionId }
+        pendingMessageIds.subtract(removedIds)
     }
 
     private func handleStreamingMessage(text: String, sessionId: String, final: Bool, context: ModelContext) {
