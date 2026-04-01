@@ -20,6 +20,7 @@ final class ChatViewModel: ObservableObject {
     @Published var browseError: String?
     private var isBrowsePending = false
     @Published var serverSessions: [ServerSession] = []
+    @Published var workspaceSessions: [WorkspaceSession] = []
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -76,6 +77,15 @@ final class ChatViewModel: ObservableObject {
 
     func listSessions() {
         ws.send(.listSessions)
+    }
+
+    func listWorkspaceSessions(path: String) {
+        workspaceSessions = []
+        ws.send(.listWorkspaceSessions(path: path))
+    }
+
+    func resumeSession(sessionId: String, path: String) {
+        ws.send(.resumeSession(sessionId: sessionId, path: path))
     }
 
     func browse(path: String? = nil) {
@@ -161,6 +171,10 @@ final class ChatViewModel: ObservableObject {
             isBrowsePending = false
             browsePath = path
             browseEntries = entries
+            listWorkspaceSessions(path: path)
+
+        case .workspaceSessionList(_, let sessions):
+            workspaceSessions = sessions
 
         case .error(let message, let sessionId):
             if sessionId == nil && isBrowsePending {

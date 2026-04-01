@@ -5,12 +5,6 @@ struct WorkspacePickerView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Workspace.lastUsed, order: .reverse) private var recentWorkspaces: [Workspace]
-    @Query(sort: \Session.createdAt, order: .reverse) private var allSessions: [Session]
-
-    private var sessionsAtPath: [Session] {
-        guard !viewModel.browsePath.isEmpty else { return [] }
-        return allSessions.filter { $0.path == viewModel.browsePath && !$0.isStale }
-    }
 
     var body: some View {
         NavigationStack {
@@ -111,27 +105,39 @@ struct WorkspacePickerView: View {
                     Text("Browse")
                 }
 
-                if !sessionsAtPath.isEmpty {
-                    Section("Existing Sessions") {
-                        ForEach(sessionsAtPath, id: \.id) { session in
+                if !viewModel.workspaceSessions.isEmpty {
+                    Section("Session History") {
+                        ForEach(viewModel.workspaceSessions, id: \.sessionId) { ws in
                             Button {
-                                viewModel.currentSessionId = session.id
-                                viewModel.currentPath = session.path
+                                if ws.active {
+                                    viewModel.currentSessionId = ws.sessionId
+                                    viewModel.currentPath = viewModel.browsePath
+                                } else {
+                                    viewModel.resumeSession(sessionId: ws.sessionId, path: viewModel.browsePath)
+                                }
                                 dismiss()
                             } label: {
                                 HStack {
-                                    Image(systemName: "bubble.left.and.bubble.right")
-                                        .foregroundStyle(.green)
+                                    Image(systemName: ws.active ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
+                                        .foregroundStyle(ws.active ? .green : .secondary)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(session.id.prefix(8) + "…")
-                                            .font(.body)
-                                        Text(session.createdAt, style: .relative)
+                                        Text(ws.preview)
+                                            .font(.subheadline)
+                                            .lineLimit(2)
+                                        Text(ws.lastActiveAt, style: .relative)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "arrow.right.circle")
-                                        .foregroundStyle(.secondary)
+                                    if ws.active {
+                                        Text("Active")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.green.opacity(0.2))
+                                            .clipShape(Capsule())
+                                            .foregroundStyle(.green)
+                                    }
                                 }
                             }
                             .foregroundStyle(.primary)
@@ -157,6 +163,7 @@ struct WorkspacePickerView: View {
                 viewModel.browsePath = ""
                 viewModel.browseEntries = []
                 viewModel.browseError = nil
+                viewModel.workspaceSessions = []
                 viewModel.browse()
             }
         }

@@ -13,6 +13,13 @@ struct BrowseEntry {
     let isDirectory: Bool
 }
 
+struct WorkspaceSession {
+    let sessionId: String
+    let lastActiveAt: Date
+    let preview: String
+    let active: Bool
+}
+
 // MARK: - Client -> Server
 
 enum WSOutgoing {
@@ -21,6 +28,8 @@ enum WSOutgoing {
     case clearSession(sessionId: String)
     case listSessions
     case browse(path: String? = nil)
+    case listWorkspaceSessions(path: String)
+    case resumeSession(sessionId: String, path: String)
     case approve(toolUseId: String)
     case deny(toolUseId: String)
     case ping
@@ -40,6 +49,10 @@ enum WSOutgoing {
             var d: [String: Any] = ["type": "browse"]
             if let path { d["path"] = path }
             dict = d
+        case .listWorkspaceSessions(let path):
+            dict = ["type": "list_workspace_sessions", "path": path]
+        case .resumeSession(let sessionId, let path):
+            dict = ["type": "resume_session", "sessionId": sessionId, "path": path]
         case .approve(let toolUseId):
             dict = ["type": "approve", "toolUseId": toolUseId]
         case .deny(let toolUseId):
@@ -61,6 +74,7 @@ enum WSIncoming {
     case sessionList(sessions: [ServerSession])
     case sessionCleared(sessionId: String)
     case browseResult(path: String, entries: [BrowseEntry])
+    case workspaceSessionList(path: String, sessions: [WorkspaceSession])
     case error(message: String, sessionId: String?)
     case pong
 
@@ -109,6 +123,19 @@ enum WSIncoming {
                 return BrowseEntry(name: name, isDirectory: isDirectory)
             }
             return .browseResult(path: path, entries: entries)
+        case "workspace_session_list":
+            guard let path = json["path"] as? String,
+                  let sessionsArray = json["sessions"] as? [[String: Any]] else { return nil }
+            let iso = ISO8601DateFormatter()
+            let sessions = sessionsArray.compactMap { dict -> WorkspaceSession? in
+                guard let sessionId = dict["sessionId"] as? String,
+                      let lastActiveStr = dict["lastActiveAt"] as? String,
+                      let preview = dict["preview"] as? String,
+                      let active = dict["active"] as? Bool,
+                      let lastActive = iso.date(from: lastActiveStr) else { return nil }
+                return WorkspaceSession(sessionId: sessionId, lastActiveAt: lastActive, preview: preview, active: active)
+            }
+            return .workspaceSessionList(path: path, sessions: sessions)
         case "error":
             guard let message = json["message"] as? String else { return nil }
             let sessionId = json["sessionId"] as? String
