@@ -10,6 +10,8 @@ struct MessageBubble: View {
         switch message.role {
         case "user":
             userBubble
+        case "tool":
+            toolBubble
         case "system":
             systemBubble
         case "unknown":
@@ -112,6 +114,51 @@ struct MessageBubble: View {
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 8)
             Spacer()
+        }
+    }
+
+    private var toolBubble: some View {
+        let parts = message.text.split(separator: "\n", maxSplits: 1)
+        let raw = parts.first.map(String.init) ?? ""
+        let toolName: String = if raw.hasPrefix("[") && raw.hasSuffix("]") {
+            String(raw.dropFirst().dropLast())
+        } else {
+            raw.isEmpty ? "Tool" : raw
+        }
+        let output = parts.count > 1 ? String(parts[1]) : ""
+
+        return HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "terminal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(toolName)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ScrollView {
+                        Text(output)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .frame(maxHeight: 200)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.systemGray6))
+                )
+
+                Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 60)
         }
     }
 }

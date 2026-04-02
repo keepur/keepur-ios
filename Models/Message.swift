@@ -6,7 +6,7 @@ final class Message {
     @Attribute(.unique) var id: String
     var sessionId: String
     var text: String
-    var role: String  // "user", "assistant", "system"
+    var role: String  // "user", "assistant", "system", "tool"
     var timestamp: Date
 
     init(
