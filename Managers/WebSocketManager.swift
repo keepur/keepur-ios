@@ -71,6 +71,7 @@ final class WebSocketManager: ObservableObject {
         guard isConnected,
               let data = try? outgoing.encode(),
               let string = String(data: data, encoding: .utf8) else { return }
+        print("[WS send] \(string.prefix(200))")
         webSocketTask?.send(.string(string)) { [weak self] error in
             if error != nil {
                 Task { @MainActor in
@@ -100,6 +101,7 @@ final class WebSocketManager: ObservableObject {
                 case .success(let message):
                     switch message {
                     case .string(let text):
+                        print("[WS recv] \(text.prefix(200))")
                         if let data = text.data(using: .utf8) {
                             let incoming = WSIncoming.decode(from: data)
                                 ?? .unknown(raw: text)
