@@ -30,7 +30,10 @@ struct ChatView: View {
                         ForEach(messages, id: \.id) { message in
                             MessageBubble(
                                 message: message,
-                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id)
+                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id),
+                                onSpeak: message.role == "assistant" ? { text in
+                                    viewModel.speechManager.speak(text)
+                                } : nil
                             )
                                 .id(message.id)
                         }
@@ -42,6 +45,11 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
+                }
+                .onAppear {
+                    if let lastId = messages.last?.id {
+                        proxy.scrollTo(lastId, anchor: .bottom)
+                    }
                 }
                 .onChange(of: messages.count) {
                     withAnimation {
@@ -70,14 +78,19 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 8) {
-                    // Read aloud toggle
                     Button {
-                        autoReadAloud.toggle()
+                        if viewModel.speechManager.isSpeaking {
+                            viewModel.speechManager.stopSpeaking()
+                        } else {
+                            autoReadAloud.toggle()
+                        }
                     } label: {
-                        Image(systemName: autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                        Image(systemName: viewModel.speechManager.isSpeaking ? "stop.circle.fill"
+                              : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
                             .font(.subheadline)
                     }
-                    .foregroundStyle(autoReadAloud ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(viewModel.speechManager.isSpeaking ? .red
+                                     : autoReadAloud ? Color.accentColor : Color.secondary)
 
                     Button {
                         showSettings = true

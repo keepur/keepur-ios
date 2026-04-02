@@ -4,6 +4,7 @@ import UIKit
 struct MessageBubble: View {
     let message: Message
     var showWaitingBadge: Bool = false
+    var onSpeak: ((String) -> Void)? = nil
     @State private var isPulsing = false
 
     var body: some View {
@@ -73,9 +74,19 @@ struct MessageBubble: View {
                             .fill(Color(.systemGray5))
                     )
 
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 12) {
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    if let onSpeak {
+                        Button { onSpeak(message.text) } label: {
+                            Image(systemName: "speaker.wave.2")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             Spacer(minLength: 60)
         }
