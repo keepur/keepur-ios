@@ -231,6 +231,11 @@ final class ChatViewModel: ObservableObject {
         case .pong:
             break
 
+        case .toolOutput(let toolName, let output, _, let sessionId):
+            let msg = Message(sessionId: sessionId, text: "[\(toolName)]\n\(output)", role: "tool")
+            context.insert(msg)
+            try? context.save()
+
         case .unknown(let raw):
             let targetSessionId = currentSessionId ?? "unknown"
             let msg = Message(sessionId: targetSessionId, text: raw, role: "unknown")
