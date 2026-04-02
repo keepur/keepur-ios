@@ -53,6 +53,9 @@ final class ChatViewModel: ObservableObject {
         ws.onAuthFailure = { [weak self] in
             self?.unpair()
         }
+        ws.onConnect = { [weak self] in
+            self?.listSessions()
+        }
         ws.connect()
     }
 
@@ -326,6 +329,20 @@ final class ChatViewModel: ObservableObject {
         for server in serverSessions where !localIds.contains(server.sessionId) {
             let session = Session(id: server.sessionId, path: server.path)
             context.insert(session)
+        }
+
+        // Reconcile session statuses from server state
+        for server in serverSessions {
+            let serverState = server.state  // "idle" or "busy"
+            let clientState = sessionStatuses[server.sessionId]
+            if clientState != nil && clientState != "idle" && serverState == "idle" {
+                sessionStatuses[server.sessionId] = "idle"
+                busyTimers[server.sessionId]?.cancel()
+                busyTimers.removeValue(forKey: server.sessionId)
+                flushNextPendingMessage(for: server.sessionId)
+            } else if clientState == nil || clientState == "idle" {
+                sessionStatuses[server.sessionId] = serverState
+            }
         }
 
         try? context.save()
