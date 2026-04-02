@@ -115,7 +115,7 @@ final class ChatResilienceTests: XCTestCase {
             "sessionId": "sess-1"
         ]
         let data = try! JSONSerialization.data(withJSONObject: json)
-        guard case .status(let state, let sessionId) = WSIncoming.decode(from: data) else {
+        guard case .status(let state, let sessionId, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
         XCTAssertEqual(state, "busy")
@@ -128,7 +128,7 @@ final class ChatResilienceTests: XCTestCase {
             "state": "busy"
         ]
         let data = try! JSONSerialization.data(withJSONObject: json)
-        guard case .status(let state, let sessionId) = WSIncoming.decode(from: data) else {
+        guard case .status(let state, let sessionId, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
         XCTAssertEqual(state, "busy")
