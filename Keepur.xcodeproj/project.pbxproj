@@ -11,6 +11,7 @@
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
+		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,6 +30,7 @@
 		A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
 		D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResilienceTests.swift; sourceTree = "<group>"; };
+		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -99,6 +101,7 @@
 		B293D6AC70744BEAB61BD645 /* KeeperTests */ = {
 			isa = PBXGroup;
 			children = (
+				E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */,
 				D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */,
 				CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */,
 			);
@@ -221,6 +224,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */,
 				D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */,
 				CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */,
 			);
