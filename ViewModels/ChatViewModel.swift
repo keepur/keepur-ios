@@ -35,6 +35,8 @@ final class ChatViewModel: ObservableObject {
     private var streamingMessageIds: [String: String] = [:]
     private var lastCompletedMessageIds: [String: String] = [:]
     private var pendingMessages: [(text: String, messageId: String, sessionId: String)] = []
+    private static let staleBusyTimeout: TimeInterval = 90
+    private var busyTimers: [String: Task<Void, Never>] = [:]
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
@@ -162,6 +164,20 @@ final class ChatViewModel: ObservableObject {
                     sessionToolNames.removeValue(forKey: effectiveId)
                 }
 
+                // Stale-busy watchdog
+                if state != "idle" && state != "session_ended" {
+                    busyTimers[effectiveId]?.cancel()
+                    busyTimers[effectiveId] = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(Self.staleBusyTimeout))
+                        guard !Task.isCancelled else { return }
+                        self?.sessionStatuses[effectiveId] = "idle"
+                        self?.flushNextPendingMessage(for: effectiveId)
+                    }
+                } else {
+                    busyTimers[effectiveId]?.cancel()
+                    busyTimers.removeValue(forKey: effectiveId)
+                }
+
                 // Flush next pending message when session becomes idle
                 if state == "idle" && !pendingMessages.filter({ $0.sessionId == effectiveId }).isEmpty {
                     flushNextPendingMessage(for: effectiveId)
@@ -173,6 +189,8 @@ final class ChatViewModel: ObservableObject {
                     sessionStatuses.removeValue(forKey: effectiveId)
                     sessionToolNames.removeValue(forKey: effectiveId)
                     clearPendingMessages(for: effectiveId)
+                    busyTimers[effectiveId]?.cancel()
+                    busyTimers.removeValue(forKey: effectiveId)
                 }
             }
 
