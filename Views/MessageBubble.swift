@@ -119,7 +119,12 @@ struct MessageBubble: View {
 
     private var toolBubble: some View {
         let parts = message.text.split(separator: "\n", maxSplits: 1)
-        let toolName = parts.first.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "[]")) } ?? "Tool"
+        let raw = parts.first.map(String.init) ?? ""
+        let toolName: String = if raw.hasPrefix("[") && raw.hasSuffix("]") {
+            String(raw.dropFirst().dropLast())
+        } else {
+            raw.isEmpty ? "Tool" : raw
+        }
         let output = parts.count > 1 ? String(parts[1]) : ""
 
         return HStack {
@@ -133,19 +138,17 @@ struct MessageBubble: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ScrollView {
-                    Text(output)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 200)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(.systemGray6))
-                )
+                Text(output)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, maxHeight: 200, alignment: .topLeading)
+                    .clipped()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.systemGray6))
+                    )
 
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
