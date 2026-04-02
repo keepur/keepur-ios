@@ -80,6 +80,7 @@ enum WSIncoming {
     case workspaceSessionList(path: String, sessions: [WorkspaceSession])
     case error(message: String, sessionId: String?)
     case pong
+    case toolOutput(toolName: String, output: String, toolUseId: String, sessionId: String)
     case unknown(raw: String)
 
     static func decode(from data: Data) -> WSIncoming? {
@@ -148,6 +149,12 @@ enum WSIncoming {
             return .error(message: message, sessionId: sessionId)
         case "pong":
             return .pong
+        case "tool_output":
+            guard let toolName = json["toolName"] as? String,
+                  let output = json["output"] as? String,
+                  let toolUseId = json["toolUseId"] as? String,
+                  let sessionId = json["sessionId"] as? String else { return nil }
+            return .toolOutput(toolName: toolName, output: output, toolUseId: toolUseId, sessionId: sessionId)
         default:
             let raw = extractText(from: json) ?? String(data: data, encoding: .utf8) ?? ""
             return .unknown(raw: raw)
