@@ -35,7 +35,7 @@ struct ChatView: View {
                                 .id(message.id)
                         }
 
-                        if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
+                        if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
                             StatusIndicator(status: viewModel.statusFor(sessionId), toolName: viewModel.toolNameFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
                                 .id("status")
                         }
@@ -49,7 +49,7 @@ struct ChatView: View {
                     }
                 }
                 .onChange(of: viewModel.sessionStatuses[sessionId]) {
-                    if viewModel.statusFor(sessionId) == "thinking" || viewModel.statusFor(sessionId) == "tool_running" || viewModel.statusFor(sessionId) == "busy" {
+                    if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
                         withAnimation {
                             proxy.scrollTo("status", anchor: .bottom)
                         }
