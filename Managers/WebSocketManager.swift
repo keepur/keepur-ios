@@ -8,6 +8,7 @@ final class WebSocketManager: ObservableObject {
 
     var onMessage: ((WSIncoming) -> Void)?
     var onAuthFailure: (() -> Void)?
+    var onConnect: (() -> Void)?
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -53,6 +54,7 @@ final class WebSocketManager: ObservableObject {
         isReconnecting = false
         startPing()
         receiveMessage()
+        onConnect?()
     }
 
     func disconnect() {
