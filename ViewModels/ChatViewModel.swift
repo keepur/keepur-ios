@@ -177,12 +177,13 @@ final class ChatViewModel: ObservableObject {
                         self?.flushNextPendingMessage(for: effectiveId)
                     }
                 } else {
+                    // Covers both idle and session_ended — cancel any active watchdog
                     busyTimers[effectiveId]?.cancel()
                     busyTimers.removeValue(forKey: effectiveId)
                 }
 
                 // Flush next pending message when session becomes idle
-                if state == "idle" && !pendingMessages.filter({ $0.sessionId == effectiveId }).isEmpty {
+                if state == "idle" && pendingMessages.contains(where: { $0.sessionId == effectiveId }) {
                     flushNextPendingMessage(for: effectiveId)
                 }
 
@@ -192,8 +193,6 @@ final class ChatViewModel: ObservableObject {
                     sessionStatuses.removeValue(forKey: effectiveId)
                     sessionToolNames.removeValue(forKey: effectiveId)
                     clearPendingMessages(for: effectiveId)
-                    busyTimers[effectiveId]?.cancel()
-                    busyTimers.removeValue(forKey: effectiveId)
                 }
             }
 
@@ -342,6 +341,16 @@ final class ChatViewModel: ObservableObject {
                 flushNextPendingMessage(for: server.sessionId)
             } else if clientState == nil || clientState == "idle" {
                 sessionStatuses[server.sessionId] = serverState
+                // Start watchdog if adopting a non-idle state from the server
+                if serverState != "idle" {
+                    busyTimers[server.sessionId]?.cancel()
+                    busyTimers[server.sessionId] = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(Self.staleBusyTimeout))
+                        guard !Task.isCancelled else { return }
+                        self?.sessionStatuses[server.sessionId] = "idle"
+                        self?.flushNextPendingMessage(for: server.sessionId)
+                    }
+                }
             }
         }
 
