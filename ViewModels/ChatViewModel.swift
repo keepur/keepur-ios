@@ -62,7 +62,7 @@ final class ChatViewModel: ObservableObject {
         context.insert(message)
         try? context.save()
 
-        if statusFor(sessionId) == "busy" {
+        if statusFor(sessionId) != "idle" {
             pendingMessages.append((text: text, messageId: message.id, sessionId: sessionId))
             pendingMessageIds.insert(message.id)
         } else {
@@ -149,7 +149,6 @@ final class ChatViewModel: ObservableObject {
         case .status(let state, let sessionId, let toolName):
             let effectiveId = sessionId ?? currentSessionId
             if let effectiveId {
-                let previousState = sessionStatuses[effectiveId]
                 sessionStatuses[effectiveId] = state
 
                 // Store or clear tool name based on state
@@ -163,13 +162,9 @@ final class ChatViewModel: ObservableObject {
                     sessionToolNames.removeValue(forKey: effectiveId)
                 }
 
-                // Flush pending messages when transitioning away from busy
-                if previousState == "busy" && state != "busy" {
-                    if state == "session_ended" {
-                        clearPendingMessages(for: effectiveId)
-                    } else {
-                        flushPendingMessages(for: effectiveId)
-                    }
+                // Flush next pending message when session becomes idle
+                if state == "idle" && !pendingMessages.filter({ $0.sessionId == effectiveId }).isEmpty {
+                    flushNextPendingMessage(for: effectiveId)
                 }
 
                 if state == "session_ended" {
@@ -177,6 +172,7 @@ final class ChatViewModel: ObservableObject {
                     pendingApprovals.removeValue(forKey: effectiveId)
                     sessionStatuses.removeValue(forKey: effectiveId)
                     sessionToolNames.removeValue(forKey: effectiveId)
+                    clearPendingMessages(for: effectiveId)
                 }
             }
 
@@ -239,12 +235,11 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func flushPendingMessages(for sessionId: String) {
-        let toSend = pendingMessages.filter { $0.sessionId == sessionId }
-        clearPendingMessages(for: sessionId)
-        for pending in toSend {
-            ws.send(.message(text: pending.text, sessionId: pending.sessionId))
-        }
+    private func flushNextPendingMessage(for sessionId: String) {
+        guard let index = pendingMessages.firstIndex(where: { $0.sessionId == sessionId }) else { return }
+        let pending = pendingMessages.remove(at: index)
+        pendingMessageIds.remove(pending.messageId)
+        ws.send(.message(text: pending.text, sessionId: pending.sessionId))
     }
 
     private func clearPendingMessages(for sessionId: String) {
