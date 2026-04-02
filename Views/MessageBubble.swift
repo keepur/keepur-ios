@@ -129,26 +129,30 @@ struct MessageBubble: View {
 
         return HStack {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Image(systemName: "terminal.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(toolName)
-                        .font(.caption2.bold())
-                        .foregroundStyle(.secondary)
-                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "terminal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(toolName)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                    }
 
-                Text(output)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, maxHeight: 200, alignment: .topLeading)
-                    .clipped()
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(.systemGray6))
-                    )
+                    ScrollView {
+                        Text(output)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .frame(maxHeight: 200)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.systemGray6))
+                )
 
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
