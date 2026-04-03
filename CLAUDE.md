@@ -6,7 +6,7 @@ iOS chat client for the Beekeeper backend (Claude via WebSocket).
 
 - Open `Keepur.xcodeproj` in Xcode 16+
 - Target: iOS 26.2+, Swift 5
-- No external dependencies — native frameworks only
+- MarkdownUI (SPM) for rich markdown rendering in chat bubbles
 - Cmd+R to build and run on device/simulator
 - First launch: enter Beekeeper auth token in setup screen
 
@@ -26,7 +26,7 @@ docs/specs/              → Product specs driving upcoming features
 
 ## Key Patterns
 
-- **No external deps**: URLSessionWebSocketTask, AVFoundation, Speech framework, Security (Keychain)
+- **MarkdownUI** (SPM) for assistant bubble rendering; otherwise native: URLSessionWebSocketTask, AVFoundation, Speech framework, Security (Keychain)
 - **SwiftData** for persistence (Session, Message models with @Model)
 - **@MainActor** on ViewModels and all UI-touching code
 - **Enum-based WebSocket protocol**: WSIncoming/WSOutgoing in WSMessage.swift for type-safe serialization
