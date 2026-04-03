@@ -142,9 +142,9 @@ final class WebSocketManager: ObservableObject {
         isReconnecting = true
         reconnectAttempts += 1
         let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
-        Task {
+        Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard self.isReconnecting else { return }
+            guard let self, self.isReconnecting else { return }
             self.isConnected = false
             self.connect()
         }
