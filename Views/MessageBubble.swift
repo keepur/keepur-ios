@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 import UIKit
 
@@ -64,8 +65,8 @@ struct MessageBubble: View {
     private var assistantBubble: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(LocalizedStringKey(message.text))
-                    .font(.body)
+                Markdown(message.text)
+                    .markdownTheme(.keepur)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
