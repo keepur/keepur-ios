@@ -283,6 +283,12 @@ final class ChatViewModel: ObservableObject {
                     msg.text += text
                     try? context.save()
                 }
+            } else if !text.isEmpty {
+                // Single-shot final message (e.g. AskUserQuestion) — no prior chunks existed
+                let msg = Message(sessionId: sessionId, text: text, role: "assistant")
+                context.insert(msg)
+                try? context.save()
+                streamingMessageIds[sessionId] = msg.id
             }
             if autoReadAloud, let completedId = streamingMessageIds[sessionId] ?? lastCompletedMessageIds[sessionId] {
                 let descriptor = FetchDescriptor<Message>(
