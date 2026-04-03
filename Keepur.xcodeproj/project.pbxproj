@@ -131,6 +131,7 @@
 			);
 			name = Keepur;
 			packageProductDependencies = (
+				D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */,
 			);
 			productName = Keepur;
 			productReference = A1ABEBC12F79E16C009B0AFC /* Keepur.app */;
@@ -189,6 +190,9 @@
 			targets = (
 				A1ABEBC02F79E16C009B0AFC /* Keepur */,
 				F3927C9EB6BA4611BA776573 /* KeeperTests */,
+			);
+			packageReferences = (
+				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
 		};
 /* End PBXProject section */
@@ -522,6 +526,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A1ABEBB92F79E16C009B0AFC /* Project object */;
 }
