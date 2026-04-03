@@ -169,7 +169,7 @@ final class ChatViewModel: ObservableObject {
 
                 // Clear streaming ID on round boundaries so the next
                 // streaming segment creates a new message bubble.
-                if state == "thinking" || state == "tool_starting" || state == "tool_running" {
+                if state == "tool_starting" || state == "tool_running" {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                 }
 
