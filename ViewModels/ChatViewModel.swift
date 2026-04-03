@@ -167,6 +167,12 @@ final class ChatViewModel: ObservableObject {
                     sessionToolNames.removeValue(forKey: effectiveId)
                 }
 
+                // Clear streaming ID on round boundaries so the next
+                // streaming segment creates a new message bubble.
+                if state == "thinking" || state == "tool_starting" || state == "tool_running" {
+                    streamingMessageIds.removeValue(forKey: effectiveId)
+                }
+
                 // Stale-busy watchdog
                 if state != "idle" && state != "session_ended" {
                     busyTimers[effectiveId]?.cancel()
