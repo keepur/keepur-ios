@@ -53,6 +53,8 @@ final class SpeechManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
 
+        // TODO: macOS skips audio session setup — verify speech recognition works without it.
+        // macOS manages audio routing at OS level, but may need explicit mic permission handling.
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         do {
@@ -109,6 +111,7 @@ final class SpeechManager: ObservableObject {
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
 
+        // TODO: macOS skips audio session setup — verify TTS playback works without it.
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         try? audioSession.setCategory(.playback, mode: .default)
