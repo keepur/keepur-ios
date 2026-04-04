@@ -68,7 +68,7 @@ struct WorkspacePickerView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .listRowBackground(Color(.systemGray6))
+                        .listRowBackground(Color.tertiarySystemFill)
 
                         if !isHome {
                             Button {
@@ -146,7 +146,9 @@ struct WorkspacePickerView: View {
                 }
             }
             .navigationTitle("Select Workspace")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

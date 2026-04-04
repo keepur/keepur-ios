@@ -11,7 +11,7 @@ extension MarkdownUI.Theme {
             FontFamilyVariant(.monospaced)
             FontSize(.em(0.85))
             ForegroundColor(.primary)
-            BackgroundColor(Color(.systemGray6))
+            BackgroundColor(Color.tertiarySystemFill)
         }
         .codeBlock { configuration in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -24,7 +24,7 @@ extension MarkdownUI.Theme {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(.tertiarySystemBackground))
+                    .fill(Color.tertiaryBackground)
             )
         }
         .link {

@@ -69,12 +69,12 @@ struct SessionListView: View {
             .listStyle(.plain)
             .navigationTitle("Sessions")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigation) {
                     Circle()
                         .fill(viewModel.ws.isConnected ? .green : .red)
                         .frame(width: 8, height: 8)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button {
                         showSettings = true
                     } label: {
@@ -82,7 +82,7 @@ struct SessionListView: View {
                             .font(.title3)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     Button {
                         showWorkspacePicker = true
                     } label: {

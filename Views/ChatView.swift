@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
@@ -74,9 +73,11 @@ struct ChatView: View {
             }
         }
         .navigationTitle(navigationTitle)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 HStack(spacing: 8) {
                     Button {
                         if viewModel.speechManager.isSpeaking {
@@ -222,7 +223,7 @@ struct StatusIndicator: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 18)
-                    .fill(Color(.systemGray5))
+                    .fill(Color.secondarySystemFill)
             )
             Spacer()
         }

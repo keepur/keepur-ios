@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 struct PairingView: View {
     let onPaired: () -> Void
@@ -61,7 +64,9 @@ struct PairingView: View {
             .padding(.horizontal, 40)
 
             TextField("", text: $code)
+                #if os(iOS)
                 .keyboardType(.numberPad)
+                #endif
                 .focused($codeFieldFocused)
                 .opacity(0)
                 .frame(height: 1)
@@ -81,7 +86,7 @@ struct PairingView: View {
             .font(.system(size: 36, weight: .bold, design: .monospaced))
             .frame(maxWidth: .infinity)
             .frame(height: 56)
-            .background(Color(.systemGray6))
+            .background(Color.tertiarySystemFill)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .onTapGesture { codeFieldFocused = true }
     }
@@ -130,14 +135,18 @@ struct PairingView: View {
                 KeychainManager.deviceId = response.deviceId
                 KeychainManager.deviceName = response.deviceName
 
+                #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
+                #endif
 
                 isLoading = false
                 onPaired()
             } catch is APIManager.PairError {
+                #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.error)
+                #endif
 
                 errorMessage = "Invalid pairing code. Try again."
                 isLoading = false

@@ -1,6 +1,8 @@
 import SwiftUI
 import Speech
+#if os(iOS)
 import UIKit
+#endif
 
 struct VoiceButton: View {
     @ObservedObject var speechManager: SpeechManager
@@ -14,13 +16,17 @@ struct VoiceButton: View {
         Button {
             if speechManager.isRecording {
                 speechManager.stopRecording()
+                #if os(iOS)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     onComplete()
                 }
             } else {
                 speechManager.startRecording()
+                #if os(iOS)
                 UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                #endif
             }
         } label: {
             ZStack {
