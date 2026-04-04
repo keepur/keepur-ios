@@ -221,7 +221,7 @@ struct StatusIndicator: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 18)
-                    .fill(Color(.systemGray5))
+                    .fill(Color.secondarySystemFill)
             )
             Spacer()
         }

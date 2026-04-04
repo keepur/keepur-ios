@@ -81,7 +81,7 @@ struct PairingView: View {
             .font(.system(size: 36, weight: .bold, design: .monospaced))
             .frame(maxWidth: .infinity)
             .frame(height: 56)
-            .background(Color(.systemGray6))
+            .background(Color.tertiarySystemFill)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .onTapGesture { codeFieldFocused = true }
     }

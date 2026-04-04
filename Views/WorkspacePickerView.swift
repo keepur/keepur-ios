@@ -68,7 +68,7 @@ struct WorkspacePickerView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        .listRowBackground(Color(.systemGray6))
+                        .listRowBackground(Color.tertiarySystemFill)
 
                         if !isHome {
                             Button {

@@ -71,7 +71,7 @@ struct MessageBubble: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(.systemGray5))
+                            .fill(Color.secondarySystemFill)
                     )
 
                 HStack(spacing: 12) {
@@ -106,7 +106,7 @@ struct MessageBubble: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(.systemGray5))
+                            .fill(Color.secondarySystemFill)
                     )
 
                 Text(message.timestamp, style: .time)
@@ -162,7 +162,7 @@ struct MessageBubble: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(.systemGray6))
+                        .fill(Color.tertiarySystemFill)
                 )
 
                 Text(message.timestamp, style: .time)

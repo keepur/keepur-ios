@@ -32,7 +32,7 @@ struct ToolApprovalView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(.systemGray6))
+                            .fill(Color.tertiarySystemFill)
                     )
             }
             .padding(.horizontal, 24)
