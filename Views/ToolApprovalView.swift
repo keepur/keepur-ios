@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import Combine
 
 struct ToolApprovalView: View {

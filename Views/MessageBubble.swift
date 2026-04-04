@@ -1,6 +1,5 @@
 import MarkdownUI
 import SwiftUI
-import UIKit
 
 struct MessageBubble: View {
     let message: Message

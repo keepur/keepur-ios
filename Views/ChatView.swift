@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
