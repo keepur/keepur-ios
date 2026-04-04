@@ -146,7 +146,9 @@ struct WorkspacePickerView: View {
                 }
             }
             .navigationTitle("Select Workspace")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
