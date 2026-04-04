@@ -53,6 +53,7 @@ final class SpeechManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
 
+        #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -60,6 +61,7 @@ final class SpeechManager: ObservableObject {
         } catch {
             return
         }
+        #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -107,9 +109,11 @@ final class SpeechManager: ObservableObject {
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
 
+        #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         try? audioSession.setCategory(.playback, mode: .default)
         try? audioSession.setActive(true)
+        #endif
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = 0.52
