@@ -407,6 +407,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func saveWorkspace(path: String, context: ModelContext) {
+        let maxRecent = 5
         let descriptor = FetchDescriptor<Workspace>(
             predicate: #Predicate { $0.path == path }
         )
@@ -416,6 +417,18 @@ final class ChatViewModel: ObservableObject {
             let workspace = Workspace(path: path)
             context.insert(workspace)
         }
+
+        // Prune old workspaces beyond the limit
+        var allDescriptor = FetchDescriptor<Workspace>(
+            sortBy: [SortDescriptor(\Workspace.lastUsed, order: .reverse)]
+        )
+        allDescriptor.fetchOffset = maxRecent
+        if let stale = try? context.fetch(allDescriptor) {
+            for workspace in stale {
+                context.delete(workspace)
+            }
+        }
+
         try? context.save()
     }
 }

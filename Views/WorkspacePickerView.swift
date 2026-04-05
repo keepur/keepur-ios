@@ -11,7 +11,7 @@ struct WorkspacePickerView: View {
             List {
                 if !recentWorkspaces.isEmpty {
                     Section("Recent Workspaces") {
-                        ForEach(recentWorkspaces, id: \.path) { workspace in
+                        ForEach(recentWorkspaces.prefix(5), id: \.path) { workspace in
                             Button {
                                 viewModel.newSession(path: workspace.path)
                                 dismiss()
