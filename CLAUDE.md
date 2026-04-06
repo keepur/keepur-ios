@@ -1,11 +1,11 @@
-# Keepur iOS
+# Keepur
 
-iOS chat client for the Beekeeper backend (Claude via WebSocket).
+iOS & macOS chat client for the Beekeeper backend (Claude via WebSocket).
 
 ## Build & Run
 
 - Open `Keepur.xcodeproj` in Xcode 16+
-- Target: iOS 26.2+, Swift 5
+- Targets: iOS 26.2+, macOS 15.0+ (Sequoia), Swift 5
 - MarkdownUI (SPM) for rich markdown rendering in chat bubbles
 - Cmd+R to build and run on device/simulator
 - First launch: enter Beekeeper auth token in setup screen
@@ -18,10 +18,13 @@ iOS chat client for the Beekeeper backend (Claude via WebSocket).
 KeepurApp.swift          → App entry, SwiftData ModelContainer
 Views/RootView.swift     → Auth gate + navigation routing
 ViewModels/ChatViewModel → Central state machine (@MainActor, @Published)
-Views/                   → SwiftUI views (ChatView, SessionListView, SettingsView, etc.)
-Managers/                → Service layer (WebSocket, Keychain, Speech)
-Models/                  → SwiftData models (Session, Message) + WS protocol (WSMessage)
+Views/                   → SwiftUI views (ChatView, SessionListView, SettingsView,
+                           PairingView, WorkspacePickerView, ToolApprovalView, etc.)
+Managers/                → Service layer (WebSocket, API, Keychain, Speech)
+Models/                  → SwiftData models (Session, Message, Workspace) + WS protocol (WSMessage)
+KeeperTests/             → Unit tests (resilience, busy state, keychain, workspace)
 docs/specs/              → Product specs driving upcoming features
+docs/plans/              → Implementation plans for in-progress work
 ```
 
 ## Key Patterns
@@ -49,9 +52,9 @@ docs/specs/              → Product specs driving upcoming features
 - Private properties/methods grouped together
 - Views composed via extracted subviews in extensions
 
-## No Tests or CI
+## Tests
 
-No test targets or CI/CD pipeline exists yet.
+Unit tests live in `KeeperTests/`. No CI/CD pipeline exists yet.
 
 ## Development Process
 
@@ -63,7 +66,7 @@ We follow the `dodi-dev` plugin workflow. All features go through two phases: pl
 |------|-------|-------------|
 | 1 | — | You have an idea, problem, or bug |
 | 2 | `dodi-dev:brainstorm` | Explore intent, constraints, approaches → write design spec |
-| 3 | `dodi-dev:file-ticket` | Create a Linear ticket with context from the design session |
+| 3 | `dodi-dev:file-ticket` | Create a GitHub Issue with context from the design session |
 
 **Skip steps 2-3** for trivial fixes (typos, one-liners, obvious config changes). When in doubt, spec it.
 
@@ -98,8 +101,8 @@ We follow the `dodi-dev` plugin workflow. All features go through two phases: pl
 | `/create-tests` | Generate unit/UI tests for changed files, run/fix loop, commit passing tests |
 | `/pre-submit-testing` | Build check + run full test suite with self-healing fix loop |
 
-## Upcoming Features (specs in docs/)
+## Upcoming Features (specs in docs/specs/)
 
-- Device pairing (#63): 6-digit code entry, 90-day JWT
-- Multi-session (#64): Concurrent sessions with per-session status
-- Workspace browsing (#65): Directory picker, saved workspace history
+- Device pairing: 6-digit code entry, 90-day JWT
+- Multi-session: Concurrent sessions with per-session status
+- Workspace browsing: Directory picker, saved workspace history
