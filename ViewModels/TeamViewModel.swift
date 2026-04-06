@@ -149,7 +149,8 @@ final class TeamViewModel: ObservableObject {
 
     private func handleAuthFailure() {
         ws.disconnect()
-        KeychainManager.clearAll()
+        // Don't call KeychainManager.clearAll() here — ContentView observes
+        // isAuthenticated and calls chatViewModel.unpair() which handles Keychain cleanup.
         isAuthenticated = false
     }
 
@@ -311,15 +312,19 @@ final class TeamViewModel: ObservableObject {
             self.hasMoreHistory = hasMore
         }
 
-        // Update cursor to the oldest message in this batch (first element,
-        // assuming server returns chronological order). Used for scroll-up pagination.
-        if let oldest = messages.first {
+        // Update cursor to the oldest message in this batch for scroll-up pagination.
+        // Use min(createdAt) to be sort-order-agnostic. For seeding fetches (limit 1
+        // returning the newest message), only set if no cursor exists. For pagination
+        // fetches (isActiveChannel), always advance the cursor deeper into history.
+        if let oldestMsg = messages.min(by: { $0.createdAt < $1.createdAt }) {
             let cid = channelId
             let descriptor = FetchDescriptor<TeamChannel>(
                 predicate: #Predicate { $0.id == cid }
             )
             if let channel = try? context.fetch(descriptor).first {
-                channel.lastServerMessageId = oldest.id
+                if isActiveChannel || channel.lastServerMessageId == nil {
+                    channel.lastServerMessageId = oldestMsg.id
+                }
             }
         }
 
@@ -337,11 +342,11 @@ final class TeamViewModel: ObservableObject {
             let msgText = histMsg.text
             let sid = histMsg.senderId
 
-            // Step 2: User message match (own messages, ±30s window)
+            // Step 2: User message match (own messages, acked + ±30s window)
             if histMsg.senderId == deviceId {
                 let userDescriptor = FetchDescriptor<TeamMessage>(
                     predicate: #Predicate {
-                        $0.channelId == cid && $0.senderId == sid && $0.text == msgText
+                        $0.channelId == cid && $0.senderId == sid && $0.text == msgText && $0.pending == false
                     }
                 )
                 if let match = try? context.fetch(userDescriptor).first {
