@@ -238,6 +238,42 @@ final class ChatViewModel: ObservableObject {
         case .workspaceSessionList(_, let sessions):
             workspaceSessions = sessions
 
+        case .contextCleared(let oldSessionId, let sessionId):
+            // /clear — delete old session messages and replace Session with new ID
+            let oldId = oldSessionId
+            let msgDescriptor = FetchDescriptor<Message>(
+                predicate: #Predicate { $0.sessionId == oldId }
+            )
+            if let messages = try? context.fetch(msgDescriptor) {
+                for msg in messages { context.delete(msg) }
+            }
+            let sessionDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == oldId }
+            )
+            let oldPath: String
+            let oldName: String?
+            if let oldSession = try? context.fetch(sessionDescriptor).first {
+                oldPath = oldSession.path
+                oldName = oldSession.name
+                context.delete(oldSession)
+            } else {
+                oldPath = currentPath
+                oldName = nil
+            }
+            let newSession = Session(id: sessionId, path: oldPath, name: oldName)
+            context.insert(newSession)
+            try? context.save()
+            streamingMessageIds.removeValue(forKey: oldSessionId)
+            lastCompletedMessageIds.removeValue(forKey: oldSessionId)
+            sessionStatuses.removeValue(forKey: oldSessionId)
+            sessionToolNames.removeValue(forKey: oldSessionId)
+            clearPendingMessages(for: oldSessionId)
+            if currentSessionId == oldSessionId {
+                currentSessionId = sessionId
+                currentPath = oldPath
+            }
+            sessionStatuses[sessionId] = "idle"
+
         case .error(let message, let sessionId):
             if sessionId == nil && isBrowsePending {
                 isBrowsePending = false

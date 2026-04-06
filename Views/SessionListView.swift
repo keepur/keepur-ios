@@ -13,104 +13,125 @@ struct SessionListView: View {
     @State private var renameText = ""
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let daysRemaining, daysRemaining >= 0, daysRemaining <= 7 {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            Text(daysRemaining == 0
-                                ? "Device pairing expires today"
-                                : daysRemaining == 1
-                                    ? "Device pairing expires in 1 day"
-                                    : "Device pairing expires in \(daysRemaining) days")
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                    }
-                    .listRowBackground(Color.orange.opacity(0.1))
-                }
+        #if os(macOS)
+        macOSBody
+        #else
+        iOSBody
+        #endif
+    }
 
-                ForEach(sessions, id: \.id) { session in
-                    SessionRow(
-                        session: session,
-                        isActive: session.id == viewModel.currentSessionId,
-                        modelContext: modelContext
-                    )
-                    .opacity(session.isStale ? 0.5 : 1.0)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !session.isStale else { return }
-                        viewModel.currentSessionId = session.id
-                        viewModel.currentPath = session.path
-                        selectedSessionId = session.id
+    // MARK: - Session List Content
+
+    private var sessionList: some View {
+        List(selection: $selectedSessionId) {
+            if let daysRemaining, daysRemaining >= 0, daysRemaining <= 7 {
+                Button {
+                    showSettings = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(daysRemaining == 0
+                            ? "Device pairing expires today"
+                            : daysRemaining == 1
+                                ? "Device pairing expires in 1 day"
+                                : "Device pairing expires in \(daysRemaining) days")
+                            .font(.subheadline.weight(.medium))
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            viewModel.clearSession(sessionId: session.id)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .contextMenu {
-                        Button {
-                            renameText = session.name ?? ""
-                            renamingSession = session
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
                 }
+                .listRowBackground(Color.orange.opacity(0.1))
             }
-            .listStyle(.plain)
-            .navigationTitle("Sessions")
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Circle()
-                        .fill(viewModel.ws.isConnected ? .green : .red)
-                        .frame(width: 8, height: 8)
+
+            ForEach(sessions, id: \.id) { session in
+                SessionRow(
+                    session: session,
+                    isActive: session.id == viewModel.currentSessionId,
+                    modelContext: modelContext
+                )
+                .opacity(session.isStale ? 0.5 : 1.0)
+                .tag(session.id)
+                .contentShape(Rectangle())
+                #if os(iOS)
+                .onTapGesture {
+                    guard !session.isStale else { return }
+                    viewModel.currentSessionId = session.id
+                    viewModel.currentPath = session.path
+                    selectedSessionId = session.id
                 }
-                ToolbarItem(placement: .automatic) {
-                    Button {
-                        showSettings = true
+                #endif
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        viewModel.clearSession(sessionId: session.id)
                     } label: {
-                        Image(systemName: "gearshape")
-                            .font(.title3)
+                        Label("Delete", systemImage: "trash")
                     }
                 }
-                ToolbarItem(placement: .primaryAction) {
+                .contextMenu {
                     Button {
-                        showWorkspacePicker = true
+                        renameText = session.name ?? ""
+                        renamingSession = session
                     } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.title3)
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        viewModel.clearSession(sessionId: session.id)
+                        if selectedSessionId == session.id {
+                            selectedSessionId = nil
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                     }
                 }
             }
-            .overlay {
-                if sessions.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Sessions", systemImage: "bubble.left.and.bubble.right")
-                    } description: {
-                        Text("Start a new session to chat with Claude Code")
-                    } actions: {
-                        Button("New Session") { showWorkspacePicker = true }
-                            .buttonStyle(.borderedProminent)
-                    }
+        }
+        .listStyle(.plain)
+    }
+
+    private var sessionToolbar: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .navigation) {
+                Circle()
+                    .fill(viewModel.ws.isConnected ? .green : .red)
+                    .frame(width: 8, height: 8)
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.title3)
                 }
             }
-            .navigationDestination(item: $selectedSessionId) { sessionId in
-                ChatView(viewModel: viewModel, sessionId: sessionId)
-            }
-            .onAppear {
-                if let expiry = KeychainManager.tokenExpiryDate {
-                    daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showWorkspacePicker = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.title3)
                 }
             }
+        }
+    }
+
+    private var sessionOverlay: some View {
+        Group {
+            if sessions.isEmpty {
+                ContentUnavailableView {
+                    Label("No Sessions", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("Start a new session to chat with Claude Code")
+                } actions: {
+                    Button("New Session") { showWorkspacePicker = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    private var sessionSheets: some View {
+        EmptyView()
             .sheet(isPresented: $showSettings) {
                 SettingsView(viewModel: viewModel)
             }
@@ -133,8 +154,66 @@ struct SessionListView: View {
                     renamingSession = nil
                 }
             }
-        }
     }
+
+    // MARK: - macOS Layout
+
+    #if os(macOS)
+    private var macOSBody: some View {
+        NavigationSplitView {
+            sessionList
+                .navigationTitle("Sessions")
+                .toolbar { sessionToolbar }
+                .overlay { sessionOverlay }
+        } detail: {
+            if let selectedSessionId {
+                ChatView(viewModel: viewModel, sessionId: selectedSessionId)
+            } else {
+                ContentUnavailableView {
+                    Label("No Session Selected", systemImage: "bubble.left")
+                } description: {
+                    Text("Select a session from the sidebar")
+                }
+            }
+        }
+        .onChange(of: selectedSessionId) {
+            if let selectedSessionId,
+               let session = sessions.first(where: { $0.id == selectedSessionId }),
+               !session.isStale {
+                viewModel.currentSessionId = session.id
+                viewModel.currentPath = session.path
+            }
+        }
+        .onAppear {
+            if let expiry = KeychainManager.tokenExpiryDate {
+                daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
+            }
+        }
+        .background { sessionSheets }
+    }
+    #endif
+
+    // MARK: - iOS Layout
+
+    #if os(iOS)
+    private var iOSBody: some View {
+        NavigationStack {
+            sessionList
+                .navigationTitle("Sessions")
+                .toolbar { sessionToolbar }
+                .overlay { sessionOverlay }
+                .navigationDestination(item: $selectedSessionId) { sessionId in
+                    ChatView(viewModel: viewModel, sessionId: sessionId)
+                }
+        }
+        .onAppear {
+            if let expiry = KeychainManager.tokenExpiryDate {
+                daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
+            }
+        }
+        .background { sessionSheets }
+    }
+    #endif
 }
 
 // MARK: - Session Row
