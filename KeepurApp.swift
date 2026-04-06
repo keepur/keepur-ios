@@ -26,7 +26,7 @@ struct KeepurApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ContentView()
         }
         .modelContainer(modelContainer)
     }
