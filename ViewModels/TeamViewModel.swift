@@ -153,9 +153,21 @@ final class TeamViewModel: ObservableObject {
 
     private func onConnected() {
         fetchChannels()
-        // Reconnect gap-fill: fetch latest messages for the active channel
+        // Reconnect gap-fill: fetch latest messages for the active channel.
+        // Use fetchHistory (not direct ws.send) so cursor and loading state
+        // are managed correctly and we don't race with seeding fetches.
         if let channelId = activeChannelId {
-            ws.send(.history(channelId: channelId, before: nil, limit: 50))
+            // Reset cursor so we get the latest page, not stale pagination
+            if let context = modelContext {
+                let cid = channelId
+                let descriptor = FetchDescriptor<TeamChannel>(
+                    predicate: #Predicate { $0.id == cid }
+                )
+                if let channel = try? context.fetch(descriptor).first {
+                    channel.lastServerMessageId = nil
+                }
+            }
+            fetchHistory(channelId: channelId)
         }
     }
 
@@ -399,8 +411,9 @@ final class TeamViewModel: ObservableObject {
 
         try? context.save()
 
-        // Update sidebar preview from the most recent history message
-        if let newest = messages.last {
+        // Update sidebar preview from the most recent history message.
+        // Use max(by:) since server may return messages in descending order.
+        if let newest = messages.max(by: { $0.createdAt < $1.createdAt }) {
             updateChannelPreview(channelId: channelId, text: newest.text, date: newest.createdAt, context: context)
         }
 

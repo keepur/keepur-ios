@@ -65,6 +65,7 @@ final class TeamWSMessageTests: XCTestCase {
         let data = try TeamWSOutgoing.ping.encode()
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         XCTAssertEqual(json["type"] as? String, "ping")
+        XCTAssertNil(json["id"], "ping should not include an id field")
     }
 
     func testEncodeAndEncodeWithIdProduceSameStructure() throws {
