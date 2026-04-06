@@ -86,7 +86,9 @@ enum TeamWSOutgoing {
             if let before { dict["before"] = before }
             if let limit { dict["limit"] = limit }
         case .ping:
-            dict["type"] = "ping"
+            // Server's ClientPing has no id field — send bare { "type": "ping" }
+            let pingData = try JSONSerialization.data(withJSONObject: ["type": "ping"])
+            return (data: pingData, id: id)
         }
         let data = try JSONSerialization.data(withJSONObject: dict)
         return (data: data, id: id)

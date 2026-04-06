@@ -27,6 +27,7 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Setup
 
     func configure(context: ModelContext) {
+        guard modelContext == nil else { return }  // Idempotency guard
         self.modelContext = context
         self.deviceId = KeychainManager.deviceId ?? ""
 
@@ -89,10 +90,20 @@ final class TeamViewModel: ObservableObject {
         hasMoreHistory = true
         refreshActiveMessages()
 
-        // Always fetch history on channel selection. Seeding only loads 1 message
-        // for sidebar preview — the full page load happens here. Dedup prevents
-        // duplicates if messages were already loaded.
-        ws.send(.history(channelId: channelId, before: nil, limit: 50))
+        // Reset cursor on channel selection — the full page load starts fresh.
+        // Seeding only loaded 1 message for sidebar preview; now we load the full
+        // latest page. Dedup prevents duplicates if messages were already loaded.
+        if let context = modelContext {
+            let cid = channelId
+            let channelDescriptor = FetchDescriptor<TeamChannel>(
+                predicate: #Predicate { $0.id == cid }
+            )
+            if let channel = try? context.fetch(channelDescriptor).first {
+                channel.lastServerMessageId = nil
+            }
+        }
+
+        fetchHistory(channelId: channelId)
     }
 
     func fetchHistory(channelId: String) {
@@ -103,7 +114,8 @@ final class TeamViewModel: ObservableObject {
             isLoadingHistory = true
         }
 
-        // Find the oldest server message ID for cursor-based pagination
+        // Find the oldest server message ID for cursor-based pagination.
+        // nil means "fetch the latest page" (no cursor).
         var before: String?
         if let context = modelContext {
             let cid = channelId
@@ -328,58 +340,46 @@ final class TeamViewModel: ObservableObject {
             }
         }
 
+        // Pre-fetch ALL existing messages for this channel once — O(1) fetch instead of O(N*4).
+        // Build lookup sets for in-memory dedup matching.
+        let cid = channelId
+        let allDescriptor = FetchDescriptor<TeamMessage>(
+            predicate: #Predicate { $0.channelId == cid }
+        )
+        let existingMessages = (try? context.fetch(allDescriptor)) ?? []
+
+        // Build lookup structures for fast dedup
+        let existingIds = Set(existingMessages.map(\.id))
+        // Key: "senderId|text" for content-based matching
+        let existingContentKeys = Set(existingMessages.map { "\($0.senderId)|\($0.text)" })
+        // For user message time-windowed matching: store (key, createdAt) pairs
+        let userMessages = existingMessages.filter { $0.senderId == deviceId && !$0.pending }
+
         for histMsg in messages {
-            let hid = histMsg.id
             // Step 1: ID match — already imported from history
-            let idDescriptor = FetchDescriptor<TeamMessage>(
-                predicate: #Predicate { $0.id == hid }
-            )
-            if (try? context.fetch(idDescriptor).first) != nil {
+            if existingIds.contains(histMsg.id) {
                 continue
             }
 
-            let cid = channelId
-            let msgText = histMsg.text
-            let sid = histMsg.senderId
+            let contentKey = "\(histMsg.senderId)|\(histMsg.text)"
 
             // Step 2: User message match (own messages, acked + ±30s window)
             if histMsg.senderId == deviceId {
-                let userDescriptor = FetchDescriptor<TeamMessage>(
-                    predicate: #Predicate {
-                        $0.channelId == cid && $0.senderId == sid && $0.text == msgText && $0.pending == false
-                    }
-                )
-                if let match = try? context.fetch(userDescriptor).first {
-                    let timeDiff = abs(match.createdAt.timeIntervalSince(histMsg.createdAt))
-                    if timeDiff < 30 {
-                        continue
-                    }
+                let hasMatch = userMessages.contains { local in
+                    local.text == histMsg.text &&
+                    abs(local.createdAt.timeIntervalSince(histMsg.createdAt)) < 30
                 }
+                if hasMatch { continue }
             }
 
             // Step 3: Agent message match
-            if histMsg.senderType == "agent" {
-                let agentDescriptor = FetchDescriptor<TeamMessage>(
-                    predicate: #Predicate {
-                        $0.channelId == cid && $0.senderId == sid && $0.text == msgText
-                    }
-                )
-                if (try? context.fetch(agentDescriptor).first) != nil {
-                    continue
-                }
+            if histMsg.senderType == "agent" && existingContentKeys.contains(contentKey) {
+                continue
             }
 
             // Step 4: System message match
-            if histMsg.senderId == "system" {
-                let sysId = "system"
-                let sysDescriptor = FetchDescriptor<TeamMessage>(
-                    predicate: #Predicate {
-                        $0.channelId == cid && $0.senderId == sysId && $0.text == msgText
-                    }
-                )
-                if (try? context.fetch(sysDescriptor).first) != nil {
-                    continue
-                }
+            if histMsg.senderId == "system" && existingContentKeys.contains(contentKey) {
+                continue
             }
 
             // Step 5: Insert as new message with server ObjectId

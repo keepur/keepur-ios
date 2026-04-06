@@ -222,6 +222,22 @@ final class TeamWSMessageTests: XCTestCase {
         XCTAssertNil(memberId)
     }
 
+    func testDecodeChannelEventWithEmptyDetail() {
+        // Server sends detail: {} for archived events (no memberId key)
+        let json: [String: Any] = [
+            "type": "channel_event",
+            "channelId": "general",
+            "event": "archived",
+            "detail": [String: Any](),
+            "id": "req-6"
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: json)
+        guard case .channelEvent(_, _, let memberId, _) = TeamWSIncoming.decode(from: data) else {
+            XCTFail("Expected channelEvent"); return
+        }
+        XCTAssertNil(memberId)
+    }
+
     // MARK: - Incoming Decoding: ack, typing, error, pong
 
     func testDecodeAck() {
