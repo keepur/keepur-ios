@@ -189,7 +189,30 @@ struct SessionListView: View {
                 daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
             }
         }
-        .background { sessionSheets }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(viewModel: viewModel)
+                .frame(minWidth: 450, minHeight: 500)
+        }
+        .sheet(isPresented: $showWorkspacePicker) {
+            WorkspacePickerView(viewModel: viewModel)
+                .frame(minWidth: 500, minHeight: 550)
+        }
+        .alert("Rename Session", isPresented: Binding(
+            get: { renamingSession != nil },
+            set: { if !$0 { renamingSession = nil } }
+        )) {
+            TextField("Session name", text: $renameText)
+            Button("Save") {
+                if let session = renamingSession {
+                    session.name = renameText.isEmpty ? nil : renameText
+                    try? modelContext.save()
+                }
+                renamingSession = nil
+            }
+            Button("Cancel", role: .cancel) {
+                renamingSession = nil
+            }
+        }
     }
     #endif
 
