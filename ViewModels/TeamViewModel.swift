@@ -14,6 +14,7 @@ final class TeamViewModel: ObservableObject {
     @Published var hasMoreHistory: Bool = true
     @Published var messageText: String = ""
     @Published var isAuthenticated = true
+    @Published var lastLiveMessageId: String?  // Set on live messages only, drives scroll-to-bottom
 
     // MARK: - Internal State
 
@@ -82,6 +83,7 @@ final class TeamViewModel: ObservableObject {
         }
 
         refreshActiveMessages()
+        lastLiveMessageId = localId
         messageText = ""
     }
 
@@ -218,6 +220,9 @@ final class TeamViewModel: ObservableObject {
 
             updateChannelPreview(channelId: channelId, text: text, context: context)
             refreshActiveMessages()
+            if channelId == activeChannelId {
+                lastLiveMessageId = message.id
+            }
 
         case .systemMessage(let text, _, let agentName, let replyTo):
             // Route to the channel that sent the command
@@ -243,6 +248,9 @@ final class TeamViewModel: ObservableObject {
 
             updateChannelPreview(channelId: targetChannelId, text: text, context: context)
             refreshActiveMessages()
+            if targetChannelId == activeChannelId {
+                lastLiveMessageId = message.id
+            }
 
         case .channelList(let channelInfos, _):
             syncChannels(channelInfos, context: context)

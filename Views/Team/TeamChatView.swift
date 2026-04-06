@@ -58,7 +58,10 @@ struct TeamChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .onChange(of: viewModel.activeMessages.count) {
+            .onChange(of: viewModel.lastLiveMessageId) {
+                // Only scroll to bottom on live incoming messages, NOT on
+                // history pagination (which prepends older messages and should
+                // preserve scroll position).
                 if let lastId = viewModel.activeMessages.last?.id {
                     withAnimation {
                         proxy.scrollTo(lastId, anchor: .bottom)
