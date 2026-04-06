@@ -246,8 +246,12 @@ final class TeamViewModel: ObservableObject {
 
         case .channelList(let channelInfos, _):
             syncChannels(channelInfos, context: context)
-            // Seed previews with 1-message history per channel
+            // Seed previews with 1-message history per channel.
+            // Skip the active channel — a full-page fetch is already in flight
+            // from onConnected/selectChannel, and a seeding response would
+            // prematurely clear isLoadingHistory and corrupt the cursor.
             for info in channelInfos {
+                guard info.id != activeChannelId else { continue }
                 ws.send(.history(channelId: info.id, before: nil, limit: 1))
             }
 
