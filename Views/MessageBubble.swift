@@ -27,7 +27,7 @@ struct MessageBubble: View {
             Spacer(minLength: 60)
             VStack(alignment: .trailing, spacing: 4) {
                 ZStack(alignment: .bottomTrailing) {
-                    Text(message.text)
+                    Text(Self.attributedText(message.text))
                         .font(.body)
                         .textSelection(.enabled)
                         .padding(.horizontal, 14)
@@ -173,5 +173,14 @@ struct MessageBubble: View {
             }
             Spacer(minLength: 60)
         }
+    }
+
+    // MARK: - Link Detection
+
+    private static func attributedText(_ text: String) -> AttributedString {
+        if let attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return attributed
+        }
+        return AttributedString(text)
     }
 }
