@@ -29,6 +29,7 @@ struct MessageBubble: View {
                 ZStack(alignment: .bottomTrailing) {
                     Text(message.text)
                         .font(.body)
+                        .textSelection(.enabled)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(
@@ -123,6 +124,7 @@ struct MessageBubble: View {
             Text(message.text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
                 .padding(.vertical, 8)
             Spacer()
         }
