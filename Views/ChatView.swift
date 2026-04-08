@@ -93,17 +93,21 @@ struct ChatView: View {
                     .foregroundStyle(viewModel.speechManager.isSpeaking ? .red
                                      : autoReadAloud ? Color.accentColor : Color.secondary)
 
+                    #if os(iOS)
                     Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
                     }
+                    #endif
                 }
             }
         }
+        #if os(iOS)
         .sheet(isPresented: $showSettings) {
             SettingsView(viewModel: viewModel)
         }
+        #endif
         .sheet(item: Binding(
             get: {
                 viewModel.pendingApprovals[sessionId]
