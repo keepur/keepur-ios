@@ -2,12 +2,6 @@ import Foundation
 
 // MARK: - Supporting Types
 
-struct MessageAttachment {
-    let name: String
-    let mimeType: String
-    let base64Data: String
-}
-
 struct ServerSession {
     let sessionId: String
     let path: String
@@ -29,7 +23,9 @@ struct WorkspaceSession {
 // MARK: - Client -> Server
 
 enum WSOutgoing {
-    case message(text: String, sessionId: String, attachment: MessageAttachment? = nil)
+    case message(text: String, sessionId: String)
+    case image(sessionId: String, data: String, filename: String)
+    case file(sessionId: String, data: String, filename: String, mimetype: String)
     case newSession(path: String)
     case clearSession(sessionId: String)
     case listSessions
@@ -44,16 +40,12 @@ enum WSOutgoing {
     func encode() throws -> Data {
         let dict: [String: Any]
         switch self {
-        case .message(let text, let sessionId, let attachment):
-            var d: [String: Any] = ["type": "message", "text": text, "sessionId": sessionId]
-            if let attachment {
-                d["attachment"] = [
-                    "name": attachment.name,
-                    "mimeType": attachment.mimeType,
-                    "data": attachment.base64Data
-                ]
-            }
-            dict = d
+        case .message(let text, let sessionId):
+            dict = ["type": "message", "text": text, "sessionId": sessionId]
+        case .image(let sessionId, let data, let filename):
+            dict = ["type": "image", "sessionId": sessionId, "data": data, "filename": filename]
+        case .file(let sessionId, let data, let filename, let mimetype):
+            dict = ["type": "file", "sessionId": sessionId, "data": data, "filename": filename, "mimetype": mimetype]
         case .newSession(let path):
             dict = ["type": "new_session", "path": path]
         case .clearSession(let sessionId):
