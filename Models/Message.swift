@@ -8,27 +8,18 @@ final class Message {
     var text: String
     var role: String  // "user", "assistant", "system", "tool"
     var timestamp: Date
-    var attachmentName: String?
-    var attachmentType: String?
-    @Attribute(.externalStorage) var attachmentData: Data?
 
     init(
         id: String = UUID().uuidString,
         sessionId: String,
         text: String,
         role: String,
-        timestamp: Date = .now,
-        attachmentName: String? = nil,
-        attachmentType: String? = nil,
-        attachmentData: Data? = nil
+        timestamp: Date = .now
     ) {
         self.id = id
         self.sessionId = sessionId
         self.text = text
         self.role = role
         self.timestamp = timestamp
-        self.attachmentName = attachmentName
-        self.attachmentType = attachmentType
-        self.attachmentData = attachmentData
     }
 }

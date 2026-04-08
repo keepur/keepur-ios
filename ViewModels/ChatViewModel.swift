@@ -27,7 +27,6 @@ final class ChatViewModel: ObservableObject {
     @Published var serverSessions: [ServerSession] = []
     @Published var workspaceSessions: [WorkspaceSession] = []
     @Published var pendingMessageIds: Set<String> = []
-    @Published var pendingAttachment: (data: Data, name: String, mimeType: String)? = nil
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -35,7 +34,7 @@ final class ChatViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
     private var lastCompletedMessageIds: [String: String] = [:]
-    private var pendingMessages: [(text: String, messageId: String, sessionId: String, attachment: MessageAttachment?)] = []
+    private var pendingMessages: [(text: String, messageId: String, sessionId: String)] = []
     private static let staleBusyTimeout: TimeInterval = 90
     private var busyTimers: [String: Task<Void, Never>] = [:]
 
@@ -62,33 +61,19 @@ final class ChatViewModel: ObservableObject {
 
     func sendText() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachment = pendingAttachment
-        guard !text.isEmpty || attachment != nil, let context = modelContext, let sessionId = currentSessionId else { return }
+        guard !text.isEmpty, let context = modelContext, let sessionId = currentSessionId else { return }
 
-        let effectiveText = text.isEmpty ? (attachment?.name ?? "") : text
-        let message = Message(
-            sessionId: sessionId,
-            text: effectiveText,
-            role: "user",
-            attachmentName: attachment?.name,
-            attachmentType: attachment?.mimeType,
-            attachmentData: attachment?.data
-        )
+        let message = Message(sessionId: sessionId, text: text, role: "user")
         context.insert(message)
         try? context.save()
 
-        let wsAttachment = attachment.map {
-            MessageAttachment(name: $0.name, mimeType: $0.mimeType, base64Data: $0.data.base64EncodedString())
-        }
-
         if statusFor(sessionId) != "idle" {
-            pendingMessages.append((text: effectiveText, messageId: message.id, sessionId: sessionId, attachment: wsAttachment))
+            pendingMessages.append((text: text, messageId: message.id, sessionId: sessionId))
             pendingMessageIds.insert(message.id)
         } else {
-            ws.send(.message(text: effectiveText, sessionId: sessionId, attachment: wsAttachment))
+            ws.send(.message(text: text, sessionId: sessionId))
         }
         messageText = ""
-        pendingAttachment = nil
     }
 
     func cancelCurrentOperation(for sessionId: String) {
@@ -321,7 +306,7 @@ final class ChatViewModel: ObservableObject {
         guard let index = pendingMessages.firstIndex(where: { $0.sessionId == sessionId }) else { return }
         let pending = pendingMessages.remove(at: index)
         pendingMessageIds.remove(pending.messageId)
-        ws.send(.message(text: pending.text, sessionId: pending.sessionId, attachment: pending.attachment))
+        ws.send(.message(text: pending.text, sessionId: pending.sessionId))
     }
 
     private func clearPendingMessages(for sessionId: String) {
