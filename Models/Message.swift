@@ -10,7 +10,7 @@ final class Message {
     var timestamp: Date
     var attachmentName: String?
     var attachmentType: String?
-    var attachmentData: Data?
+    @Attribute(.externalStorage) var attachmentData: Data?
 
     init(
         id: String = UUID().uuidString,
