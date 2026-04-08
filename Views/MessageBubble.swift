@@ -27,15 +27,42 @@ struct MessageBubble: View {
             Spacer(minLength: 60)
             VStack(alignment: .trailing, spacing: 4) {
                 ZStack(alignment: .bottomTrailing) {
-                    Text(message.text)
-                        .font(.body)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color.accentColor)
-                        )
-                        .foregroundStyle(.white)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let data = message.attachmentData, let mimeType = message.attachmentType {
+                            if mimeType.hasPrefix("image/"), let img = PlatformImage(data: data) {
+                                Image(platformImage: img)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxHeight: 200)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.fill")
+                                        .font(.caption)
+                                    Text(message.attachmentName ?? "Attachment")
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+
+                        if !message.text.isEmpty && message.text != message.attachmentName {
+                            Text(Self.attributedText(message.text))
+                                .font(.body)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color.accentColor)
+                    )
+                    .foregroundStyle(.white)
 
                     if showWaitingBadge {
                         Text("waiting")
@@ -123,6 +150,7 @@ struct MessageBubble: View {
             Text(message.text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
                 .padding(.vertical, 8)
             Spacer()
         }
@@ -171,5 +199,38 @@ struct MessageBubble: View {
             }
             Spacer(minLength: 60)
         }
+    }
+
+    // MARK: - Link Detection
+
+    private static func attributedText(_ text: String) -> AttributedString {
+        let linkified = Self.wrapBareURLs(in: text)
+        if let attributed = try? AttributedString(markdown: linkified, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return attributed
+        }
+        return AttributedString(text)
+    }
+
+    /// Wraps bare URLs (e.g. https://example.com) in markdown link syntax
+    /// so AttributedString(markdown:) will make them tappable.
+    private static func wrapBareURLs(in text: String) -> String {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = detector.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        var result = text
+        // Process matches in reverse so indices stay valid
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: result) else { continue }
+            let url = String(result[range])
+            // Skip if already inside a markdown link: [...](url) or <url>
+            let prefix = result[result.startIndex..<range.lowerBound]
+            if prefix.hasSuffix("](") || prefix.hasSuffix("<") { continue }
+            result.replaceSubrange(range, with: "[\(url)](\(url))")
+        }
+        return result
     }
 }
