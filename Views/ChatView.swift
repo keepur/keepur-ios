@@ -1,11 +1,46 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UniformTypeIdentifiers
+
+// MARK: - Cross-platform image helpers
+
+#if os(iOS)
+typealias PlatformImage = UIImage
+#else
+typealias PlatformImage = NSImage
+#endif
+
+extension Image {
+    init(platformImage: PlatformImage) {
+        #if os(iOS)
+        self.init(uiImage: platformImage)
+        #else
+        self.init(nsImage: platformImage)
+        #endif
+    }
+}
+
+extension URL {
+    var mimeType: String {
+        switch pathExtension.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "pdf": return "application/pdf"
+        case "txt": return "text/plain"
+        default: return "application/octet-stream"
+        }
+    }
+}
 
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
     @Query(sort: \Message.timestamp) private var allMessages: [Message]
     @State private var showSettings = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showDocumentPicker = false
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
     }
@@ -132,38 +167,116 @@ struct ChatView: View {
     // MARK: - Input Bar (active session)
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            // Voice button
-            VoiceButton(speechManager: viewModel.speechManager) {
-                viewModel.sendVoiceText()
+        VStack(spacing: 0) {
+            if let attachment = viewModel.pendingAttachment {
+                attachmentPreview(name: attachment.name, data: attachment.data, mimeType: attachment.mimeType)
+                    .padding(.top, 8)
             }
 
-            TextField("Message...", text: $viewModel.messageText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                )
-                .lineLimit(1...6)
-                .onSubmit { viewModel.sendText() }
+            HStack(spacing: 8) {
+                // Voice button
+                VoiceButton(speechManager: viewModel.speechManager) {
+                    viewModel.sendVoiceText()
+                }
 
-            Button { viewModel.sendText() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(
-                        viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.gray.opacity(0.3) : Color.accentColor
+                // Attachment menu
+                Menu {
+                    Button {
+                        showDocumentPicker = true
+                    } label: {
+                        Label("Choose File", systemImage: "doc")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.secondary)
+                }
+
+                // Photo picker
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                }
+
+                TextField("Message...", text: $viewModel.messageText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
                     )
+                    .lineLimit(1...6)
+                    .onSubmit { viewModel.sendText() }
+
+                Button { viewModel.sendText() } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(
+                            (viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewModel.pendingAttachment == nil)
+                                ? Color.gray.opacity(0.3) : Color.accentColor
+                        )
+                }
+                .disabled(
+                    viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewModel.pendingAttachment == nil
+                )
             }
-            .disabled(
-                viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(.ultraThinMaterial)
+        .onChange(of: selectedPhoto) {
+            guard let item = selectedPhoto else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    let name = "image_\(Int(Date().timeIntervalSince1970)).jpg"
+                    viewModel.pendingAttachment = (data: data, name: name, mimeType: "image/jpeg")
+                }
+                selectedPhoto = nil
+            }
+        }
+        .fileImporter(isPresented: $showDocumentPicker, allowedContentTypes: [.item]) { result in
+            switch result {
+            case .success(let url):
+                guard url.startAccessingSecurityScopedResource() else { return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                if let data = try? Data(contentsOf: url) {
+                    viewModel.pendingAttachment = (data: data, name: url.lastPathComponent, mimeType: url.mimeType)
+                }
+            case .failure:
+                break
+            }
+        }
+    }
+
+    private func attachmentPreview(name: String, data: Data, mimeType: String) -> some View {
+        HStack {
+            if mimeType.hasPrefix("image/"), let img = PlatformImage(data: data) {
+                Image(platformImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                Image(systemName: "doc.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer()
+            Button { viewModel.pendingAttachment = nil } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondarySystemFill))
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Read-only Bar (old sessions)

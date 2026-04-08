@@ -27,16 +27,42 @@ struct MessageBubble: View {
             Spacer(minLength: 60)
             VStack(alignment: .trailing, spacing: 4) {
                 ZStack(alignment: .bottomTrailing) {
-                    Text(Self.attributedText(message.text))
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color.accentColor)
-                        )
-                        .foregroundStyle(.white)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let data = message.attachmentData, let mimeType = message.attachmentType {
+                            if mimeType.hasPrefix("image/"), let img = PlatformImage(data: data) {
+                                Image(platformImage: img)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxHeight: 200)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.fill")
+                                        .font(.caption)
+                                    Text(message.attachmentName ?? "Attachment")
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+
+                        if !message.text.isEmpty && message.text != message.attachmentName {
+                            Text(Self.attributedText(message.text))
+                                .font(.body)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color.accentColor)
+                    )
+                    .foregroundStyle(.white)
 
                     if showWaitingBadge {
                         Text("waiting")
