@@ -37,4 +37,32 @@ final class WSMessageAttachmentTests: XCTestCase {
 
         XCTAssertNil(json["attachment"], "explicit nil attachment should be omitted")
     }
+
+    // MARK: - MessageAttachment struct
+
+    func testMessageAttachmentFieldsPreserved() {
+        let att = MessageAttachment(name: "report.pdf", mimeType: "application/pdf", base64Data: "AQID")
+        XCTAssertEqual(att.name, "report.pdf")
+        XCTAssertEqual(att.mimeType, "application/pdf")
+        XCTAssertEqual(att.base64Data, "AQID")
+    }
+
+    func testMessageWithLargeBase64Encodes() throws {
+        let largeData = String(repeating: "A", count: 100_000)
+        let attachment = MessageAttachment(name: "big.bin", mimeType: "application/octet-stream", base64Data: largeData)
+        let data = try WSOutgoing.message(text: "", sessionId: "s4", attachment: attachment).encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        let att = json["attachment"] as? [String: Any]
+        XCTAssertEqual((att?["data"] as? String)?.count, 100_000)
+    }
+
+    func testMessageWithEmptyTextAndAttachment() throws {
+        let attachment = MessageAttachment(name: "photo.png", mimeType: "image/png", base64Data: "iVBOR")
+        let data = try WSOutgoing.message(text: "", sessionId: "s5", attachment: attachment).encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        XCTAssertEqual(json["text"] as? String, "")
+        XCTAssertNotNil(json["attachment"])
+    }
 }

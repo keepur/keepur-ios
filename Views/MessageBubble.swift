@@ -204,9 +204,33 @@ struct MessageBubble: View {
     // MARK: - Link Detection
 
     private static func attributedText(_ text: String) -> AttributedString {
-        if let attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+        let linkified = Self.wrapBareURLs(in: text)
+        if let attributed = try? AttributedString(markdown: linkified, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             return attributed
         }
         return AttributedString(text)
+    }
+
+    /// Wraps bare URLs (e.g. https://example.com) in markdown link syntax
+    /// so AttributedString(markdown:) will make them tappable.
+    private static func wrapBareURLs(in text: String) -> String {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = detector.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        var result = text
+        // Process matches in reverse so indices stay valid
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: result) else { continue }
+            let url = String(result[range])
+            // Skip if already inside a markdown link: [...](url) or <url>
+            let prefix = result[result.startIndex..<range.lowerBound]
+            if prefix.hasSuffix("](") || prefix.hasSuffix("<") { continue }
+            result.replaceSubrange(range, with: "[\(url)](\(url))")
+        }
+        return result
     }
 }

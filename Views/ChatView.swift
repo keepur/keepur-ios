@@ -41,6 +41,8 @@ struct ChatView: View {
     @State private var showSettings = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showDocumentPicker = false
+    @State private var attachmentError: String?
+    private static let maxAttachmentSize = 10 * 1024 * 1024 // 10 MB
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
     }
@@ -179,16 +181,10 @@ struct ChatView: View {
                     viewModel.sendVoiceText()
                 }
 
-                // Attachment menu
-                Menu {
-                    Button {
-                        showDocumentPicker = true
-                    } label: {
-                        Label("Choose File", systemImage: "doc")
-                    }
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 26))
+                // File picker
+                Button { showDocumentPicker = true } label: {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 22))
                         .foregroundStyle(.secondary)
                 }
 
@@ -229,10 +225,21 @@ struct ChatView: View {
         .onChange(of: selectedPhoto) {
             guard let item = selectedPhoto else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    let name = "image_\(Int(Date().timeIntervalSince1970)).jpg"
-                    viewModel.pendingAttachment = (data: data, name: name, mimeType: "image/jpeg")
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
+                    attachmentError = "Could not load the selected photo."
+                    selectedPhoto = nil
+                    return
                 }
+                guard data.count <= Self.maxAttachmentSize else {
+                    attachmentError = "File is too large. Maximum size is 10 MB."
+                    selectedPhoto = nil
+                    return
+                }
+                let contentType = item.supportedContentTypes.first
+                let mimeType = contentType?.preferredMIMEType ?? "image/jpeg"
+                let ext = contentType?.preferredFilenameExtension ?? "jpg"
+                let name = "image_\(Int(Date().timeIntervalSince1970)).\(ext)"
+                viewModel.pendingAttachment = (data: data, name: name, mimeType: mimeType)
                 selectedPhoto = nil
             }
         }
@@ -241,12 +248,23 @@ struct ChatView: View {
             case .success(let url):
                 guard url.startAccessingSecurityScopedResource() else { return }
                 defer { url.stopAccessingSecurityScopedResource() }
-                if let data = try? Data(contentsOf: url) {
-                    viewModel.pendingAttachment = (data: data, name: url.lastPathComponent, mimeType: url.mimeType)
+                guard let data = try? Data(contentsOf: url) else {
+                    attachmentError = "Could not read the selected file."
+                    return
                 }
+                guard data.count <= Self.maxAttachmentSize else {
+                    attachmentError = "File is too large. Maximum size is 10 MB."
+                    return
+                }
+                viewModel.pendingAttachment = (data: data, name: url.lastPathComponent, mimeType: url.mimeType)
             case .failure:
                 break
             }
+        }
+        .alert("Attachment Error", isPresented: Binding(get: { attachmentError != nil }, set: { if !$0 { attachmentError = nil } })) {
+            Button("OK") { attachmentError = nil }
+        } message: {
+            Text(attachmentError ?? "")
         }
     }
 
