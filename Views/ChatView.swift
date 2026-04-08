@@ -176,22 +176,17 @@ struct ChatView: View {
             }
 
             HStack(spacing: 8) {
-                // Voice button
-                VoiceButton(speechManager: viewModel.speechManager) {
-                    viewModel.sendVoiceText()
-                }
-
-                // File picker
-                Button { showDocumentPicker = true } label: {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                }
-
-                // Photo picker
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 22))
+                // Attachment menu
+                Menu {
+                    Button { showDocumentPicker = true } label: {
+                        Label("Choose File", systemImage: "doc")
+                    }
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Label("Photo Library", systemImage: "photo")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 26))
                         .foregroundStyle(.secondary)
                 }
 
@@ -205,6 +200,11 @@ struct ChatView: View {
                     )
                     .lineLimit(1...6)
                     .onSubmit { viewModel.sendText() }
+
+                // Voice button
+                VoiceButton(speechManager: viewModel.speechManager) {
+                    viewModel.sendVoiceText()
+                }
 
                 Button { viewModel.sendText() } label: {
                     Image(systemName: "arrow.up.circle.fill")
