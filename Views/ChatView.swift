@@ -271,24 +271,35 @@ struct ChatView: View {
             case .success(let url):
                 guard url.startAccessingSecurityScopedResource() else { return }
                 defer { url.stopAccessingSecurityScopedResource() }
-                guard let data = try? Data(contentsOf: url) else {
-                    attachmentError = "Could not read the selected file."
-                    return
-                }
-                guard data.count <= Self.maxAttachmentSize else {
-                    attachmentError = "File is too large. Maximum size is 10 MB."
-                    return
-                }
-                viewModel.pendingAttachment = (data: data, name: url.lastPathComponent, mimeType: url.mimeType)
+                loadAttachment(from: url)
             case .failure:
                 break
             }
         }
+        #if os(macOS)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            loadAttachment(from: url)
+            return true
+        }
+        #endif
         .alert("Attachment Error", isPresented: Binding(get: { attachmentError != nil }, set: { if !$0 { attachmentError = nil } })) {
             Button("OK") { attachmentError = nil }
         } message: {
             Text(attachmentError ?? "")
         }
+    }
+
+    private func loadAttachment(from url: URL) {
+        guard let data = try? Data(contentsOf: url) else {
+            attachmentError = "Could not read the selected file."
+            return
+        }
+        guard data.count <= Self.maxAttachmentSize else {
+            attachmentError = "File is too large. Maximum size is 10 MB."
+            return
+        }
+        viewModel.pendingAttachment = (data: data, name: url.lastPathComponent, mimeType: url.mimeType)
     }
 
     private func attachmentPreview(name: String, data: Data, mimeType: String) -> some View {
