@@ -41,6 +41,7 @@ struct ChatView: View {
     @State private var showSettings = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showDocumentPicker = false
+    @State private var showAttachmentOptions = false
     @State private var attachmentError: String?
     private static let maxAttachmentSize = 10 * 1024 * 1024 // 10 MB
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
@@ -176,18 +177,40 @@ struct ChatView: View {
             }
 
             HStack(spacing: 8) {
-                // Attachment menu
-                Menu {
-                    Button { showDocumentPicker = true } label: {
-                        Label("Choose File", systemImage: "doc")
-                    }
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Label("Photo Library", systemImage: "photo")
-                    }
-                } label: {
+                // Attachment button
+                Button { showAttachmentOptions = true } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 26))
                         .foregroundStyle(.secondary)
+                }
+                .popover(isPresented: $showAttachmentOptions) {
+                    VStack(spacing: 0) {
+                        Button {
+                            showAttachmentOptions = false
+                            showDocumentPicker = true
+                        } label: {
+                            Label("Choose File", systemImage: "doc")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider()
+
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Label("Photo Library", systemImage: "photo")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        .onChange(of: selectedPhoto) {
+                            if selectedPhoto != nil { showAttachmentOptions = false }
+                        }
+                    }
+                    .frame(width: 200)
+                    .padding(.vertical, 4)
                 }
 
                 TextField("Message...", text: $viewModel.messageText, axis: .vertical)
