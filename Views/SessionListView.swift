@@ -184,6 +184,14 @@ struct SessionListView: View {
                 viewModel.currentPath = session.path
             }
         }
+        .onChange(of: viewModel.currentSessionId) { _, newValue in
+            // Mirror VM → local nav state so that when the server hands us a new
+            // session id (e.g. after /clear), the sidebar selection and detail
+            // pane follow without a flash back to "No Session Selected".
+            if let newValue, selectedSessionId != nil, selectedSessionId != newValue {
+                selectedSessionId = newValue
+            }
+        }
         .onAppear {
             if let expiry = KeychainManager.tokenExpiryDate {
                 daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
@@ -225,13 +233,30 @@ struct SessionListView: View {
                 .navigationTitle("Sessions")
                 .toolbar { sessionToolbar }
                 .overlay { sessionOverlay }
-                .navigationDestination(item: $selectedSessionId) { sessionId in
-                    ChatView(viewModel: viewModel, sessionId: sessionId)
+                // `isPresented:` (not `item:`) so that when the session id swaps
+                // mid-chat during a /clear handoff (HIVE-113), the ChatView stays
+                // mounted instead of being popped & re-pushed.
+                .navigationDestination(
+                    isPresented: Binding(
+                        get: { selectedSessionId != nil },
+                        set: { if !$0 { selectedSessionId = nil } }
+                    )
+                ) {
+                    if let sessionId = selectedSessionId {
+                        ChatView(viewModel: viewModel, sessionId: sessionId)
+                    }
                 }
         }
         .onAppear {
             if let expiry = KeychainManager.tokenExpiryDate {
                 daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
+            }
+        }
+        .onChange(of: viewModel.currentSessionId) { _, newValue in
+            // Mirror VM → local nav state so that when the server hands us a new
+            // session id (e.g. after /clear), the navigation follows without a pop.
+            if let newValue, selectedSessionId != nil, selectedSessionId != newValue {
+                selectedSessionId = newValue
             }
         }
         .background { sessionSheets }

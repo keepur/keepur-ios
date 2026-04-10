@@ -11,7 +11,9 @@
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
+		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
+		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,6 +33,7 @@
 		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
 		D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResilienceTests.swift; sourceTree = "<group>"; };
 		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
+		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -38,11 +41,6 @@
 		A1ABEBED2F79E24E009B0AFC /* Managers */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Managers;
-			sourceTree = "<group>";
-		};
-		A2BCDEF0A1B2C3D4E5F60001 /* Extensions */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Extensions;
 			sourceTree = "<group>";
 		};
 		A1ABEBF12F79E24E009B0AFC /* Models */ = {
@@ -60,6 +58,11 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		A2BCDEF0A1B2C3D4E5F60001 /* Extensions */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Extensions;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,6 +113,7 @@
 			children = (
 				E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */,
 				D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */,
+				F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */,
 				CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */,
 			);
 			path = KeeperTests;
@@ -130,11 +135,11 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A2BCDEF0A1B2C3D4E5F60001 /* Extensions */,
 				A1ABEBED2F79E24E009B0AFC /* Managers */,
 				A1ABEBF12F79E24E009B0AFC /* Models */,
 				A1ABEBF32F79E24E009B0AFC /* ViewModels */,
 				A1ABEBFA2F79E24E009B0AFC /* Views */,
+				A2BCDEF0A1B2C3D4E5F60001 /* Extensions */,
 			);
 			name = Keepur;
 			packageProductDependencies = (
@@ -190,6 +195,9 @@
 			);
 			mainGroup = A1ABEBB82F79E16C009B0AFC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1ABEBC22F79E16C009B0AFC /* Products */;
 			projectDirPath = "";
@@ -197,9 +205,6 @@
 			targets = (
 				A1ABEBC02F79E16C009B0AFC /* Keepur */,
 				F3927C9EB6BA4611BA776573 /* KeeperTests */,
-			);
-			packageReferences = (
-				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
 		};
 /* End PBXProject section */
@@ -237,6 +242,7 @@
 			files = (
 				E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */,
 				D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */,
+				F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */,
 				CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

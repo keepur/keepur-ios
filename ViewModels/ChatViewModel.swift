@@ -38,6 +38,14 @@ final class ChatViewModel: ObservableObject {
     private var pendingMessages: [(text: String, messageId: String, sessionId: String, attachment: (data: Data, name: String, mimeType: String)?)] = []
     private static let staleBusyTimeout: TimeInterval = 90
     private var busyTimers: [String: Task<Void, Never>] = [:]
+    /// Pending `/clear` handoffs, keyed by workspace path. Populated when
+    /// `context_cleared` arrives; consumed by the follow-up `session_info` for the
+    /// same path which performs the atomic old→new swap (see HIVE-113).
+    private struct ClearHandoff {
+        let oldSessionId: String
+        let oldName: String?
+    }
+    private var pendingClearHandoffs: [String: ClearHandoff] = [:]
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
@@ -214,20 +222,40 @@ final class ChatViewModel: ObservableObject {
             }
 
         case .sessionInfo(let sessionId, let path):
+            // If a /clear handoff for this path is pending (HIVE-113), perform the
+            // atomic swap: insert the new Session *first* so the sidebar @Query
+            // always has at least one row for this slot, flip currentSessionId so
+            // view navigation follows, then delete the old row. This keeps the
+            // chat screen mounted throughout the handoff.
+            let handoff = pendingClearHandoffs.removeValue(forKey: path)
             let existingDescriptor = FetchDescriptor<Session>(
                 predicate: #Predicate { $0.id == sessionId }
             )
             if let existing = try? context.fetch(existingDescriptor).first {
                 existing.path = path
                 existing.isStale = false
+                if let handoff, existing.name == nil {
+                    existing.name = handoff.oldName
+                }
             } else {
-                let session = Session(id: sessionId, path: path)
+                let session = Session(id: sessionId, path: path, name: handoff?.oldName)
                 context.insert(session)
             }
             try? context.save()
             currentSessionId = sessionId
             currentPath = path
             sessionStatuses[sessionId] = "idle"
+            if let handoff {
+                // Now delete the old (already-wiped) Session row.
+                let oldId = handoff.oldSessionId
+                let oldDescriptor = FetchDescriptor<Session>(
+                    predicate: #Predicate { $0.id == oldId }
+                )
+                if let oldRow = try? context.fetch(oldDescriptor).first {
+                    context.delete(oldRow)
+                    try? context.save()
+                }
+            }
             saveWorkspace(path: path, context: context)
 
         case .sessionList(let sessions):
@@ -249,41 +277,43 @@ final class ChatViewModel: ObservableObject {
         case .workspaceSessionList(_, let sessions):
             workspaceSessions = sessions
 
-        case .contextCleared(let oldSessionId, let sessionId):
-            // /clear — delete old session messages and replace Session with new ID
-            let oldId = oldSessionId
+        case .contextCleared(let oldSessionId, _):
+            // /clear handoff phase 1 (HIVE-113): wipe messages + per-session state
+            // for the old session, but *keep* the Session row and leave
+            // currentSessionId untouched so the chat screen stays mounted with its
+            // title/input bar intact. Phase 2 (the atomic row swap + navigation
+            // handoff) happens in `.sessionInfo` when the server hands back the new
+            // session id for the same workspace path.
+            //
+            // Note: the server sends oldSessionId == sessionId here — both fields
+            // carry the OLD id. The real new id only arrives via session_info.
+            let sessionDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == oldSessionId }
+            )
+            let oldSession = try? context.fetch(sessionDescriptor).first
+            if let oldSession {
+                pendingClearHandoffs[oldSession.path] = ClearHandoff(
+                    oldSessionId: oldSessionId,
+                    oldName: oldSession.name
+                )
+            }
+            // Wipe messages for the old session.
             let msgDescriptor = FetchDescriptor<Message>(
-                predicate: #Predicate { $0.sessionId == oldId }
+                predicate: #Predicate { $0.sessionId == oldSessionId }
             )
             if let messages = try? context.fetch(msgDescriptor) {
                 for msg in messages { context.delete(msg) }
+                try? context.save()
             }
-            let sessionDescriptor = FetchDescriptor<Session>(
-                predicate: #Predicate { $0.id == oldId }
-            )
-            let oldPath: String
-            let oldName: String?
-            if let oldSession = try? context.fetch(sessionDescriptor).first {
-                oldPath = oldSession.path
-                oldName = oldSession.name
-                context.delete(oldSession)
-            } else {
-                oldPath = currentPath
-                oldName = nil
-            }
-            let newSession = Session(id: sessionId, path: oldPath, name: oldName)
-            context.insert(newSession)
-            try? context.save()
+            // Clear per-session transient state.
             streamingMessageIds.removeValue(forKey: oldSessionId)
             lastCompletedMessageIds.removeValue(forKey: oldSessionId)
             sessionStatuses.removeValue(forKey: oldSessionId)
             sessionToolNames.removeValue(forKey: oldSessionId)
+            pendingApprovals.removeValue(forKey: oldSessionId)
+            busyTimers[oldSessionId]?.cancel()
+            busyTimers.removeValue(forKey: oldSessionId)
             clearPendingMessages(for: oldSessionId)
-            if currentSessionId == oldSessionId {
-                currentSessionId = sessionId
-                currentPath = oldPath
-            }
-            sessionStatuses[sessionId] = "idle"
 
         case .error(let message, let sessionId):
             if sessionId == nil && isBrowsePending {
