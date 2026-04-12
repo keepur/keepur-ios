@@ -389,14 +389,19 @@ final class TeamViewModel: ObservableObject {
         try? context.save()
         loadChannels(context: context)
 
-        // Auto-select DM after /dm creation; keep pending if DM hasn't appeared yet
-        // so the next syncChannels (e.g. from channel_event "created") can retry.
-        // Only clear pendingAgentDM here; pendingDMRequestId is cleared by the
-        // systemMessage suppression block (keeps suppression valid regardless of ordering).
-        if let agentId = pendingAgentDM,
-           let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
-            pendingAgentDM = nil
-            selectChannel(dm.id)
+        // Auto-select DM after /dm creation.
+        if let agentId = pendingAgentDM {
+            if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
+                // Success: DM found — navigate and clear.
+                pendingAgentDM = nil
+                selectChannel(dm.id)
+            } else if pendingDMRequestId == nil {
+                // Failure: suppression already fired (cleared pendingDMRequestId)
+                // but the DM was not created. Clear to unblock openAgentDM.
+                pendingAgentDM = nil
+            }
+            // Otherwise pendingDMRequestId is still set (systemMessage hasn't arrived
+            // yet, e.g. channel_event "created" raced ahead) — keep waiting.
         }
     }
 
