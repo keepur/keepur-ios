@@ -50,6 +50,9 @@ struct TeamChatView: View {
                     .presentationDetents([.medium, .large])
             }
         }
+        .onChange(of: viewModel.activeChannelId) {
+            showAgentDetail = false
+        }
     }
 
     // MARK: - Message List
