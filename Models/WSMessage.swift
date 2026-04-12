@@ -88,6 +88,7 @@ enum WSIncoming {
     case pong
     case toolOutput(toolName: String, output: String, toolUseId: String, sessionId: String)
     case contextCleared(oldSessionId: String, sessionId: String)
+    case sessionReplaced(oldSessionId: String, newSessionId: String, path: String)
     case unknown(raw: String)
 
     static func decode(from data: Data) -> WSIncoming? {
@@ -166,6 +167,11 @@ enum WSIncoming {
             guard let oldSessionId = json["oldSessionId"] as? String,
                   let sessionId = json["sessionId"] as? String else { return nil }
             return .contextCleared(oldSessionId: oldSessionId, sessionId: sessionId)
+        case "session_replaced":
+            guard let oldSessionId = json["oldSessionId"] as? String,
+                  let newSessionId = json["newSessionId"] as? String,
+                  let path = json["path"] as? String else { return nil }
+            return .sessionReplaced(oldSessionId: oldSessionId, newSessionId: newSessionId, path: path)
         default:
             let raw = extractText(from: json) ?? String(data: data, encoding: .utf8) ?? ""
             return .unknown(raw: raw)

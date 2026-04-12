@@ -15,6 +15,7 @@
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
+		A3B4C5D6E7F809A1B2C3D401 /* SessionReplacedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,6 +36,7 @@
 		D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResilienceTests.swift; sourceTree = "<group>"; };
 		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
 		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
+		A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReplacedTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -116,6 +118,7 @@
 				E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */,
 				D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */,
 				F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */,
+				A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */,
 				CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */,
 			);
 			path = KeeperTests;
@@ -247,6 +250,7 @@
 				E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */,
 				D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */,
 				F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */,
+				A3B4C5D6E7F809A1B2C3D401 /* SessionReplacedTests.swift in Sources */,
 				CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

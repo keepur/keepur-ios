@@ -315,6 +315,87 @@ final class ChatViewModel: ObservableObject {
             busyTimers.removeValue(forKey: oldSessionId)
             clearPendingMessages(for: oldSessionId)
 
+        case .sessionReplaced(let oldSessionId, let newSessionId, let path):
+            // Single-phase atomic swap: the server replaced one session with
+            // another at the same workspace path. Unlike context_cleared (which
+            // is two-phase), we get everything in one message.
+            //
+            // 1. Insert (or update) the new Session row first so the sidebar
+            //    @Query always has a row for this slot.
+            let oldSessDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == oldSessionId }
+            )
+            let oldSession = try? context.fetch(oldSessDescriptor).first
+            let preservedName = oldSession?.name
+
+            let existingNewDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { $0.id == newSessionId }
+            )
+            if let existingNew = try? context.fetch(existingNewDescriptor).first {
+                existingNew.path = path
+                existingNew.isStale = false
+                if existingNew.name == nil { existingNew.name = preservedName }
+            } else {
+                let newSession = Session(id: newSessionId, path: path, name: preservedName)
+                context.insert(newSession)
+            }
+            try? context.save()
+
+            // 2. Migrate messages from old → new session ID so the user keeps
+            //    their conversation history.
+            let msgDescriptor = FetchDescriptor<Message>(
+                predicate: #Predicate { $0.sessionId == oldSessionId }
+            )
+            if let messages = try? context.fetch(msgDescriptor) {
+                for msg in messages { msg.sessionId = newSessionId }
+                try? context.save()
+            }
+
+            // 3. Flip currentSessionId so the view navigation follows.
+            if currentSessionId == oldSessionId {
+                currentSessionId = newSessionId
+            }
+            currentPath = path
+
+            // 4. Migrate transient per-session state.
+            if let streamId = streamingMessageIds.removeValue(forKey: oldSessionId) {
+                streamingMessageIds[newSessionId] = streamId
+            }
+            if let completedId = lastCompletedMessageIds.removeValue(forKey: oldSessionId) {
+                lastCompletedMessageIds[newSessionId] = completedId
+            }
+            if let status = sessionStatuses.removeValue(forKey: oldSessionId) {
+                sessionStatuses[newSessionId] = status
+            }
+            if let toolName = sessionToolNames.removeValue(forKey: oldSessionId) {
+                sessionToolNames[newSessionId] = toolName
+            }
+            if let approval = pendingApprovals.removeValue(forKey: oldSessionId) {
+                pendingApprovals[newSessionId] = approval
+            }
+            if let timer = busyTimers.removeValue(forKey: oldSessionId) {
+                timer.cancel()
+                busyTimers.removeValue(forKey: newSessionId)
+            }
+
+            // Migrate queued pending messages.
+            for i in pendingMessages.indices where pendingMessages[i].sessionId == oldSessionId {
+                pendingMessages[i] = (
+                    text: pendingMessages[i].text,
+                    messageId: pendingMessages[i].messageId,
+                    sessionId: newSessionId,
+                    attachment: pendingMessages[i].attachment
+                )
+            }
+
+            // 5. Delete the old Session row.
+            if let oldSession {
+                context.delete(oldSession)
+                try? context.save()
+            }
+
+            saveWorkspace(path: path, context: context)
+
         case .error(let message, let sessionId):
             if sessionId == nil && isBrowsePending {
                 isBrowsePending = false
