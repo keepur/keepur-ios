@@ -227,7 +227,11 @@ final class TeamViewModel: ObservableObject {
             return
         }
 
-        // 2. Not found — create via /dm command
+        // 2. Ignore if a /dm creation is already in flight (prevents overwriting
+        //    the pending request ID on rapid taps, which would break suppression).
+        guard pendingAgentDM == nil else { return }
+
+        // 3. Not found — create via /dm command
         let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.name])
         guard let requestId = ws.sendWithId(command) else { return }  // offline — no-op
 
