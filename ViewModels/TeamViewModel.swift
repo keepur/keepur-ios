@@ -272,6 +272,7 @@ final class TeamViewModel: ObservableObject {
 
             // Suppress /dm system response when initiated from openAgentDM
             if let replyTo, replyTo == pendingDMRequestId {
+                pendingAgentDM = nil
                 pendingDMRequestId = nil
                 return  // Navigation is the feedback; don't insert message
             }
@@ -383,13 +384,13 @@ final class TeamViewModel: ObservableObject {
         try? context.save()
         loadChannels(context: context)
 
-        // Auto-select DM after /dm creation, or clear stale state on failure
-        if let agentId = pendingAgentDM {
+        // Auto-select DM after /dm creation; keep pending if DM hasn't appeared yet
+        // so the next syncChannels (e.g. from channel_event "created") can retry.
+        if let agentId = pendingAgentDM,
+           let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
             pendingAgentDM = nil
             pendingDMRequestId = nil
-            if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
-                selectChannel(dm.id)
-            }
+            selectChannel(dm.id)
         }
     }
 
