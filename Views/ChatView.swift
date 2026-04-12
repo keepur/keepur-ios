@@ -60,70 +60,54 @@ struct ChatView: View {
     }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(messages, id: \.id) { message in
-                                MessageBubble(
-                                    message: message,
-                                    showWaitingBadge: viewModel.pendingMessageIds.contains(message.id),
-                                    onSpeak: message.role == "assistant" ? { text in
-                                        viewModel.speechManager.speak(text)
-                                    } : nil
-                                )
-                                    .id(message.id)
-                            }
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(messages, id: \.id) { message in
+                            MessageBubble(
+                                message: message,
+                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id),
+                                onSpeak: message.role == "assistant" ? { text in
+                                    viewModel.speechManager.speak(text)
+                                } : nil
+                            )
+                                .id(message.id)
+                        }
 
-                            if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
-                                StatusIndicator(status: viewModel.statusFor(sessionId), toolName: viewModel.toolNameFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
-                                    .id("status")
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                    }
-                    .onAppear {
-                        if let lastId = messages.last?.id {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: messages.count) {
-                        withAnimation {
-                            proxy.scrollTo(messages.last?.id ?? "status", anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.sessionStatuses[sessionId]) {
                         if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
-                            withAnimation {
-                                proxy.scrollTo("status", anchor: .bottom)
-                            }
+                            StatusIndicator(status: viewModel.statusFor(sessionId), toolName: viewModel.toolNameFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
+                                .id("status")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .onAppear {
+                    if let lastId = messages.last?.id {
+                        proxy.scrollTo(lastId, anchor: .bottom)
+                    }
+                }
+                .onChange(of: messages.count) {
+                    withAnimation {
+                        proxy.scrollTo(messages.last?.id ?? "status", anchor: .bottom)
+                    }
+                }
+                .onChange(of: viewModel.sessionStatuses[sessionId]) {
+                    if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
+                        withAnimation {
+                            proxy.scrollTo("status", anchor: .bottom)
                         }
                     }
                 }
-
-                Divider()
-
-                if viewModel.currentSessionId == sessionId {
-                    inputBar
-                } else {
-                    readOnlyBar
-                }
             }
 
-            // Full-screen recording overlay
-            if viewModel.speechManager.isRecording {
-                RecordingOverlayView(speechManager: viewModel.speechManager)
-                    .transition(.opacity)
-                    .zIndex(1)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: viewModel.speechManager.isRecording)
-        // Auto-send voice text when WhisperKit transcription completes
-        .onChange(of: viewModel.speechManager.isTranscribing) {
-            if !viewModel.speechManager.isTranscribing && !viewModel.speechManager.transcribedText.isEmpty {
-                viewModel.sendVoiceText()
+            Divider()
+
+            if viewModel.currentSessionId == sessionId {
+                inputBar
+            } else {
+                readOnlyBar
             }
         }
         .navigationTitle(navigationTitle)
@@ -240,8 +224,10 @@ struct ChatView: View {
                     .lineLimit(1...6)
                     .onSubmit { viewModel.sendText() }
 
-                // Voice button — starts recording, overlay handles stop
-                VoiceButton(speechManager: viewModel.speechManager)
+                // Voice button
+                VoiceButton(speechManager: viewModel.speechManager) {
+                    viewModel.sendVoiceText()
+                }
 
                 Button { viewModel.sendText() } label: {
                     Image(systemName: "arrow.up.circle.fill")

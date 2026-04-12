@@ -3,34 +3,10 @@ import AVFoundation
 import Combine
 import WhisperKit
 
-// MARK: - Thread-safe buffer collector
-
-/// Collects audio buffers from the AVAudioEngine tap callback (audio render thread)
-/// using a lock, so `stopRecording()` can drain all buffers without a race condition.
-final class AudioBufferCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var buffers: [AVAudioPCMBuffer] = []
-
-    func append(_ buffer: AVAudioPCMBuffer) {
-        lock.lock()
-        buffers.append(buffer)
-        lock.unlock()
-    }
-
-    func drain() -> [AVAudioPCMBuffer] {
-        lock.lock()
-        let result = buffers
-        buffers = []
-        lock.unlock()
-        return result
-    }
-}
-
 @MainActor
 final class SpeechManager: ObservableObject {
     @Published var isRecording = false
     @Published var isTranscribing = false
-    @Published var isModelLoading = false
     @Published var isSpeaking = false
     @Published var transcribedText = ""
     @Published var modelReady = false
@@ -41,7 +17,7 @@ final class SpeechManager: ObservableObject {
     private var whisperKit: WhisperKit?
     private let synthesizer = AVSpeechSynthesizer()
     private let audioEngine = AVAudioEngine()
-    private let bufferCollector = AudioBufferCollector()
+    private var audioBuffers: [AVAudioPCMBuffer] = []
 
     init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
@@ -50,8 +26,6 @@ final class SpeechManager: ObservableObject {
     // MARK: - Model Loading
 
     func loadModel() async {
-        isModelLoading = true
-
         // Heavy work off main thread — model download + CoreML compilation
         // Explicit type annotation avoids double-optional ambiguity from try? inside Task.detached
         let kit: WhisperKit? = await Task.detached {
@@ -61,7 +35,6 @@ final class SpeechManager: ObservableObject {
         // Back on @MainActor for published property update.
         whisperKit = kit
         modelReady = kit != nil
-        isModelLoading = false
     }
 
     // MARK: - Recording
@@ -101,7 +74,7 @@ final class SpeechManager: ObservableObject {
         }
         #endif
 
-        _ = bufferCollector.drain() // Clear any stale buffers
+        audioBuffers = []
         transcribedText = ""
 
         // Stop TTS if playing
@@ -121,12 +94,12 @@ final class SpeechManager: ObservableObject {
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         guard recordingFormat.channelCount > 0 else { return }
 
-        let collector = bufferCollector
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            // AVAudioEngine reuses buffer memory — must copy before storing.
-            // Append synchronously under lock (no async dispatch = no lost buffers).
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            // AVAudioEngine reuses buffer memory — must copy before dispatching
             guard let copy = buffer.copy() as? AVAudioPCMBuffer else { return }
-            collector.append(copy)
+            Task { @MainActor in
+                self?.audioBuffers.append(copy)
+            }
         }
 
         audioEngine.prepare()
@@ -141,30 +114,22 @@ final class SpeechManager: ObservableObject {
     func stopRecording() {
         let inputNode = audioEngine.inputNode
         cleanupRecording(inputNode: inputNode)
-        // isRecording is now false → overlay dismisses immediately
 
         #if os(iOS)
         // Deactivate audio session so TTS playback works immediately after
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
 
-        // Drain all buffers under lock — guaranteed complete, no race.
-        let buffers = bufferCollector.drain()
-        guard !buffers.isEmpty else { return }
+        // Prepare samples on main thread (fast), then transcribe off main thread (slow)
+        let samples = convertBuffersToSamples(audioBuffers)
+        audioBuffers = [] // Free memory
+
+        guard !samples.isEmpty else { return }
         guard let whisperKit else { return }
 
         isTranscribing = true
-        // Spinner shows in VoiceButton; all heavy work happens off main thread.
 
         Task.detached { [weak self] in
-            // Convert + transcribe entirely off MainActor so UI stays responsive.
-            let samples = Self.convertBuffersToSamples(buffers)
-
-            guard !samples.isEmpty else {
-                await MainActor.run { self?.isTranscribing = false }
-                return
-            }
-
             do {
                 let results = try await whisperKit.transcribe(audioArray: samples)
                 let text = Self.extractText(from: results)
@@ -201,7 +166,7 @@ final class SpeechManager: ObservableObject {
     /// then convert in a single pass. This avoids the multi-buffer slicing problem where
     /// AVAudioConverter's input callback could partially consume a buffer and silently
     /// drop frames.
-    nonisolated private static func convertBuffersToSamples(_ buffers: [AVAudioPCMBuffer]) -> [Float] {
+    private func convertBuffersToSamples(_ buffers: [AVAudioPCMBuffer]) -> [Float] {
         guard let firstBuffer = buffers.first else { return [] }
 
         let inputFormat = firstBuffer.format
