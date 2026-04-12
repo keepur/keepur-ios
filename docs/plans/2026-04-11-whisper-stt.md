@@ -1,3 +1,107 @@
+# WhisperKit STT Implementation Plan
+
+> **For agentic workers:** Use dodi-dev:implement to execute this plan.
+
+**Goal:** Replace Apple's `SFSpeechRecognizer` with on-device WhisperKit for significantly better accent accuracy.
+
+**Architecture:** Swap the speech recognition backend in `SpeechManager` from streaming Apple STT to batch WhisperKit transcription. Audio is still captured via `AVAudioEngine` but collected into buffers instead of streamed. On stop, buffers are resampled to 16 kHz mono and passed to WhisperKit's `transcribe(audioArray:)` running off the main thread. `VoiceButton` gains a third "transcribing" state. TTS is unchanged.
+
+**Tech Stack:** SwiftUI, WhisperKit (SPM), AVFoundation, CoreML
+
+---
+
+### Task 1: Add WhisperKit SPM Dependency
+
+**Files:**
+- Modify: `Keepur.xcodeproj/project.pbxproj`
+
+Adding WhisperKit via Xcode SPM requires modifying the pbxproj. The existing MarkdownUI dependency (lines 545–561) shows the exact pattern.
+
+- [ ] **Step 1:** Check the latest WhisperKit release version:
+
+```bash
+curl -s https://api.github.com/repos/argmaxinc/WhisperKit/releases/latest | grep tag_name
+```
+
+- [ ] **Step 2:** Add the WhisperKit package reference and product dependency to `project.pbxproj`.
+
+Generate unique UUIDs for the new entries, then add three stanzas following the MarkdownUI pattern:
+
+**a) Add `XCRemoteSwiftPackageReference` (in the section starting at line 545):**
+
+```
+		AABB11223344556677889900 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				kind = exactVersion;
+				version = <VERSION_FROM_STEP_1>;
+			};
+		};
+```
+
+**b) Add `XCSwiftPackageProductDependency` (in the section starting at line 556):**
+
+```
+		BBCC22334455667788990011 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AABB11223344556677889900 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
+```
+
+**c) Wire into the main target:**
+
+1. Add `AABB11223344556677889900` to the `packageReferences` array (line 198–200):
+```
+			packageReferences = (
+				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				AABB11223344556677889900 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+			);
+```
+
+2. Add `BBCC22334455667788990011` to `packageProductDependencies` (near line 146):
+```
+				D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */,
+				BBCC22334455667788990011 /* WhisperKit */,
+```
+
+3. Add a `PBXBuildFile` entry for WhisperKit in Frameworks build phase (near line 73):
+```
+				CCDD33445566778899001122 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = BBCC22334455667788990011 /* WhisperKit */; };
+```
+
+And add `CCDD33445566778899001122` to the frameworks build phase files array.
+
+**Note:** The UUIDs above are placeholders — generate real 24-character hex UUIDs that don't collide with existing ones in the file. Use `uuidgen | tr -d '-' | cut -c1-24` to generate them.
+
+- [ ] **Step 3:** Verify the dependency resolves:
+
+```bash
+cd /Users/mokie/github/keepur-ios && xcodebuild -resolvePackageDependencies -project Keepur.xcodeproj -scheme Keepur 2>&1 | tail -10
+```
+
+Expected: Package resolution succeeds without errors.
+
+- [ ] **Step 4:** Commit
+
+```bash
+git add Keepur.xcodeproj/project.pbxproj
+git commit -m "chore: add WhisperKit SPM dependency"
+```
+
+---
+
+### Task 2: Rewrite SpeechManager for WhisperKit
+
+**Files:**
+- Modify: `Managers/SpeechManager.swift` (full rewrite of STT logic, TTS untouched)
+
+This is the core change. Remove all `Speech` framework code, add WhisperKit model loading, buffer-based recording, audio format conversion, and off-main-thread transcription.
+
+- [ ] **Step 1:** Replace `Managers/SpeechManager.swift` with the following complete implementation:
+
+```swift
 import Foundation
 import AVFoundation
 import Combine
@@ -122,7 +226,7 @@ final class SpeechManager: ObservableObject {
 
         // Prepare samples on main thread (fast), then transcribe off main thread (slow)
         let samples = convertBuffersToSamples(audioBuffers)
-        audioBuffers = [] // Free memory
+        audioBuffers = []
 
         guard !samples.isEmpty else { return }
         guard let whisperKit else { return }
@@ -153,7 +257,7 @@ final class SpeechManager: ObservableObject {
     /// Verify the return type against the pinned WhisperKit version at build time.
     /// If the version returns [[TranscriptionResult]?] instead of [TranscriptionResult],
     /// adjust to: results.first??.first?.text
-    nonisolated private static func extractText(from results: [TranscriptionResult]) -> String {
+    private static func extractText(from results: [TranscriptionResult]) -> String {
         results.first?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
@@ -201,7 +305,7 @@ final class SpeechManager: ObservableObject {
             combinedBuffer.frameLength += buffer.frameLength
         }
 
-        // Step 2: Set up converter from input format -> 16 kHz mono float
+        // Step 2: Set up converter from input format → 16 kHz mono float
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16000,
@@ -241,7 +345,7 @@ final class SpeechManager: ObservableObject {
 
                 // Provide only as many frames as the converter requests (inNumberOfPackets),
                 // or fewer if we don't have that many left. For PCM, packets == frames.
-                let framesToProvide = min(Int(inNumberOfPackets), remaining)
+                let framesToProvide = min(Int(inNumberOfPackets.pointee), remaining)
                 guard let slice = AVAudioPCMBuffer(
                     pcmFormat: inputFormat,
                     frameCapacity: AVAudioFrameCount(framesToProvide)
@@ -257,8 +361,10 @@ final class SpeechManager: ObservableObject {
                     }
                 }
                 slice.frameLength = AVAudioFrameCount(framesToProvide)
-                frameOffset += framesToProvide // Only advance by what was actually provided
+                frameOffset += framesToProvide  // Only advance by what was actually provided
 
+                // Tell the converter how many packets we actually provided
+                inNumberOfPackets.pointee = AVAudioPacketCount(framesToProvide)
                 outStatus.pointee = .haveData
                 return slice
             }
@@ -327,3 +433,182 @@ final class SpeechManager: ObservableObject {
         isRecording = false
     }
 }
+```
+
+- [ ] **Step 2:** Verify the file compiles (will need Task 1 complete first — WhisperKit import)
+
+- [ ] **Step 3:** Commit
+
+```bash
+git add Managers/SpeechManager.swift
+git commit -m "feat: replace SFSpeechRecognizer with WhisperKit in SpeechManager"
+```
+
+---
+
+### Task 3: Update VoiceButton for Transcribing State
+
+**Files:**
+- Modify: `Views/VoiceButton.swift` (full rewrite — 52 lines → ~45 lines)
+
+Remove `Speech` framework dependency, add transcribing spinner state, replace 0.5s delay with `onChange` observer, gate on `modelReady`.
+
+- [ ] **Step 1:** Replace `Views/VoiceButton.swift` with:
+
+```swift
+import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
+
+struct VoiceButton: View {
+    @ObservedObject var speechManager: SpeechManager
+    let onComplete: () -> Void
+
+    var body: some View {
+        Button {
+            if speechManager.isRecording {
+                speechManager.stopRecording()
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                // onComplete fires via .onChange(of: isTranscribing) below
+            } else {
+                speechManager.startRecording()
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                #endif
+            }
+        } label: {
+            ZStack {
+                if speechManager.isTranscribing {
+                    ProgressView()
+                        .frame(width: 44, height: 44)
+                } else if speechManager.isRecording {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Image(systemName: "mic.fill")
+                        .font(.title2)
+                        .foregroundStyle(speechManager.modelReady ? Color.accentColor : .gray)
+                        .frame(width: 44, height: 44)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .animation(.easeInOut(duration: 0.2), value: speechManager.isRecording)
+            .animation(.easeInOut(duration: 0.2), value: speechManager.isTranscribing)
+        }
+        .disabled(!speechManager.modelReady || speechManager.isTranscribing)
+        .onChange(of: speechManager.isTranscribing) {
+            if !speechManager.isTranscribing && !speechManager.transcribedText.isEmpty {
+                onComplete()
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 2:** Commit
+
+```bash
+git add Views/VoiceButton.swift
+git commit -m "feat: add transcribing state to VoiceButton, remove Speech framework dependency"
+```
+
+---
+
+### Task 4: Add Model Loading to ContentView
+
+**Files:**
+- Modify: `Views/ContentView.swift:31` (add `.task` modifier)
+
+Trigger WhisperKit model loading when the root view appears. Uses `.task {}` on the `Group` so it's tied to the view lifecycle.
+
+- [ ] **Step 1:** Add `.task(id:)` modifier to the `Group`, chained after the last `.onChange` modifier and **before** the closing `}` of `var body`. Insert between the closing `}` of `.onChange(of: teamViewModel.isAuthenticated)` (line 55) and the closing `}` of `body` (line 56):
+
+```swift
+        .task(id: isPaired) {
+            guard isPaired else { return }
+            await chatViewModel.speechManager.loadModel()
+        }
+```
+
+This uses `.task(id: isPaired)` so it:
+- Skips model download when the app is not yet paired (no 150MB download on first launch before pairing)
+- Re-runs when `isPaired` transitions to `true` after pairing completes
+
+The full modifier chain on the `Group` becomes:
+```swift
+        .onAppear { ... }
+        .onChange(of: scenePhase) { ... }
+        .onChange(of: chatViewModel.isAuthenticated) { ... }
+        .onChange(of: teamViewModel.isAuthenticated) { ... }
+        .task(id: isPaired) {
+            guard isPaired else { return }
+            await chatViewModel.speechManager.loadModel()
+        }
+```
+
+- [ ] **Step 2:** Commit
+
+```bash
+git add Views/ContentView.swift
+git commit -m "feat: load WhisperKit model on app launch via .task on ContentView"
+```
+
+---
+
+### Task 5: Remove NSSpeechRecognitionUsageDescription
+
+**Files:**
+- Modify: `Keepur.xcodeproj/project.pbxproj` (if the key is in build settings)
+
+The `NSSpeechRecognitionUsageDescription` Info.plist key is no longer needed since we removed `SFSpeechRecognizer`. It may be stored in Xcode's target Info tab (embedded in the pbxproj build settings) rather than in the custom `Info.plist` file.
+
+- [ ] **Step 1:** Search for the key in the project file:
+
+```bash
+grep -n "NSSpeechRecognition" /Users/mokie/github/keepur-ios/Keepur.xcodeproj/project.pbxproj /Users/mokie/github/keepur-ios/Info.plist
+```
+
+- [ ] **Step 2:** If found, remove the `NSSpeechRecognitionUsageDescription` entry. Keep `NSMicrophoneUsageDescription`.
+
+- [ ] **Step 3:** Commit (if changes were made)
+
+```bash
+git add Keepur.xcodeproj/project.pbxproj Info.plist
+git commit -m "chore: remove NSSpeechRecognitionUsageDescription (no longer using Speech framework)"
+```
+
+---
+
+### Task 6: Build Verification
+
+**Files:** None (verification only)
+
+- [ ] **Step 1:** Build the project for both iOS and macOS:
+
+```bash
+cd /Users/mokie/github/keepur-ios
+xcodebuild build -project Keepur.xcodeproj -scheme Keepur -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -20
+```
+
+```bash
+xcodebuild build -project Keepur.xcodeproj -scheme Keepur -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -20
+```
+
+Expected: Both builds succeed with no errors.
+
+- [ ] **Step 2:** Run existing tests to verify no regressions:
+
+```bash
+xcodebuild test -project Keepur.xcodeproj -scheme Keepur -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -20
+```
+
+Expected: All existing tests pass (WSMessageAttachmentTests, ContextClearedTests, etc.)
+
+- [ ] **Step 3:** If WhisperKit's `transcribe(audioArray:)` API signature doesn't match what we wrote (return type or throws vs non-throws), adjust `SpeechManager.stopRecording()` and the `extractText` pattern accordingly. The spec documents both `[TranscriptionResult]` and `[[TranscriptionResult]?]` return type variants — use whichever matches the pinned version.

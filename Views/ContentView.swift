@@ -53,5 +53,9 @@ struct ContentView: View {
                 chatViewModel.unpair()
             }
         }
+        .task(id: isPaired) {
+            guard isPaired else { return }
+            await chatViewModel.speechManager.loadModel()
+        }
     }
 }

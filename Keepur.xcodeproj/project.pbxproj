@@ -11,6 +11,7 @@
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
+		2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 66A392317E85460A9D615D5B /* WhisperKit */; };
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
@@ -71,6 +72,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */,
+				2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,6 +146,7 @@
 			name = Keepur;
 			packageProductDependencies = (
 				D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */,
+				66A392317E85460A9D615D5B /* WhisperKit */,
 			);
 			productName = Keepur;
 			productReference = A1ABEBC12F79E16C009B0AFC /* Keepur.app */;
@@ -197,6 +200,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1ABEBC22F79E16C009B0AFC /* Products */;
@@ -432,7 +436,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Keepur needs microphone access for voice input";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Keepur uses speech recognition to transcribe your voice messages";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -479,7 +482,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Keepur needs microphone access for voice input";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Keepur uses speech recognition to transcribe your voice messages";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -551,6 +553,14 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				kind = exactVersion;
+				version = 0.18.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -558,6 +568,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		66A392317E85460A9D615D5B /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
