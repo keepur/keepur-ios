@@ -3,6 +3,28 @@ import AVFoundation
 import Combine
 import WhisperKit
 
+/// Thread-safe buffer collector for AVAudioEngine tap callbacks.
+/// The tap runs on the audio render thread — appends are synchronous under lock,
+/// so stopRecording() can drain all buffers with zero race condition.
+final class AudioBufferCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffers: [AVAudioPCMBuffer] = []
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        buffers.append(buffer)
+        lock.unlock()
+    }
+
+    func drain() -> [AVAudioPCMBuffer] {
+        lock.lock()
+        let result = buffers
+        buffers = []
+        lock.unlock()
+        return result
+    }
+}
+
 @MainActor
 final class SpeechManager: ObservableObject {
     @Published var isRecording = false
@@ -17,7 +39,7 @@ final class SpeechManager: ObservableObject {
     private var whisperKit: WhisperKit?
     private let synthesizer = AVSpeechSynthesizer()
     private let audioEngine = AVAudioEngine()
-    private var audioBuffers: [AVAudioPCMBuffer] = []
+    private let bufferCollector = AudioBufferCollector()
 
     init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
@@ -74,7 +96,7 @@ final class SpeechManager: ObservableObject {
         }
         #endif
 
-        audioBuffers = []
+        _ = bufferCollector.drain() // Clear any stale buffers
         transcribedText = ""
 
         // Stop TTS if playing
@@ -94,12 +116,12 @@ final class SpeechManager: ObservableObject {
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         guard recordingFormat.channelCount > 0 else { return }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            // AVAudioEngine reuses buffer memory — must copy before dispatching
+        let collector = bufferCollector
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            // AVAudioEngine reuses buffer memory — must copy before storing.
+            // Append synchronously under lock (no async dispatch = no lost buffers).
             guard let copy = buffer.copy() as? AVAudioPCMBuffer else { return }
-            Task { @MainActor in
-                self?.audioBuffers.append(copy)
-            }
+            collector.append(copy)
         }
 
         audioEngine.prepare()
@@ -120,9 +142,8 @@ final class SpeechManager: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
 
-        // Prepare samples on main thread (fast), then transcribe off main thread (slow)
-        let samples = convertBuffersToSamples(audioBuffers)
-        audioBuffers = [] // Free memory
+        // Drain all buffers under lock — guaranteed complete, no race.
+        let samples = convertBuffersToSamples(bufferCollector.drain())
 
         guard !samples.isEmpty else { return }
         guard let whisperKit else { return }
