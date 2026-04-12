@@ -25,6 +25,7 @@ struct ContentView: View {
                     isPaired = true
                     chatViewModel.isAuthenticated = true
                     chatViewModel.configure(context: modelContext)
+                    teamViewModel.speechManager = chatViewModel.speechManager
                     teamViewModel.configure(context: modelContext)
                 })
             }
@@ -32,6 +33,7 @@ struct ContentView: View {
         .onAppear {
             if isPaired {
                 chatViewModel.configure(context: modelContext)
+                teamViewModel.speechManager = chatViewModel.speechManager
                 teamViewModel.configure(context: modelContext)
             }
         }

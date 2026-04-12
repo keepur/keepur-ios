@@ -14,6 +14,20 @@ struct TeamCommandInfo {
     let description: String
 }
 
+struct TeamAgentInfo {
+    let id: String
+    let name: String
+    let icon: String
+    let title: String?
+    let model: String
+    let status: String      // "idle", "processing", "error", "stopped"
+    let tools: [String]
+    let schedule: [[String: String]]   // [{ "cron": "...", "task": "..." }]
+    let channels: [String]
+    let messagesProcessed: Int
+    let lastActivity: String?          // ISO 8601, nil if agent never messaged
+}
+
 struct TeamHistoryMessage {
     let id: String          // Server ObjectId
     let channelId: String
@@ -36,6 +50,7 @@ enum TeamWSOutgoing {
     case command(channelId: String, name: String, args: [String])
     case commandList
     case channelList
+    case agentList
     case history(channelId: String, before: String?, limit: Int?)
     case ping
 
@@ -80,6 +95,8 @@ enum TeamWSOutgoing {
             dict["type"] = "command_list"
         case .channelList:
             dict["type"] = "channel_list"
+        case .agentList:
+            dict["type"] = "agent_list"
         case .history(let channelId, let before, let limit):
             dict["type"] = "history"
             dict["channelId"] = channelId
@@ -102,6 +119,7 @@ enum TeamWSIncoming {
     case systemMessage(text: String, agentId: String, agentName: String, replyTo: String?)
     case channelList(channels: [TeamChannelInfo], id: String)
     case commandList(commands: [TeamCommandInfo], id: String)
+    case agentList(agents: [TeamAgentInfo], id: String)
     case history(channelId: String, messages: [TeamHistoryMessage], hasMore: Bool, id: String)
     case channelEvent(channelId: String, event: String, memberId: String?, id: String)
     case ack(id: String)
@@ -148,6 +166,29 @@ enum TeamWSIncoming {
                 return TeamCommandInfo(name: name, description: desc)
             }
             return .commandList(commands: commands, id: id)
+        case "agent_list":
+            guard let agentsArray = json["agents"] as? [[String: Any]],
+                  let id = json["id"] as? String else { return nil }
+            let agents = agentsArray.compactMap { dict -> TeamAgentInfo? in
+                guard let agentId = dict["id"] as? String,
+                      let name = dict["name"] as? String else { return nil }
+                let icon = dict["icon"] as? String ?? ""
+                let title = dict["title"] as? String
+                let model = dict["model"] as? String ?? ""
+                let status = dict["status"] as? String ?? "idle"
+                let tools = dict["tools"] as? [String] ?? []
+                let schedule = (dict["schedule"] as? [[String: String]]) ?? []
+                let channels = dict["channels"] as? [String] ?? []
+                let messagesProcessed = dict["messagesProcessed"] as? Int ?? 0
+                let lastActivity = dict["lastActivity"] as? String
+                return TeamAgentInfo(
+                    id: agentId, name: name, icon: icon, title: title,
+                    model: model, status: status, tools: tools,
+                    schedule: schedule, channels: channels,
+                    messagesProcessed: messagesProcessed, lastActivity: lastActivity
+                )
+            }
+            return .agentList(agents: agents, id: id)
         case "history":
             guard let channelId = json["channelId"] as? String,
                   let messagesArray = json["messages"] as? [[String: Any]],
