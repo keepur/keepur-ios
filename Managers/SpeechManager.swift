@@ -1,96 +1,105 @@
 import Foundation
-import Speech
 import AVFoundation
 import Combine
+import WhisperKit
 
 @MainActor
 final class SpeechManager: ObservableObject {
     @Published var isRecording = false
+    @Published var isTranscribing = false
     @Published var isSpeaking = false
     @Published var transcribedText = ""
-    @Published var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    @Published var modelReady = false
     @Published var selectedVoiceId: String? {
         didSet { UserDefaults.standard.set(selectedVoiceId, forKey: "selectedVoiceId") }
     }
 
-    private var speechRecognizer: SFSpeechRecognizer?
+    private var whisperKit: WhisperKit?
     private let synthesizer = AVSpeechSynthesizer()
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var audioBuffers: [AVAudioPCMBuffer] = []
 
     init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
-        self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     }
 
-    func requestPermission() {
-        SFSpeechRecognizer.requestAuthorization { [weak self] status in
-            Task { @MainActor in
-                self?.authorizationStatus = status
-                if status == .authorized {
-                    self?.startRecording()
-                }
-            }
-        }
+    // MARK: - Model Loading
+
+    func loadModel() async {
+        // Heavy work off main thread — model download + CoreML compilation
+        // Explicit type annotation avoids double-optional ambiguity from try? inside Task.detached
+        let kit: WhisperKit? = await Task.detached {
+            try? await WhisperKit(model: "openai_whisper-base")
+        }.value
+
+        // Back on @MainActor for published property update.
+        whisperKit = kit
+        modelReady = kit != nil
     }
+
+    // MARK: - Recording
 
     func startRecording() {
+        // Prevent double-tap: if already recording, stop instead
         if isRecording {
             stopRecording()
             return
         }
 
-        guard authorizationStatus == .authorized else {
-            requestPermission()
-            return
-        }
+        guard modelReady else { return }
 
-        // Stop TTS if playing
-        if isSpeaking { stopSpeaking() }
-
-        transcribedText = ""
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        // TODO: macOS skips audio session setup — verify speech recognition works without it.
-        // macOS manages audio routing at OS level, but may need explicit mic permission handling.
+        // Request mic permission if not yet granted (iOS 17+)
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
+        guard audioSession.recordPermission == .granted else {
+            if audioSession.recordPermission == .undetermined {
+                // Request mic permission — use iOS 17+ API with fallback
+                if #available(iOS 17, *) {
+                    AVAudioApplication.requestRecordPermission { [weak self] granted in
+                        Task { @MainActor in
+                            if granted { self?.startRecording() }
+                        }
+                    }
+                } else {
+                    audioSession.requestRecordPermission { [weak self] granted in
+                        Task { @MainActor in
+                            if granted { self?.startRecording() }
+                        }
+                    }
+                }
+            }
+            // If denied, do nothing — button is tappable but mic won't work.
+            // User must grant permission in system Settings.
             return
         }
         #endif
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        recognitionRequest = request
+        audioBuffers = []
+        transcribedText = ""
+
+        // Stop TTS if playing
+        if isSpeaking { stopSpeaking() }
+
+        #if os(iOS)
+        do {
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            cleanupRecording(inputNode: audioEngine.inputNode)
+            return
+        }
+        #endif
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        guard recordingFormat.channelCount > 0 else { return }
 
-        guard recordingFormat.channelCount > 0 else {
-            recognitionRequest = nil
-            return
-        }
-
-        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            // AVAudioEngine reuses buffer memory — must copy before dispatching
+            guard let copy = buffer.copy() as? AVAudioPCMBuffer else { return }
             Task { @MainActor in
-                guard let self else { return }
-                if let result {
-                    self.transcribedText = result.bestTranscription.formattedString
-                }
-                if error != nil || (result?.isFinal ?? false) {
-                    self.cleanupRecording(inputNode: inputNode)
-                }
+                self?.audioBuffers.append(copy)
             }
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
         }
 
         audioEngine.prepare()
@@ -103,15 +112,174 @@ final class SpeechManager: ObservableObject {
     }
 
     func stopRecording() {
-        recognitionRequest?.endAudio()
-        audioEngine.stop()
-        isRecording = false
+        let inputNode = audioEngine.inputNode
+        cleanupRecording(inputNode: inputNode)
+
+        #if os(iOS)
+        // Deactivate audio session so TTS playback works immediately after
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
+
+        // Prepare samples on main thread (fast), then transcribe off main thread (slow)
+        let samples = convertBuffersToSamples(audioBuffers)
+        audioBuffers = [] // Free memory
+
+        guard !samples.isEmpty else { return }
+        guard let whisperKit else { return }
+
+        isTranscribing = true
+
+        Task.detached { [weak self] in
+            do {
+                let results = try await whisperKit.transcribe(audioArray: samples)
+                let text = Self.extractText(from: results)
+                await MainActor.run {
+                    self?.transcribedText = text
+                    self?.isTranscribing = false
+                }
+            } catch {
+                print("Whisper transcription error: \(error)")
+                await MainActor.run {
+                    self?.transcribedText = ""
+                    self?.isTranscribing = false
+                }
+            }
+        }
     }
+
+    // MARK: - Transcription Helpers
+
+    /// Extract transcription text from WhisperKit results.
+    /// Verify the return type against the pinned WhisperKit version at build time.
+    /// If the version returns [[TranscriptionResult]?] instead of [TranscriptionResult],
+    /// adjust to: results.first??.first?.text
+    nonisolated private static func extractText(from results: [TranscriptionResult]) -> String {
+        results.first?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    // MARK: - Audio Format Conversion
+
+    /// Converts recorded audio buffers to 16 kHz mono Float array for WhisperKit.
+    /// WhisperKit expects [Float] at 16000 Hz, mono, normalized to [-1.0, 1.0].
+    ///
+    /// Strategy: Pre-concatenate all small capture buffers into one large input buffer,
+    /// then convert in a single pass. This avoids the multi-buffer slicing problem where
+    /// AVAudioConverter's input callback could partially consume a buffer and silently
+    /// drop frames.
+    private func convertBuffersToSamples(_ buffers: [AVAudioPCMBuffer]) -> [Float] {
+        guard let firstBuffer = buffers.first else { return [] }
+
+        let inputFormat = firstBuffer.format
+
+        // AVAudioEngine's outputFormat(forBus:) typically returns float32 on modern
+        // Apple platforms, but some macOS audio interfaces may produce int16/int32.
+        // AVAudioConverter handles format conversion, but our concatenation loop uses
+        // floatChannelData — guard for float format and bail if unexpected.
+        guard inputFormat.commonFormat == .pcmFormatFloat32 else {
+            print("Unexpected audio format: \(inputFormat.commonFormat) — expected pcmFormatFloat32")
+            return []
+        }
+
+        // Step 1: Pre-concatenate all capture buffers into one contiguous input buffer
+        let totalInputFrames = buffers.reduce(0) { $0 + Int($1.frameLength) }
+        guard totalInputFrames > 0 else { return [] }
+
+        guard let combinedBuffer = AVAudioPCMBuffer(
+            pcmFormat: inputFormat,
+            frameCapacity: AVAudioFrameCount(totalInputFrames)
+        ) else { return [] }
+
+        for buffer in buffers {
+            guard let srcData = buffer.floatChannelData,
+                  let dstData = combinedBuffer.floatChannelData else { continue }
+            let frameCount = Int(buffer.frameLength)
+            let offset = Int(combinedBuffer.frameLength)
+            for ch in 0..<Int(inputFormat.channelCount) {
+                dstData[ch].advanced(by: offset)
+                    .update(from: srcData[ch], count: frameCount)
+            }
+            combinedBuffer.frameLength += buffer.frameLength
+        }
+
+        // Step 2: Set up converter from input format -> 16 kHz mono float
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else { return [] }
+
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else { return [] }
+
+        // Step 3: Convert in chunks, looping until all input is consumed
+        let ratio = 16000.0 / inputFormat.sampleRate
+        let estimatedOutputFrames = Int(Double(totalInputFrames) * ratio) + 1024
+        let chunkCapacity: AVAudioFrameCount = 4096
+
+        var allSamples: [Float] = []
+        allSamples.reserveCapacity(estimatedOutputFrames)
+
+        // Track how many frames of the combined buffer the converter has consumed.
+        // The input callback may be called multiple times per convert() call —
+        // we provide slices of the combined buffer starting at frameOffset.
+        var frameOffset = 0
+        var status: AVAudioConverterOutputStatus = .haveData
+
+        while status == .haveData {
+            guard let outputBuffer = AVAudioPCMBuffer(
+                pcmFormat: outputFormat,
+                frameCapacity: chunkCapacity
+            ) else { break }
+
+            status = converter.convert(to: outputBuffer, error: nil) { inNumberOfPackets, outStatus in
+                let totalFrames = Int(combinedBuffer.frameLength)
+                let remaining = totalFrames - frameOffset
+                guard remaining > 0 else {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
+
+                // Provide only as many frames as the converter requests (inNumberOfPackets),
+                // or fewer if we don't have that many left. For PCM, packets == frames.
+                let framesToProvide = min(Int(inNumberOfPackets), remaining)
+                guard let slice = AVAudioPCMBuffer(
+                    pcmFormat: inputFormat,
+                    frameCapacity: AVAudioFrameCount(framesToProvide)
+                ) else {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
+
+                if let src = combinedBuffer.floatChannelData,
+                   let dst = slice.floatChannelData {
+                    for ch in 0..<Int(inputFormat.channelCount) {
+                        dst[ch].update(from: src[ch].advanced(by: frameOffset), count: framesToProvide)
+                    }
+                }
+                slice.frameLength = AVAudioFrameCount(framesToProvide)
+                frameOffset += framesToProvide // Only advance by what was actually provided
+
+                outStatus.pointee = .haveData
+                return slice
+            }
+
+            if status == .error { break }
+
+            // Append converted chunk
+            if let channelData = outputBuffer.floatChannelData {
+                let frameCount = Int(outputBuffer.frameLength)
+                allSamples.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frameCount))
+            }
+        }
+
+        return allSamples
+    }
+
+    // MARK: - TTS (unchanged)
 
     func speak(_ text: String) {
         synthesizer.stopSpeaking(at: .immediate)
 
-        // TODO: macOS skips audio session setup — verify TTS playback works without it.
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         try? audioSession.setCategory(.playback, mode: .default)
@@ -151,11 +319,11 @@ final class SpeechManager: ObservableObject {
         return AVSpeechSynthesisVoice(language: "en-US")
     }
 
+    // MARK: - Private
+
     private func cleanupRecording(inputNode: AVAudioInputNode) {
         audioEngine.stop()
         inputNode.removeTap(onBus: 0)
-        recognitionRequest = nil
-        recognitionTask = nil
         isRecording = false
     }
 }

@@ -1,5 +1,4 @@
 import SwiftUI
-import Speech
 #if os(iOS)
 import UIKit
 #endif
@@ -8,10 +7,6 @@ struct VoiceButton: View {
     @ObservedObject var speechManager: SpeechManager
     let onComplete: () -> Void
 
-    private var isDenied: Bool {
-        speechManager.authorizationStatus == .denied || speechManager.authorizationStatus == .restricted
-    }
-
     var body: some View {
         Button {
             if speechManager.isRecording {
@@ -19,9 +14,7 @@ struct VoiceButton: View {
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 #endif
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    onComplete()
-                }
+                // onComplete fires via .onChange(of: isTranscribing) below
             } else {
                 speechManager.startRecording()
                 #if os(iOS)
@@ -30,7 +23,10 @@ struct VoiceButton: View {
             }
         } label: {
             ZStack {
-                if speechManager.isRecording {
+                if speechManager.isTranscribing {
+                    ProgressView()
+                        .frame(width: 44, height: 44)
+                } else if speechManager.isRecording {
                     Circle()
                         .fill(Color.red)
                         .frame(width: 44, height: 44)
@@ -40,13 +36,19 @@ struct VoiceButton: View {
                 } else {
                     Image(systemName: "mic.fill")
                         .font(.title2)
-                        .foregroundStyle(isDenied ? .gray : Color.accentColor)
+                        .foregroundStyle(speechManager.modelReady ? Color.accentColor : .gray)
                         .frame(width: 44, height: 44)
                 }
             }
             .frame(width: 44, height: 44)
             .animation(.easeInOut(duration: 0.2), value: speechManager.isRecording)
+            .animation(.easeInOut(duration: 0.2), value: speechManager.isTranscribing)
         }
-        .disabled(isDenied)
+        .disabled(!speechManager.modelReady || speechManager.isTranscribing)
+        .onChange(of: speechManager.isTranscribing) {
+            if !speechManager.isTranscribing && !speechManager.transcribedText.isEmpty {
+                onComplete()
+            }
+        }
     }
 }
