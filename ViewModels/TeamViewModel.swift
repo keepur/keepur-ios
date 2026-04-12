@@ -270,7 +270,6 @@ final class TeamViewModel: ObservableObject {
 
             // Suppress /dm system response when initiated from openAgentDM
             if let replyTo, replyTo == pendingDMRequestId {
-                pendingAgentDM = nil
                 pendingDMRequestId = nil
                 return  // Navigation is the feedback; don't insert message
             }

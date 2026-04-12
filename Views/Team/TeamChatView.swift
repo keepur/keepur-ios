@@ -36,7 +36,7 @@ struct TeamChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 if isDMWithAgent {
                     Button { showAgentDetail = true } label: {
                         Image(systemName: "info.circle")

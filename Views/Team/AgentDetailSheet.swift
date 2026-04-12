@@ -55,7 +55,7 @@ struct AgentDetailSheet: View {
                         infoRow(label: "Messages", value: "\(agent.messagesProcessed)")
                         infoRow(label: "Last Active", date: lastActivityDate)
                     }
-                    .background(Color(.secondarySystemGroupedBackground))
+                    .background(Color.secondarySystemGroupedBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     // Tools
@@ -97,9 +97,11 @@ struct AgentDetailSheet: View {
                 }
                 .padding(.horizontal)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color.systemGroupedBackground)
             .navigationTitle("Agent Info")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 
@@ -142,7 +144,7 @@ struct AgentDetailSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.secondarySystemGroupedBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
