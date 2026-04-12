@@ -197,11 +197,13 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     // MARK: - Transcription Helpers
 
     /// Extract transcription text from WhisperKit results.
-    /// Verify the return type against the pinned WhisperKit version at build time.
-    /// If the version returns [[TranscriptionResult]?] instead of [TranscriptionResult],
-    /// adjust to: results.first??.first?.text
+    /// Whisper processes audio in 30-second windows — long recordings produce multiple
+    /// TranscriptionResult entries. Join them all to avoid truncating the transcription.
     nonisolated private static func extractText(from results: [TranscriptionResult]) -> String {
-        results.first?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        results
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     /// Tokenize the prompt string and build DecodingOptions for Whisper.
