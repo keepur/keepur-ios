@@ -11,24 +11,14 @@ enum WhisperPromptBuilder {
 
     // MARK: - Static Vocabulary
 
-    /// Sentence-style prompt embedding high-confusion developer terms.
+    /// Compact prompt with highest-confusion developer terms only.
+    /// Must stay well under 50 tokens after tokenization — prompt tokens
+    /// compete with output tokens in Whisper's ~448-token context window.
     /// Priority: terms Whisper commonly misinterprets (docs→dogs, git→get,
     /// enum→in um, async→a sink, cron→chrome, kubectl→kube cuddle, regex→rejects).
     static let staticPrompt: String = """
-        The developer is discussing code with Keepur, \
-        a Hive workspace assistant built by Dodi. \
-        They use git for version control with commits, branches, rebases, \
-        pull requests, PRs, diffs, stashes, and worktrees. \
-        Their stack includes Swift, SwiftUI, SwiftData, Xcode, and CocoaPods. \
-        They mention npm, yarn, webpack, Vite, TypeScript, and JavaScript. \
-        They discuss APIs, REST, GraphQL, JSON, YAML, regex, OAuth, JWT, \
-        async, await, enums, structs, tuples, and nil values. \
-        Infrastructure includes Docker, Kubernetes, kubectl, Redis, MongoDB, \
-        PostgreSQL, Nginx, SSH, CORS, and CI/CD pipelines. \
-        They use CLI tools like grep, curl, zsh, bash, vim, ESLint, and Prettier. \
-        Testing with Jest, XCTest, pytest, and end-to-end tests. \
-        Actions include deploy, refactor, debug, scaffold, lint, mock, \
-        debounce, cron jobs, and reading the docs.
+        Discussing code with Keepur, a Dodi Hive assistant. \
+        Using git, PRs, regex, async, enums, kubectl, cron, docs, SwiftUI, npm.
         """
 
     // MARK: - Prompt Assembly

@@ -175,17 +175,22 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
         isTranscribing = true
         let options = buildDecodingOptions()
+        let sampleCount = samples.count
+        let durationSec = Double(sampleCount) / 16000.0
+        print("[SpeechManager] Transcribing \(sampleCount) samples (~\(String(format: "%.1f", durationSec))s)")
 
         Task.detached { [weak self] in
             do {
                 let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
+                print("[SpeechManager] WhisperKit returned \(results.count) result(s)")
                 let text = Self.extractText(from: results)
+                print("[SpeechManager] Extracted text (\(text.count) chars): \(text.prefix(120))...")
                 await MainActor.run {
                     self?.transcribedText = text
                     self?.isTranscribing = false
                 }
             } catch {
-                print("Whisper transcription error: \(error)")
+                print("[SpeechManager] Transcription FAILED for ~\(String(format: "%.1f", durationSec))s audio: \(error)")
                 await MainActor.run {
                     self?.transcribedText = ""
                     self?.isTranscribing = false
@@ -217,9 +222,20 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         let tokens = tokenizer.encode(text: whisperPrompt)
             .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
         guard !tokens.isEmpty else { return nil }
-        // Clamp to 224 tokens — Whisper's prompt token budget.
-        let clampedTokens = Array(tokens.prefix(224))
-        return DecodingOptions(promptTokens: clampedTokens)
+        // Whisper base model has ~448 token context per 30s window.
+        // Prompt tokens compete with output tokens for that budget.
+        // At 224 prompt tokens only ~224 remain for speech — too tight,
+        // causes truncation on normal-length utterances.
+        // 50 tokens preserves the key vocabulary conditioning while
+        // leaving ~398 tokens (~265 words) for transcription output.
+        let clampedTokens = Array(tokens.prefix(50))
+        print("[SpeechManager] Using \(clampedTokens.count) prompt tokens (from \(tokens.count) total)")
+        // VAD chunking splits audio on silence boundaries instead of hard
+        // 30-second cuts — prevents slicing words and strips dead air.
+        return DecodingOptions(
+            promptTokens: clampedTokens,
+            chunkingStrategy: .vad
+        )
     }
 
     // MARK: - Audio Format Conversion
