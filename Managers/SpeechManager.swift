@@ -35,6 +35,9 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     @Published var isSpeaking = false
     @Published var transcribedText = ""
     @Published var modelReady = false
+    /// Whisper prompt text for domain vocabulary conditioning.
+    /// Set by TeamViewModel on connect; tokenized lazily before each transcription.
+    var whisperPrompt: String = WhisperPromptBuilder.staticPrompt
     @Published var selectedVoiceId: String? {
         didSet { UserDefaults.standard.set(selectedVoiceId, forKey: "selectedVoiceId") }
     }
@@ -171,10 +174,11 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         guard let whisperKit else { return }
 
         isTranscribing = true
+        let options = buildDecodingOptions()
 
         Task.detached { [weak self] in
             do {
-                let results = try await whisperKit.transcribe(audioArray: samples)
+                let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
                 let text = Self.extractText(from: results)
                 await MainActor.run {
                     self?.transcribedText = text
@@ -198,6 +202,22 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     /// adjust to: results.first??.first?.text
     nonisolated private static func extractText(from results: [TranscriptionResult]) -> String {
         results.first?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// Tokenize the prompt string and build DecodingOptions for Whisper.
+    /// Returns nil if the tokenizer isn't available (graceful fallback to no prompt).
+    ///
+    /// Important: `tokenizer.encode(text:)` may include special tokens (SOT, EOT,
+    /// language tags) that corrupt the decoder when passed as `promptTokens`.
+    /// Filter them out before use. See: https://github.com/argmaxinc/WhisperKit/issues/372
+    private func buildDecodingOptions() -> DecodingOptions? {
+        guard let tokenizer = whisperKit?.tokenizer else { return nil }
+        let tokens = tokenizer.encode(text: whisperPrompt)
+            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        guard !tokens.isEmpty else { return nil }
+        // Clamp to 224 tokens — Whisper's prompt token budget.
+        let clampedTokens = Array(tokens.prefix(224))
+        return DecodingOptions(promptTokens: clampedTokens)
     }
 
     // MARK: - Audio Format Conversion
