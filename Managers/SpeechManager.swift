@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Combine
 import WhisperKit
 #if os(iOS)
 import UIKit
