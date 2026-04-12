@@ -225,9 +225,7 @@ struct ChatView: View {
                     .onSubmit { viewModel.sendText() }
 
                 // Voice button
-                VoiceButton(speechManager: viewModel.speechManager) {
-                    viewModel.sendVoiceText()
-                }
+                VoiceButton(speechManager: viewModel.speechManager)
 
                 Button { viewModel.sendText() } label: {
                     Image(systemName: "arrow.up.circle.fill")
@@ -264,6 +262,11 @@ struct ChatView: View {
                 let name = "image_\(Int(Date().timeIntervalSince1970)).\(ext)"
                 viewModel.pendingAttachment = (data: data, name: name, mimeType: mimeType)
                 selectedPhoto = nil
+            }
+        }
+        .onChange(of: viewModel.speechManager.liveText) { _, newText in
+            if viewModel.speechManager.isRecording {
+                viewModel.messageText = newText
             }
         }
         .fileImporter(isPresented: $showDocumentPicker, allowedContentTypes: [.item]) { result in
