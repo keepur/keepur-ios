@@ -285,6 +285,91 @@ final class TeamWSMessageTests: XCTestCase {
         }
     }
 
+    // MARK: - Outgoing Encoding: agentList
+
+    func testAgentListEncoding() throws {
+        let data = try TeamWSOutgoing.agentList.encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        XCTAssertEqual(json["type"] as? String, "agent_list")
+        XCTAssertNotNil(json["id"] as? String)
+    }
+
+    // MARK: - Incoming Decoding: agentList
+
+    func testDecodeAgentList() {
+        let json: [String: Any] = [
+            "type": "agent_list",
+            "id": "req-10",
+            "agents": [
+                [
+                    "id": "rae",
+                    "name": "Rae",
+                    "icon": ":wave:",
+                    "title": "Receptionist",
+                    "model": "claude-haiku-3-5",
+                    "status": "idle",
+                    "tools": ["schedule", "crm-search"],
+                    "schedule": [["cron": "0 9 * * 1-5", "task": "Morning standup"]],
+                    "channels": ["general"],
+                    "messagesProcessed": 142,
+                    "lastActivity": "2026-04-12T14:30:00Z"
+                ],
+                [
+                    "id": "jasper",
+                    "name": "Jasper",
+                    "icon": ":laptop:",
+                    "title": "Engineer",
+                    "model": "claude-sonnet-4",
+                    "status": "processing",
+                    "tools": ["code", "shell"],
+                    "schedule": [],
+                    "channels": ["engineering"],
+                    "messagesProcessed": 0
+                ]
+            ]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: json)
+        guard case .agentList(let agents, let id) = TeamWSIncoming.decode(from: data) else {
+            XCTFail("Expected agentList"); return
+        }
+        XCTAssertEqual(id, "req-10")
+        XCTAssertEqual(agents.count, 2)
+        XCTAssertEqual(agents[0].id, "rae")
+        XCTAssertEqual(agents[0].name, "Rae")
+        XCTAssertEqual(agents[0].title, "Receptionist")
+        XCTAssertEqual(agents[0].status, "idle")
+        XCTAssertEqual(agents[0].tools, ["schedule", "crm-search"])
+        XCTAssertEqual(agents[0].schedule.count, 1)
+        XCTAssertEqual(agents[0].schedule[0]["cron"], "0 9 * * 1-5")
+        XCTAssertEqual(agents[0].messagesProcessed, 142)
+        XCTAssertEqual(agents[0].lastActivity, "2026-04-12T14:30:00Z")
+        XCTAssertEqual(agents[1].name, "Jasper")
+        XCTAssertEqual(agents[1].status, "processing")
+        XCTAssertNil(agents[1].lastActivity)
+    }
+
+    func testDecodeAgentListWithMinimalFields() {
+        let json: [String: Any] = [
+            "type": "agent_list",
+            "id": "req-11",
+            "agents": [
+                ["id": "bot1", "name": "Bot One"]
+            ]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: json)
+        guard case .agentList(let agents, _) = TeamWSIncoming.decode(from: data) else {
+            XCTFail("Expected agentList"); return
+        }
+        XCTAssertEqual(agents.count, 1)
+        XCTAssertEqual(agents[0].icon, "")     // defaults to empty
+        XCTAssertNil(agents[0].title)           // optional
+        XCTAssertEqual(agents[0].status, "idle")           // defaults to idle
+        XCTAssertEqual(agents[0].tools, [])               // defaults to empty
+        XCTAssertEqual(agents[0].schedule, [])             // defaults to empty
+        XCTAssertEqual(agents[0].messagesProcessed, 0)     // defaults to 0
+        XCTAssertNil(agents[0].lastActivity)               // defaults to nil
+    }
+
     // MARK: - Edge Cases
 
     func testDecodeUnknownTypeReturnsNil() {
