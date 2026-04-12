@@ -413,17 +413,20 @@ final class TeamWSMessageTests: XCTestCase {
     }
 
     func testAgentInfoLastActivityParsing() {
-        // AgentDetailSheet parses lastActivity with ISO8601 + fractional seconds
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // AgentDetailSheet parses lastActivity with two-pass ISO8601:
+        // first with fractional seconds, then without
 
         // With fractional seconds (common server format)
-        let date1 = iso.date(from: "2026-04-12T14:30:00.123Z")
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date1 = isoFrac.date(from: "2026-04-12T14:30:00.123Z")
         XCTAssertNotNil(date1, "Should parse ISO 8601 with fractional seconds")
 
-        // Without fractional seconds (also valid from some servers)
-        let date2 = iso.date(from: "2026-04-12T14:30:00Z")
-        XCTAssertNil(date2, "withFractionalSeconds requires fractional part — view handles nil as 'Never'")
+        // Without fractional seconds (also valid — fallback path)
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        let date2 = isoPlain.date(from: "2026-04-12T14:30:00Z")
+        XCTAssertNotNil(date2, "Should parse ISO 8601 without fractional seconds via fallback")
     }
 
     func testAgentInfoDMChannelMemberMatching() {

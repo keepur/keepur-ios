@@ -58,6 +58,8 @@ final class TeamViewModel: ObservableObject {
     }
 
     func disconnect() {
+        pendingAgentDM = nil
+        pendingDMRequestId = nil
         ws.disconnect()
     }
 
@@ -381,12 +383,13 @@ final class TeamViewModel: ObservableObject {
         try? context.save()
         loadChannels(context: context)
 
-        // Auto-select DM after /dm creation
-        if let agentId = pendingAgentDM,
-           let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
+        // Auto-select DM after /dm creation, or clear stale state on failure
+        if let agentId = pendingAgentDM {
             pendingAgentDM = nil
             pendingDMRequestId = nil
-            selectChannel(dm.id)
+            if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
+                selectChannel(dm.id)
+            }
         }
     }
 

@@ -20,6 +20,9 @@ struct AgentDetailSheet: View {
         guard let str = agent.lastActivity else { return nil }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: str) { return date }
+        // Fallback: server may omit fractional seconds
+        iso.formatOptions = [.withInternetDateTime]
         return iso.date(from: str)
     }
 
