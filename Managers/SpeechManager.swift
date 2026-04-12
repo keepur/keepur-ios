@@ -2,6 +2,9 @@ import Foundation
 import AVFoundation
 import Combine
 import WhisperKit
+#if os(iOS)
+import UIKit
+#endif
 
 /// Thread-safe buffer collector for AVAudioEngine tap callbacks.
 /// The tap runs on the audio render thread — appends are synchronous under lock,
@@ -26,7 +29,7 @@ final class AudioBufferCollector: @unchecked Sendable {
 }
 
 @MainActor
-final class SpeechManager: ObservableObject {
+final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var isRecording = false
     @Published var isTranscribing = false
     @Published var isSpeaking = false
@@ -41,8 +44,24 @@ final class SpeechManager: ObservableObject {
     private let audioEngine = AVAudioEngine()
     private let bufferCollector = AudioBufferCollector()
 
-    init() {
+    override init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    // MARK: - AVSpeechSynthesizerDelegate
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            self.isSpeaking = false
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            self.isSpeaking = false
+        }
     }
 
     // MARK: - Model Loading
@@ -128,6 +147,9 @@ final class SpeechManager: ObservableObject {
         do {
             try audioEngine.start()
             isRecording = true
+            #if os(iOS)
+            UIApplication.shared.isIdleTimerDisabled = true
+            #endif
         } catch {
             cleanupRecording(inputNode: inputNode)
         }
@@ -313,10 +335,6 @@ final class SpeechManager: ObservableObject {
         utterance.voice = bestVoice()
         isSpeaking = true
         synthesizer.speak(utterance)
-        Task {
-            try? await Task.sleep(for: .seconds(Double(text.count) / 15.0))
-            self.isSpeaking = false
-        }
     }
 
     func stopSpeaking() {
@@ -346,5 +364,8 @@ final class SpeechManager: ObservableObject {
         audioEngine.stop()
         inputNode.removeTap(onBus: 0)
         isRecording = false
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
     }
 }
