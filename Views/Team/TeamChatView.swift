@@ -2,10 +2,20 @@ import SwiftUI
 
 struct TeamChatView: View {
     @ObservedObject var viewModel: TeamViewModel
+    @State private var showAgentDetail = false
 
     private var deviceId: String {
         KeychainManager.deviceId ?? ""
     }
+
+    private var activeAgent: TeamAgentInfo? {
+        guard let channelId = viewModel.activeChannelId,
+              let channel = viewModel.channels.first(where: { $0.id == channelId }),
+              channel.type == "dm" else { return nil }
+        return viewModel.agents.first { channel.members.contains($0.id) }
+    }
+
+    private var isDMWithAgent: Bool { activeAgent != nil }
 
     private var channelTitle: String {
         guard let channelId = viewModel.activeChannelId,
@@ -25,6 +35,24 @@ struct TeamChatView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                if isDMWithAgent {
+                    Button { showAgentDetail = true } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showAgentDetail) {
+            if let agent = activeAgent {
+                AgentDetailSheet(agent: agent)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+        .onChange(of: viewModel.activeChannelId) {
+            showAgentDetail = false
+        }
     }
 
     // MARK: - Message List

@@ -15,6 +15,7 @@ final class TeamViewModel: ObservableObject {
     @Published var messageText: String = ""
     @Published var isAuthenticated = true
     @Published var lastLiveMessageId: String?  // Set on live messages only, drives scroll-to-bottom
+    @Published var agents: [TeamAgentInfo] = []
 
     /// Reference to SpeechManager for updating Whisper prompt with dynamic vocabulary.
     /// Set by the parent view that owns both TeamViewModel and SpeechManager.
@@ -34,6 +35,8 @@ final class TeamViewModel: ObservableObject {
     private var pendingCommandChannels: [String: String] = [:]  // requestId -> channelId
     private var pendingMessageIds: [String: String] = [:]       // requestId -> local message id
     private var pendingNewCommands: Set<String> = []             // requestIds for /new commands
+    private var pendingAgentDM: String?       // agent ID to auto-select after channel refresh
+    private var pendingDMRequestId: String?   // request UUID of the /dm command
 
     // MARK: - Setup
 
@@ -55,6 +58,8 @@ final class TeamViewModel: ObservableObject {
     }
 
     func disconnect() {
+        pendingAgentDM = nil
+        pendingDMRequestId = nil
         ws.disconnect()
     }
 
@@ -164,6 +169,8 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Private: Connection
 
     private func onConnected() {
+        pendingAgentDM = nil
+        pendingDMRequestId = nil
         fetchChannels()
         ws.send(.agentList)       // Extract agent names for Whisper vocabulary
         ws.send(.commandList)     // Extract command names for Whisper vocabulary
@@ -213,6 +220,26 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
+    func openAgentDM(agent: TeamAgentInfo) {
+        // 1. Search for existing DM with this agent
+        if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agent.id) }) {
+            selectChannel(dm.id)
+            return
+        }
+
+        // 2. Ignore if a /dm creation is already in flight (prevents overwriting
+        //    the pending request ID on rapid taps, which would break suppression).
+        guard pendingAgentDM == nil else { return }
+
+        // 3. Not found — create via /dm command
+        let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.name])
+        guard let requestId = ws.sendWithId(command) else { return }  // offline — no-op
+
+        pendingNewCommands.insert(requestId)
+        pendingAgentDM = agent.id
+        pendingDMRequestId = requestId
+    }
+
     // MARK: - Private: Incoming Message Handling
 
     private func handleIncoming(_ incoming: TeamWSIncoming) {
@@ -246,6 +273,15 @@ final class TeamViewModel: ObservableObject {
                     fetchChannels()
                 }
             }
+
+            // Suppress /dm system response when initiated from openAgentDM.
+            // Only clear pendingDMRequestId here; pendingAgentDM is cleared by
+            // syncChannels when it finds the DM (fetchChannels is async).
+            if let replyTo, replyTo == pendingDMRequestId {
+                pendingDMRequestId = nil
+                return  // Navigation is the feedback; don't insert message
+            }
+
             guard let targetChannelId = channelId ?? activeChannelId else { return }
 
             let message = TeamMessage(
@@ -301,12 +337,15 @@ final class TeamViewModel: ObservableObject {
             break  // v1: ignore typing indicators
 
         case .error(let message):
+            pendingAgentDM = nil
+            pendingDMRequestId = nil
             print("[Team WS error] \(message)")
 
         case .pong:
             break
 
         case .agentList(let agents, _):
+            self.agents = agents
             agentNames = agents.map(\.name)
             rebuildWhisperPrompt()
 
@@ -349,6 +388,21 @@ final class TeamViewModel: ObservableObject {
 
         try? context.save()
         loadChannels(context: context)
+
+        // Auto-select DM after /dm creation.
+        if let agentId = pendingAgentDM {
+            if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
+                // Success: DM found — navigate and clear.
+                pendingAgentDM = nil
+                selectChannel(dm.id)
+            } else if pendingDMRequestId == nil {
+                // Failure: suppression already fired (cleared pendingDMRequestId)
+                // but the DM was not created. Clear to unblock openAgentDM.
+                pendingAgentDM = nil
+            }
+            // Otherwise pendingDMRequestId is still set (systemMessage hasn't arrived
+            // yet, e.g. channel_event "created" raced ahead) — keep waiting.
+        }
     }
 
     private func loadChannels(context: ModelContext) {

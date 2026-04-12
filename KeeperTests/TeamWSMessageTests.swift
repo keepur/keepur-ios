@@ -383,6 +383,79 @@ final class TeamWSMessageTests: XCTestCase {
         XCTAssertNil(TeamWSIncoming.decode(from: data))
     }
 
+    // MARK: - /dm Command Edge Cases (openAgentDM)
+
+    func testCommandEncodingWithEmptyChannelId() throws {
+        // openAgentDM sends /dm with channelId: "" — verify this encodes correctly
+        let data = try TeamWSOutgoing.command(channelId: "", name: "dm", args: ["production-support"]).encode()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        XCTAssertEqual(json["type"] as? String, "command")
+        XCTAssertEqual(json["channelId"] as? String, "")
+        XCTAssertEqual(json["name"] as? String, "dm")
+        XCTAssertEqual(json["args"] as? [String], ["production-support"])
+        XCTAssertNotNil(json["id"] as? String, "/dm command must have request ID for tracking")
+    }
+
+    // MARK: - AgentInfo Field Access (used by AgentRow/AgentDetailSheet)
+
+    func testAgentInfoIconFallback() {
+        // When icon is empty, views should use fallback — verify parse preserves empty string
+        let json: [String: Any] = [
+            "type": "agent_list",
+            "id": "req-12",
+            "agents": [["id": "bot1", "name": "Bot", "icon": ""]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: json)
+        guard case .agentList(let agents, _) = TeamWSIncoming.decode(from: data) else {
+            XCTFail("Expected agentList"); return
+        }
+        XCTAssertEqual(agents[0].icon, "", "Empty icon should be preserved, views handle fallback")
+    }
+
+    func testAgentInfoLastActivityParsing() {
+        // AgentDetailSheet parses lastActivity with two-pass ISO8601:
+        // first with fractional seconds, then without
+
+        // With fractional seconds (common server format)
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date1 = isoFrac.date(from: "2026-04-12T14:30:00.123Z")
+        XCTAssertNotNil(date1, "Should parse ISO 8601 with fractional seconds")
+
+        // Without fractional seconds (also valid — fallback path)
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        let date2 = isoPlain.date(from: "2026-04-12T14:30:00Z")
+        XCTAssertNotNil(date2, "Should parse ISO 8601 without fractional seconds via fallback")
+    }
+
+    func testAgentInfoDMChannelMemberMatching() {
+        // Verify the member-matching pattern used by openAgentDM and activeAgent
+        let json: [String: Any] = [
+            "type": "channel_list",
+            "id": "req-13",
+            "channels": [
+                ["id": "dm:device1:rae", "type": "dm", "name": "Rae", "members": ["device1", "rae"]],
+                ["id": "general", "type": "channel", "name": "general", "members": ["device1", "rae", "jasper"]]
+            ]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: json)
+        guard case .channelList(let channels, _) = TeamWSIncoming.decode(from: data) else {
+            XCTFail("Expected channelList"); return
+        }
+
+        let agentId = "rae"
+
+        // DM lookup: type == "dm" && members.contains(agentId)
+        let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) })
+        XCTAssertNotNil(dm, "Should find DM channel by agent ID in members")
+        XCTAssertEqual(dm?.id, "dm:device1:rae")
+
+        // Should not match channel type
+        let nonDM = channels.filter { $0.type != "dm" && $0.members.contains(agentId) }
+        XCTAssertEqual(nonDM.count, 1, "Agent is in group channel too, but openAgentDM only matches DMs")
+    }
+
     func testDecodeMessageMissingRequiredFieldsReturnsNil() {
         let json: [String: Any] = [
             "type": "message",

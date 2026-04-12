@@ -35,6 +35,15 @@ struct TeamSidebarView: View {
                     }
                 }
             }
+
+            if !viewModel.agents.isEmpty {
+                Section("Agents") {
+                    ForEach(viewModel.agents, id: \.id) { agent in
+                        AgentRow(agent: agent, isActive: false)
+                            .onTapGesture { viewModel.openAgentDM(agent: agent) }
+                    }
+                }
+            }
         }
         .listStyle(.sidebar)
         .overlay {
