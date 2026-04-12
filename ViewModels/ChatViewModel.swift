@@ -100,13 +100,6 @@ final class ChatViewModel: ObservableObject {
         clearPendingMessages(for: sessionId)
     }
 
-    func sendVoiceText() {
-        let text = speechManager.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        messageText = text
-        sendText()
-    }
-
     func newSession(path: String) {
         ws.send(.newSession(path: path))
     }
