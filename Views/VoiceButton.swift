@@ -13,7 +13,12 @@ struct VoiceButton: View {
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
         } label: {
-            if speechManager.isTranscribing {
+            if speechManager.isModelLoading {
+                // Model downloading / compiling — show spinner so user knows it's loading
+                ProgressView()
+                    .frame(width: 44, height: 44)
+            } else if speechManager.isTranscribing {
+                // Whisper transcription in progress
                 ProgressView()
                     .frame(width: 44, height: 44)
             } else {
