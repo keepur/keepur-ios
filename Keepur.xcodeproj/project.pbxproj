@@ -7,15 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 66A392317E85460A9D615D5B /* WhisperKit */; };
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
+		A3B4C5D6E7F809A1B2C3D401 /* SessionReplacedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */; };
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
-		2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 66A392317E85460A9D615D5B /* WhisperKit */; };
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
-		A3B4C5D6E7F809A1B2C3D401 /* SessionReplacedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,12 +32,12 @@
 		A1ABEBC12F79E16C009B0AFC /* Keepur.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keepur.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepurApp.swift; sourceTree = "<group>"; };
 		A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReplacedTests.swift; sourceTree = "<group>"; };
 		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
 		D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResilienceTests.swift; sourceTree = "<group>"; };
 		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
-		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
-		A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReplacedTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -568,15 +568,15 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
-			productName = MarkdownUI;
-		};
 		66A392317E85460A9D615D5B /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

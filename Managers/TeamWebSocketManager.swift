@@ -19,11 +19,13 @@ final class TeamWebSocketManager: ObservableObject {
     private let maxReconnectDelay: TimeInterval = 30
     private var tokenReadRetries = 0
     private let maxTokenReadRetries = 3
-    private let baseURL = "ws://hive.dodihome.com:3100"
+    private let baseURL = "wss://shop.dodihome.com"
 
     func connect() {
+        print("[Team WS] connect() called — isConnected=\(isConnected) isConnecting=\(isConnecting)")
         guard !isConnected, !isConnecting else { return }
         guard let token = KeychainManager.token else {
+            print("[Team WS] no token in keychain (retry \(tokenReadRetries))")
             if tokenReadRetries < maxTokenReadRetries {
                 tokenReadRetries += 1
                 Task { [weak self] in
@@ -42,31 +44,18 @@ final class TeamWebSocketManager: ObservableObject {
         isConnecting = true
 
         let url = URL(string: "\(baseURL)?token=\(token)")!
-        let config = URLSessionConfiguration.default
-        session = URLSession(configuration: config)
-        let task = session?.webSocketTask(with: url)
-        webSocketTask = task
-        task?.resume()
-        receiveMessage()
+        print("[Team WS] opening \(baseURL)?token=<\(token.prefix(8))...>")
+        session = URLSession(configuration: .default)
+        webSocketTask = session?.webSocketTask(with: url)
+        webSocketTask?.resume()
 
-        // Confirm the handshake actually completed before marking connected
-        // and firing onConnect — otherwise early sends are silently dropped.
-        task?.sendPing { [weak self, weak task] error in
-            Task { @MainActor in
-                guard let self, let task, self.webSocketTask === task else { return }
-                self.isConnecting = false
-                if error != nil {
-                    self.cleanupConnection()
-                    self.scheduleReconnect()
-                    return
-                }
-                self.isConnected = true
-                self.reconnectAttempts = 0
-                self.isReconnecting = false
-                self.startPing()
-                self.onConnect?()
-            }
-        }
+        isConnecting = false
+        isConnected = true
+        reconnectAttempts = 0
+        isReconnecting = false
+        startPing()
+        receiveMessage()
+        onConnect?()
     }
 
     func disconnect() {
@@ -147,8 +136,9 @@ final class TeamWebSocketManager: ObservableObject {
                         break
                     }
                     self.receiveMessage()
-                case .failure:
+                case .failure(let error):
                     let closeCode = task.closeCode
+                    print("[Team WS] receive failed — closeCode=\(closeCode.rawValue) error=\(error)")
                     if closeCode.rawValue == 4001 {
                         self.onAuthFailure?()
                     } else {
