@@ -47,7 +47,7 @@ struct TeamSidebarView: View {
         }
         .listStyle(.sidebar)
         .overlay {
-            if viewModel.channels.isEmpty {
+            if viewModel.channels.isEmpty && viewModel.agents.isEmpty {
                 ContentUnavailableView {
                     Label("No Channels", systemImage: "bubble.left.and.bubble.right")
                 } description: {

@@ -264,7 +264,7 @@ struct ChatView: View {
                 selectedPhoto = nil
             }
         }
-        .onChange(of: viewModel.speechManager.liveText) { _, newText in
+        .onReceive(viewModel.speechManager.$liveText) { newText in
             if viewModel.speechManager.isRecording {
                 viewModel.messageText = newText
             }

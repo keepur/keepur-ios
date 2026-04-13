@@ -13,6 +13,9 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     /// Live transcription text — updates continuously while recording.
     @Published var liveText: String = ""
     @Published var modelReady = false
+    /// Set to true when the user taps the mic but has previously denied
+    /// microphone permission. Views observe this to show a Settings alert.
+    @Published var showMicPermissionAlert = false
     /// Whisper prompt text for domain vocabulary conditioning.
     /// Set by TeamViewModel on connect; tokenized lazily before each transcription.
     var whisperPrompt: String = WhisperPromptBuilder.staticPrompt
@@ -50,24 +53,43 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // Heavy work off main thread — model download + CoreML compilation
         // Explicit type annotation avoids double-optional ambiguity from try? inside Task.detached
         let kit: WhisperKit? = await Task.detached {
-            try? await WhisperKit(model: "openai_whisper-base")
+            do {
+                let pipe = try await WhisperKit(model: "openai_whisper-base")
+                // Explicitly load models + tokenizer. The init alone does not
+                // guarantee tokenizer is populated — without this, transcription
+                // bails at `guard let tokenizer = whisperKit.tokenizer`.
+                try await pipe.loadModels()
+                return pipe
+            } catch {
+                print("[SpeechManager] WhisperKit load failed: \(error)")
+                return nil
+            }
         }.value
 
         // Back on @MainActor for published property update.
         whisperKit = kit
-        modelReady = kit != nil
+        // Only mark ready if tokenizer actually materialized — otherwise the
+        // mic button lights up but startRecording silently bails.
+        modelReady = (kit?.tokenizer != nil)
+        if kit != nil && !modelReady {
+            print("[SpeechManager] WhisperKit loaded but tokenizer is still nil")
+        }
     }
 
     // MARK: - Recording
 
     func startRecording() {
+        print("[SpeechManager] startRecording() called")
         // Prevent double-tap: if already recording, stop instead
         if isRecording {
             stopRecording()
             return
         }
 
-        guard modelReady, let whisperKit else { return }
+        guard modelReady, let whisperKit else {
+            print("[SpeechManager] bail: modelReady=\(modelReady) whisperKit=\(whisperKit != nil)")
+            return
+        }
 
         // Stop TTS if playing
         if isSpeaking { stopSpeaking() }
@@ -79,36 +101,51 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // need to tap mic twice on first install.
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
-        guard audioSession.recordPermission == .granted else {
-            if audioSession.recordPermission == .undetermined {
-                if #available(iOS 17, *) {
-                    AVAudioApplication.requestRecordPermission { [weak self] granted in
-                        Task { @MainActor in
-                            if granted { self?.startRecording() }
-                        }
+        switch audioSession.recordPermission {
+        case .granted:
+            break
+        case .undetermined:
+            if #available(iOS 17, *) {
+                AVAudioApplication.requestRecordPermission { [weak self] granted in
+                    Task { @MainActor in
+                        if granted { self?.startRecording() }
+                        else { self?.showMicPermissionAlert = true }
                     }
-                } else {
-                    audioSession.requestRecordPermission { [weak self] granted in
-                        Task { @MainActor in
-                            if granted { self?.startRecording() }
-                        }
+                }
+            } else {
+                audioSession.requestRecordPermission { [weak self] granted in
+                    Task { @MainActor in
+                        if granted { self?.startRecording() }
+                        else { self?.showMicPermissionAlert = true }
                     }
                 }
             }
+            return
+        case .denied:
+            showMicPermissionAlert = true
+            return
+        @unknown default:
             return
         }
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch { return }
+        } catch {
+            print("[SpeechManager] bail: audio session error: \(error)")
+            return
+        }
         #endif
 
         // Build decoding options with prompt tokens + VAD
-        let options = buildDecodingOptions() ?? DecodingOptions(chunkingStrategy: .vad)
+        let options = buildDecodingOptions() ?? DecodingOptions(skipSpecialTokens: true, chunkingStrategy: .vad)
 
         // AudioStreamTranscriber requires individual WhisperKit components.
         // Only tokenizer is optional among them.
-        guard let tokenizer = whisperKit.tokenizer else { return }
+        guard let tokenizer = whisperKit.tokenizer else {
+            print("[SpeechManager] bail: tokenizer is nil")
+            return
+        }
+        print("[SpeechManager] starting stream transcription")
 
         streamTranscriber = AudioStreamTranscriber(
             audioEncoder: whisperKit.audioEncoder,
@@ -129,6 +166,7 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 .joined(separator: " ")
 
             Task { @MainActor in
+                print("[SpeechManager] transcription callback: confirmed=\"\(confirmed)\" unconfirmed=\"\(unconfirmed)\"")
                 self?.liveText = combined
             }
         }
@@ -230,6 +268,7 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // leaving ~398 tokens (~265 words) for transcription output.
         let clampedTokens = Array(tokens.prefix(50))
         return DecodingOptions(
+            skipSpecialTokens: true,
             promptTokens: clampedTokens,
             chunkingStrategy: .vad
         )

@@ -39,5 +39,17 @@ struct VoiceButton: View {
             .animation(.easeInOut(duration: 0.2), value: speechManager.isRecording)
         }
         .disabled(!speechManager.modelReady)
+        .alert("Microphone Access Needed", isPresented: $speechManager.showMicPermissionAlert) {
+            Button("Cancel", role: .cancel) { }
+            #if os(iOS)
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            #endif
+        } message: {
+            Text("Keepur needs microphone access to transcribe your voice. Enable it in Settings.")
+        }
     }
 }
