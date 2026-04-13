@@ -22,10 +22,8 @@ final class TeamWebSocketManager: ObservableObject {
     private let baseURL = "wss://beekeeper.dodihome.com"
 
     func connect() {
-        print("[Team WS] connect() called — isConnected=\(isConnected) isConnecting=\(isConnecting)")
         guard !isConnected, !isConnecting else { return }
         guard let token = KeychainManager.token else {
-            print("[Team WS] no token in keychain (retry \(tokenReadRetries))")
             if tokenReadRetries < maxTokenReadRetries {
                 tokenReadRetries += 1
                 Task { [weak self] in
@@ -44,7 +42,6 @@ final class TeamWebSocketManager: ObservableObject {
         isConnecting = true
 
         let url = URL(string: "\(baseURL)/?token=\(token)&channel=team")!
-        print("[Team WS] opening \(baseURL)/?token=<\(token.prefix(8))...>&channel=team")
         session = URLSession(configuration: .default)
         webSocketTask = session?.webSocketTask(with: url)
         webSocketTask?.resume()
@@ -136,9 +133,8 @@ final class TeamWebSocketManager: ObservableObject {
                         break
                     }
                     self.receiveMessage()
-                case .failure(let error):
+                case .failure:
                     let closeCode = task.closeCode
-                    print("[Team WS] receive failed — closeCode=\(closeCode.rawValue) error=\(error)")
                     if closeCode.rawValue == 4001 {
                         self.onAuthFailure?()
                     } else {

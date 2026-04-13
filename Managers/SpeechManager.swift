@@ -61,7 +61,6 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 try await pipe.loadModels()
                 return pipe
             } catch {
-                print("[SpeechManager] WhisperKit load failed: \(error)")
                 return nil
             }
         }.value
@@ -71,25 +70,18 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // Only mark ready if tokenizer actually materialized — otherwise the
         // mic button lights up but startRecording silently bails.
         modelReady = (kit?.tokenizer != nil)
-        if kit != nil && !modelReady {
-            print("[SpeechManager] WhisperKit loaded but tokenizer is still nil")
-        }
     }
 
     // MARK: - Recording
 
     func startRecording() {
-        print("[SpeechManager] startRecording() called")
         // Prevent double-tap: if already recording, stop instead
         if isRecording {
             stopRecording()
             return
         }
 
-        guard modelReady, let whisperKit else {
-            print("[SpeechManager] bail: modelReady=\(modelReady) whisperKit=\(whisperKit != nil)")
-            return
-        }
+        guard modelReady, let whisperKit else { return }
 
         // Stop TTS if playing
         if isSpeaking { stopSpeaking() }
@@ -130,10 +122,7 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[SpeechManager] bail: audio session error: \(error)")
-            return
-        }
+        } catch { return }
         #endif
 
         // Build decoding options with prompt tokens + VAD
@@ -141,11 +130,7 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
         // AudioStreamTranscriber requires individual WhisperKit components.
         // Only tokenizer is optional among them.
-        guard let tokenizer = whisperKit.tokenizer else {
-            print("[SpeechManager] bail: tokenizer is nil")
-            return
-        }
-        print("[SpeechManager] starting stream transcription")
+        guard let tokenizer = whisperKit.tokenizer else { return }
 
         streamTranscriber = AudioStreamTranscriber(
             audioEncoder: whisperKit.audioEncoder,
@@ -166,7 +151,6 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 .joined(separator: " ")
 
             Task { @MainActor in
-                print("[SpeechManager] transcription callback: confirmed=\"\(confirmed)\" unconfirmed=\"\(unconfirmed)\"")
                 self?.liveText = combined
             }
         }
