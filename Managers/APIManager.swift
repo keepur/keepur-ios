@@ -7,6 +7,7 @@ enum APIManager {
         let token: String
         let deviceId: String
         let deviceName: String
+        let capabilities: [String]
     }
 
     enum PairError: Error {
@@ -25,7 +26,7 @@ enum APIManager {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "code": code,
-            "userName": name
+            "name": name
         ])
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -38,7 +39,8 @@ enum APIManager {
             throw PairError.invalidCode
         }
 
-        return PairResponse(token: token, deviceId: deviceId, deviceName: deviceName)
+        let capabilities = (json["capabilities"] as? [String]) ?? []
+        return PairResponse(token: token, deviceId: deviceId, deviceName: deviceName, capabilities: capabilities)
     }
 
     static func fetchMe() async throws -> String? {

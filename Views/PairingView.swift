@@ -134,6 +134,7 @@ struct PairingView: View {
                 KeychainManager.token = response.token
                 KeychainManager.deviceId = response.deviceId
                 KeychainManager.deviceName = response.deviceName
+                KeychainManager.capabilities = response.capabilities
 
                 #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()

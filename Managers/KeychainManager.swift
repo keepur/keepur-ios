@@ -6,6 +6,7 @@ enum KeychainManager {
     private static let tokenKey = "auth_token"
     private static let deviceIdKey = "device_id"
     private static let deviceNameKey = "device_name"
+    private static let capabilitiesKey = "capabilities"
 
     static var token: String? {
         get { read(key: tokenKey) }
@@ -40,6 +41,25 @@ enum KeychainManager {
         }
     }
 
+    static var capabilities: [String] {
+        get {
+            guard let raw = read(key: capabilitiesKey),
+                  let data = raw.data(using: .utf8),
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [String] else { return [] }
+            return arr
+        }
+        set {
+            if let data = try? JSONSerialization.data(withJSONObject: newValue),
+               let str = String(data: data, encoding: .utf8) {
+                save(key: capabilitiesKey, value: str)
+            } else {
+                delete(key: capabilitiesKey)
+            }
+        }
+    }
+
+    static var hasHiveCapability: Bool { capabilities.contains("hive") }
+
     static var isPaired: Bool { token != nil }
 
     static var tokenExpiryDate: Date? {
@@ -62,6 +82,7 @@ enum KeychainManager {
         token = nil
         deviceId = nil
         deviceName = nil
+        delete(key: capabilitiesKey)
     }
 
     static func migrateAccessibility() {
@@ -69,7 +90,7 @@ enum KeychainManager {
         guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
 
         var migrated = false
-        for key in [tokenKey, deviceIdKey, deviceNameKey] {
+        for key in [tokenKey, deviceIdKey, deviceNameKey, capabilitiesKey] {
             if let value = read(key: key) {
                 save(key: key, value: value)
                 migrated = true
