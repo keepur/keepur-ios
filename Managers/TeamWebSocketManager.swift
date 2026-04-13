@@ -19,7 +19,7 @@ final class TeamWebSocketManager: ObservableObject {
     private let maxReconnectDelay: TimeInterval = 30
     private var tokenReadRetries = 0
     private let maxTokenReadRetries = 3
-    private let baseURL = "wss://shop.dodihome.com"
+    private let baseURL = "wss://beekeeper.dodihome.com"
 
     func connect() {
         print("[Team WS] connect() called — isConnected=\(isConnected) isConnecting=\(isConnecting)")
@@ -43,8 +43,8 @@ final class TeamWebSocketManager: ObservableObject {
         cleanupConnection()
         isConnecting = true
 
-        let url = URL(string: "\(baseURL)?token=\(token)")!
-        print("[Team WS] opening \(baseURL)?token=<\(token.prefix(8))...>")
+        let url = URL(string: "\(baseURL)/?token=\(token)&channel=team")!
+        print("[Team WS] opening \(baseURL)/?token=<\(token.prefix(8))...>&channel=team")
         session = URLSession(configuration: .default)
         webSocketTask = session?.webSocketTask(with: url)
         webSocketTask?.resume()
