@@ -20,7 +20,7 @@ struct TeamChatView: View {
     private var channelTitle: String {
         guard let channelId = viewModel.activeChannelId,
               let channel = viewModel.channels.first(where: { $0.id == channelId }) else {
-            return "Hive"
+            return "Team"
         }
         return viewModel.displayName(for: channel)
     }
