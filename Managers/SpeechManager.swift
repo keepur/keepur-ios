@@ -150,32 +150,11 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
             audioProcessor: whisperKit.audioProcessor,
             decodingOptions: options
         ) { [weak self] _, newState in
-            // Callback fires on each transcription cycle (~1s).
-            // `confirmedSegments` only contains segments still inside the rolling
-            // 30s window — earlier ones are dropped as the window slides. We must
-            // accumulate them ourselves, keyed by segment end-time, so older text
-            // doesn't vanish from `liveText`.
             Task { @MainActor in
                 guard let self else { return }
-                for segment in newState.confirmedSegments where segment.end > self.lastConfirmedEnd {
-                    let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty {
-                        if self.accumulatedConfirmedText.isEmpty {
-                            self.accumulatedConfirmedText = text
-                        } else {
-                            self.accumulatedConfirmedText += " " + text
-                        }
-                    }
-                    self.lastConfirmedEnd = segment.end
-                }
-                let unconfirmed = newState.unconfirmedSegments
-                    .map(\.text)
-                    .joined(separator: " ")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let combined = [self.accumulatedConfirmedText, unconfirmed]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
-                self.liveText = combined
+                let confirmed = newState.confirmedSegments.map { (end: $0.end, text: $0.text) }
+                let unconfirmed = newState.unconfirmedSegments.map(\.text).joined(separator: " ")
+                self.liveText = self.absorbTranscriptionTick(confirmed: confirmed, unconfirmed: unconfirmed)
             }
         }
 
@@ -216,6 +195,40 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         #endif
 
         // liveText stays as-is — ChatView will have it in messageText for user to edit/send
+    }
+
+    // MARK: - Test Hooks
+
+    /// Pure accumulation step, extracted for unit testing. Mutates
+    /// `accumulatedConfirmedText` and `lastConfirmedEnd`, returns the combined
+    /// `liveText` value that would be published.
+    /// - Parameters:
+    ///   - confirmed: array of (end, text) pairs from `newState.confirmedSegments`
+    ///   - unconfirmed: joined text from `newState.unconfirmedSegments`
+    func absorbTranscriptionTick(confirmed: [(end: Float, text: String)], unconfirmed: String) -> String {
+        for segment in confirmed where segment.end > lastConfirmedEnd {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                if accumulatedConfirmedText.isEmpty {
+                    accumulatedConfirmedText = text
+                } else {
+                    accumulatedConfirmedText += " " + text
+                }
+            }
+            lastConfirmedEnd = segment.end
+        }
+        let trimmedUnconfirmed = unconfirmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let combined = [accumulatedConfirmedText, trimmedUnconfirmed]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return combined
+    }
+
+    /// Test hook: reset cumulative buffers as if a new recording were starting.
+    func resetAccumulationForTesting() {
+        accumulatedConfirmedText = ""
+        lastConfirmedEnd = 0
+        liveText = ""
     }
 
     // MARK: - TTS (unchanged)
