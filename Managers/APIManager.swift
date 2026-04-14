@@ -1,8 +1,6 @@
 import Foundation
 
 enum APIManager {
-    private static let baseURL = "http://beekeeper.dodihome.com"
-
     struct PairResponse {
         let token: String
         let deviceId: String
@@ -20,7 +18,8 @@ enum APIManager {
     }
 
     static func pair(code: String, name: String) async throws -> PairResponse {
-        let url = URL(string: "\(baseURL)/pair")!
+        let baseURL = try BeekeeperConfig.httpsURL()
+        let url = baseURL.appendingPathComponent("pair")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -46,7 +45,8 @@ enum APIManager {
     static func fetchMe() async throws -> String? {
         guard let token = KeychainManager.token else { throw APIError.unauthorized }
 
-        let url = URL(string: "\(baseURL)/me")!
+        let baseURL = try BeekeeperConfig.httpsURL()
+        let url = baseURL.appendingPathComponent("me")
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 

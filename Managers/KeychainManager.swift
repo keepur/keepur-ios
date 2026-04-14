@@ -83,6 +83,7 @@ enum KeychainManager {
         deviceId = nil
         deviceName = nil
         delete(key: capabilitiesKey)
+        BeekeeperConfig.host = nil
     }
 
     static func migrateAccessibility() {

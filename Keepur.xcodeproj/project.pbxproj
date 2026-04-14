@@ -16,6 +16,7 @@
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
+		BC4F12A3D9E847C60002 /* BeekeeperConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
+		BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeekeeperConfigTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -115,6 +117,7 @@
 		B293D6AC70744BEAB61BD645 /* KeeperTests */ = {
 			isa = PBXGroup;
 			children = (
+				BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */,
 				E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */,
 				D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */,
 				F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */,
@@ -247,6 +250,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BC4F12A3D9E847C60002 /* BeekeeperConfigTests.swift in Sources */,
 				E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */,
 				D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */,
 				F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */,

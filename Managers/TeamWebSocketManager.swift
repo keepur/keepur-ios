@@ -19,8 +19,6 @@ final class TeamWebSocketManager: ObservableObject {
     private let maxReconnectDelay: TimeInterval = 30
     private var tokenReadRetries = 0
     private let maxTokenReadRetries = 3
-    private let baseURL = "wss://beekeeper.dodihome.com"
-
     func connect() {
         guard !isConnected, !isConnecting else { return }
         guard let token = KeychainManager.token else {
@@ -41,7 +39,13 @@ final class TeamWebSocketManager: ObservableObject {
         cleanupConnection()
         isConnecting = true
 
-        let url = URL(string: "\(baseURL)/?token=\(token)&channel=team")!
+        guard let baseURL = try? BeekeeperConfig.wssURL(),
+              let url = URL(string: "\(baseURL.absoluteString)/?token=\(token)&channel=team") else {
+            print("[TeamWS] host not configured — routing to auth gate")
+            isConnecting = false
+            onAuthFailure?()
+            return
+        }
         session = URLSession(configuration: .default)
         webSocketTask = session?.webSocketTask(with: url)
         webSocketTask?.resume()

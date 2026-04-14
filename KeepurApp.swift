@@ -7,6 +7,7 @@ struct KeepurApp: App {
 
     init() {
         KeychainManager.migrateAccessibility()
+        BeekeeperConfig.migrateIfNeeded()
         do {
             let schema = Schema([Session.self, Message.self, Workspace.self, TeamChannel.self, TeamMessage.self])
             let config = ModelConfiguration(schema: schema)

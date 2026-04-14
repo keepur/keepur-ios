@@ -6,12 +6,14 @@ import UIKit
 struct PairingView: View {
     let onPaired: () -> Void
 
+    @State private var host = BeekeeperConfig.host ?? ""
     @State private var code = ""
     @State private var deviceName = ""
-    @State private var step = 1
+    @State private var step = 0
     @State private var isLoading = false
     @State private var errorMessage: String?
     @FocusState private var codeFieldFocused: Bool
+    @FocusState private var hostFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 32) {
@@ -23,17 +25,17 @@ struct PairingView: View {
                     .foregroundStyle(Color.accentColor)
                 Text("Keepur")
                     .font(.largeTitle.bold())
-                Text(step == 1 ? "Enter the 6-digit pairing code from your admin dashboard" : "Name this device")
+                Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
 
-            if step == 1 {
-                codeEntryView
-            } else {
-                nameEntryView
+            switch step {
+            case 0: hostEntryView
+            case 1: codeEntryView
+            default: nameEntryView
             }
 
             if let errorMessage {
@@ -50,6 +52,56 @@ struct PairingView: View {
             Spacer()
             Spacer()
         }
+    }
+
+    private var subtitle: String {
+        switch step {
+        case 0: return "Enter your Beekeeper host"
+        case 1: return "Enter the 6-digit pairing code from your admin dashboard"
+        default: return "Name this device"
+        }
+    }
+
+    // MARK: - Step 0: Host Entry
+
+    private var hostEntryView: some View {
+        VStack(spacing: 16) {
+            TextField("beekeeper.example.com", text: $host)
+                .font(.title3)
+                .multilineTextAlignment(.center)
+                .textFieldStyle(.roundedBorder)
+                #if os(iOS)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled(true)
+                .focused($hostFieldFocused)
+                .padding(.horizontal, 40)
+                .onSubmit(continueFromHost)
+
+            Text("Your administrator will give you this address.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Button("Continue", action: continueFromHost)
+                .buttonStyle(.borderedProminent)
+                .disabled(BeekeeperConfig.validate(host) == nil)
+        }
+        .onAppear { hostFieldFocused = true }
+    }
+
+    private func continueFromHost() {
+        guard let normalized = BeekeeperConfig.validate(host) else {
+            errorMessage = "Enter a valid hostname (e.g. beekeeper.example.com)"
+            return
+        }
+        BeekeeperConfig.host = normalized
+        host = normalized
+        errorMessage = nil
+        step = 1
+        codeFieldFocused = true
     }
 
     // MARK: - Step 1: Code Entry
@@ -76,6 +128,14 @@ struct PairingView: View {
                         step = 2
                     }
                 }
+
+            Button("Back") {
+                code = ""
+                errorMessage = nil
+                step = 0
+                hostFieldFocused = true
+            }
+            .font(.footnote)
         }
         .onAppear { codeFieldFocused = true }
     }
@@ -154,6 +214,9 @@ struct PairingView: View {
                 code = ""
                 step = 1
                 codeFieldFocused = true
+            } catch BeekeeperConfigError.hostNotConfigured {
+                errorMessage = "Host not configured. Go back and enter your Beekeeper host."
+                isLoading = false
             } catch {
                 errorMessage = "Connection error. Check network."
                 isLoading = false

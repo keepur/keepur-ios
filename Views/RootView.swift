@@ -12,6 +12,8 @@ struct RootView: View {
                     _ = try await APIManager.fetchMe()
                 } catch APIManager.APIError.unauthorized {
                     viewModel.unpair()
+                } catch BeekeeperConfigError.hostNotConfigured {
+                    viewModel.unpair()
                 } catch {
                     // Network error — don't log out
                 }
