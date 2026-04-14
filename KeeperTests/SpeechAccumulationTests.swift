@@ -47,4 +47,16 @@ struct SpeechAccumulationTests {
         let r = sm.absorbTranscriptionTick(confirmed: [(2.0, "hi")], unconfirmed: "there")
         #expect(r == "hi there")
     }
+
+    @Test func dedupsSegmentWithJitteredEndTimestamp() async {
+        // WhisperKit may re-emit a previously confirmed segment with its `end`
+        // timestamp refined by a few ms as alignment settles. The epsilon guard
+        // in absorbTranscriptionTick must treat such a re-emission as a duplicate.
+        let sm = SpeechManager()
+        sm.resetAccumulationForTesting()
+        _ = sm.absorbTranscriptionTick(confirmed: [(5.000, "hello")], unconfirmed: "")
+        // Same segment re-emitted with a 3ms timestamp refinement — must NOT re-append.
+        let r = sm.absorbTranscriptionTick(confirmed: [(5.003, "hello")], unconfirmed: "")
+        #expect(r == "hello")
+    }
 }

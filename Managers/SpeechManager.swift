@@ -206,7 +206,11 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     ///   - confirmed: array of (end, text) pairs from `newState.confirmedSegments`
     ///   - unconfirmed: joined text from `newState.unconfirmedSegments`
     func absorbTranscriptionTick(confirmed: [(end: Float, text: String)], unconfirmed: String) -> String {
-        for segment in confirmed where segment.end > lastConfirmedEnd {
+        // Epsilon guards against WhisperKit re-emitting a previously confirmed
+        // segment with its `end` timestamp refined by a few ms as alignment
+        // settles — without it, such a segment would be appended twice.
+        let dedupEpsilon: Float = 0.05
+        for segment in confirmed where segment.end > lastConfirmedEnd + dedupEpsilon {
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 if accumulatedConfirmedText.isEmpty {
