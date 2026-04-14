@@ -265,9 +265,13 @@ struct ChatView: View {
             }
         }
         .onReceive(viewModel.speechManager.$liveText) { newText in
-            if viewModel.speechManager.isRecording {
-                viewModel.messageText = newText
-            }
+            // No `isRecording` gate: the stream transcriber's final callback
+            // (carrying the last confirmed text) hops to MainActor *after*
+            // `stopRecording()` has already flipped `isRecording` to false.
+            // Gating here drops that final emission. Cumulative state is reset
+            // at the start of the next recording, so stale text can't leak in.
+            guard !newText.isEmpty else { return }
+            viewModel.messageText = newText
         }
         .fileImporter(isPresented: $showDocumentPicker, allowedContentTypes: [.item]) { result in
             switch result {

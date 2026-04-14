@@ -26,6 +26,13 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     private var whisperKit: WhisperKit?
     private let synthesizer = AVSpeechSynthesizer()
     private var streamTranscriber: AudioStreamTranscriber?
+    /// Accumulated text from confirmed segments that have already been absorbed
+    /// across all transcription cycles. Survives the 30s rolling window slide.
+    private var accumulatedConfirmedText: String = ""
+    /// Highest `end` timestamp (seconds) of any confirmed segment we've already
+    /// appended to `accumulatedConfirmedText`. Used to skip re-emitted segments
+    /// that are still inside the current window.
+    private var lastConfirmedEnd: Float = 0
 
     override init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
@@ -86,6 +93,8 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // Stop TTS if playing
         if isSpeaking { stopSpeaking() }
         liveText = ""
+        accumulatedConfirmedText = ""
+        lastConfirmedEnd = 0
 
         // Retain mic permission pre-check for first-install UX.
         // AudioStreamTranscriber calls requestRecordPermission() internally,
@@ -140,18 +149,12 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
             tokenizer: tokenizer,
             audioProcessor: whisperKit.audioProcessor,
             decodingOptions: options
-        ) { [weak self] oldState, newState in
-            // Callback fires on each transcription cycle (~1s).
-            // Read confirmedSegments (finalized) + unconfirmedSegments (tentative).
-            let confirmed = newState.confirmedSegments.map(\.text).joined(separator: " ")
-            let unconfirmed = newState.unconfirmedSegments.map(\.text).joined(separator: " ")
-            let combined = [confirmed, unconfirmed]
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-
+        ) { [weak self] _, newState in
             Task { @MainActor in
-                self?.liveText = combined
+                guard let self else { return }
+                let confirmed = newState.confirmedSegments.map { (end: $0.end, text: $0.text) }
+                let unconfirmed = newState.unconfirmedSegments.map(\.text).joined(separator: " ")
+                self.liveText = self.absorbTranscriptionTick(confirmed: confirmed, unconfirmed: unconfirmed)
             }
         }
 
@@ -192,6 +195,44 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         #endif
 
         // liveText stays as-is — ChatView will have it in messageText for user to edit/send
+    }
+
+    // MARK: - Test Hooks
+
+    /// Pure accumulation step, extracted for unit testing. Mutates
+    /// `accumulatedConfirmedText` and `lastConfirmedEnd`, returns the combined
+    /// `liveText` value that would be published.
+    /// - Parameters:
+    ///   - confirmed: array of (end, text) pairs from `newState.confirmedSegments`
+    ///   - unconfirmed: joined text from `newState.unconfirmedSegments`
+    func absorbTranscriptionTick(confirmed: [(end: Float, text: String)], unconfirmed: String) -> String {
+        // Epsilon guards against WhisperKit re-emitting a previously confirmed
+        // segment with its `end` timestamp refined by a few ms as alignment
+        // settles — without it, such a segment would be appended twice.
+        let dedupEpsilon: Float = 0.05
+        for segment in confirmed where segment.end > lastConfirmedEnd + dedupEpsilon {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                if accumulatedConfirmedText.isEmpty {
+                    accumulatedConfirmedText = text
+                } else {
+                    accumulatedConfirmedText += " " + text
+                }
+            }
+            lastConfirmedEnd = segment.end
+        }
+        let trimmedUnconfirmed = unconfirmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let combined = [accumulatedConfirmedText, trimmedUnconfirmed]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return combined
+    }
+
+    /// Test hook: reset cumulative buffers as if a new recording were starting.
+    func resetAccumulationForTesting() {
+        accumulatedConfirmedText = ""
+        lastConfirmedEnd = 0
+        liveText = ""
     }
 
     // MARK: - TTS (unchanged)
