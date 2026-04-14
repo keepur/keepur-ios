@@ -18,8 +18,6 @@ final class WebSocketManager: ObservableObject {
     private let maxReconnectDelay: TimeInterval = 30
     private var tokenReadRetries = 0
     private let maxTokenReadRetries = 3
-    private let baseURL = "ws://beekeeper.dodihome.com"
-
     func connect() {
         guard !isConnected else { return }
         guard let token = KeychainManager.token else {
@@ -43,7 +41,11 @@ final class WebSocketManager: ObservableObject {
 
         cleanupConnection()
 
-        let url = URL(string: "\(baseURL)?token=\(token)")!
+        guard let baseURL = try? BeekeeperConfig.wssURL(),
+              let url = URL(string: "\(baseURL.absoluteString)?token=\(token)") else {
+            handleDisconnect()
+            return
+        }
         let config = URLSessionConfiguration.default
         session = URLSession(configuration: config)
         webSocketTask = session?.webSocketTask(with: url)

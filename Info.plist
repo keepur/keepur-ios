@@ -10,11 +10,6 @@
 	<dict>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>beekeeper.dodihome.com</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
 			<key>hive.dodihome.com</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
