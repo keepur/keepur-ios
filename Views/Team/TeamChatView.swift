@@ -22,7 +22,7 @@ struct TeamChatView: View {
               let channel = viewModel.channels.first(where: { $0.id == channelId }) else {
             return "Team"
         }
-        return channel.displayName
+        return viewModel.displayName(for: channel)
     }
 
     var body: some View {

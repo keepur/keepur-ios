@@ -21,8 +21,12 @@ struct TeamSidebarView: View {
             if !dmChannels.isEmpty {
                 Section("Direct Messages") {
                     ForEach(dmChannels, id: \.id) { channel in
-                        ChannelRow(channel: channel, isActive: channel.id == viewModel.activeChannelId)
-                            .tag(channel.id)
+                        ChannelRow(
+                            channel: channel,
+                            title: viewModel.displayName(for: channel),
+                            isActive: channel.id == viewModel.activeChannelId
+                        )
+                        .tag(channel.id)
                     }
                 }
             }
@@ -30,8 +34,12 @@ struct TeamSidebarView: View {
             if !groupChannels.isEmpty {
                 Section("Channels") {
                     ForEach(groupChannels, id: \.id) { channel in
-                        ChannelRow(channel: channel, isActive: channel.id == viewModel.activeChannelId)
-                            .tag(channel.id)
+                        ChannelRow(
+                            channel: channel,
+                            title: viewModel.displayName(for: channel),
+                            isActive: channel.id == viewModel.activeChannelId
+                        )
+                        .tag(channel.id)
                     }
                 }
             }
@@ -62,6 +70,7 @@ struct TeamSidebarView: View {
 
 struct ChannelRow: View {
     let channel: TeamChannel
+    let title: String
     let isActive: Bool
 
     var body: some View {
@@ -76,7 +85,7 @@ struct ChannelRow: View {
                 }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(channel.displayName)
+                Text(title)
                     .font(.body)
                     .fontWeight(isActive ? .semibold : .regular)
                     .lineLimit(1)

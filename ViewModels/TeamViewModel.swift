@@ -231,8 +231,9 @@ final class TeamViewModel: ObservableObject {
         //    the pending request ID on rapid taps, which would break suppression).
         guard pendingAgentDM == nil else { return }
 
-        // 3. Not found — create via /dm command
-        let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.name])
+        // 3. Not found — create via /dm command. Send agent id so the server's
+        // AgentResolver doesn't have to do a display-name lookup (KPR-11).
+        let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.id])
         guard let requestId = ws.sendWithId(command) else { return }  // offline — no-op
 
         pendingNewCommands.insert(requestId)
@@ -589,6 +590,20 @@ final class TeamViewModel: ObservableObject {
             channelNames: channelNames,
             commandNames: commandNames
         )
+    }
+
+    /// Resolve a channel's user-facing title. For DMs the server's `name`
+    /// reflects the user's own device (the counterparty from the server's
+    /// perspective), which is useless to the person reading the app. Replace
+    /// it with the agent name by matching channel members against agents.
+    func displayName(for channel: TeamChannel) -> String {
+        if channel.type == "dm" {
+            if let agent = agents.first(where: { channel.members.contains($0.id) }) {
+                return agent.name
+            }
+            return channel.name
+        }
+        return channel.type == "channel" ? "#\(channel.name)" : channel.name
     }
 
     func refreshActiveMessages() {
