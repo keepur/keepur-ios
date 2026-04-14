@@ -26,6 +26,13 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     private var whisperKit: WhisperKit?
     private let synthesizer = AVSpeechSynthesizer()
     private var streamTranscriber: AudioStreamTranscriber?
+    /// Accumulated text from confirmed segments that have already been absorbed
+    /// across all transcription cycles. Survives the 30s rolling window slide.
+    private var accumulatedConfirmedText: String = ""
+    /// Highest `end` timestamp (seconds) of any confirmed segment we've already
+    /// appended to `accumulatedConfirmedText`. Used to skip re-emitted segments
+    /// that are still inside the current window.
+    private var lastConfirmedEnd: Float = 0
 
     override init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
@@ -86,6 +93,8 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // Stop TTS if playing
         if isSpeaking { stopSpeaking() }
         liveText = ""
+        accumulatedConfirmedText = ""
+        lastConfirmedEnd = 0
 
         // Retain mic permission pre-check for first-install UX.
         // AudioStreamTranscriber calls requestRecordPermission() internally,
@@ -140,18 +149,33 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
             tokenizer: tokenizer,
             audioProcessor: whisperKit.audioProcessor,
             decodingOptions: options
-        ) { [weak self] oldState, newState in
+        ) { [weak self] _, newState in
             // Callback fires on each transcription cycle (~1s).
-            // Read confirmedSegments (finalized) + unconfirmedSegments (tentative).
-            let confirmed = newState.confirmedSegments.map(\.text).joined(separator: " ")
-            let unconfirmed = newState.unconfirmedSegments.map(\.text).joined(separator: " ")
-            let combined = [confirmed, unconfirmed]
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-
+            // `confirmedSegments` only contains segments still inside the rolling
+            // 30s window — earlier ones are dropped as the window slides. We must
+            // accumulate them ourselves, keyed by segment end-time, so older text
+            // doesn't vanish from `liveText`.
             Task { @MainActor in
-                self?.liveText = combined
+                guard let self else { return }
+                for segment in newState.confirmedSegments where segment.end > self.lastConfirmedEnd {
+                    let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        if self.accumulatedConfirmedText.isEmpty {
+                            self.accumulatedConfirmedText = text
+                        } else {
+                            self.accumulatedConfirmedText += " " + text
+                        }
+                    }
+                    self.lastConfirmedEnd = segment.end
+                }
+                let unconfirmed = newState.unconfirmedSegments
+                    .map(\.text)
+                    .joined(separator: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let combined = [self.accumulatedConfirmedText, unconfirmed]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                self.liveText = combined
             }
         }
 
