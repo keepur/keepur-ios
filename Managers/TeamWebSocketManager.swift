@@ -41,8 +41,9 @@ final class TeamWebSocketManager: ObservableObject {
 
         guard let baseURL = try? BeekeeperConfig.wssURL(),
               let url = URL(string: "\(baseURL.absoluteString)/?token=\(token)&channel=team") else {
+            print("[TeamWS] host not configured — routing to auth gate")
             isConnecting = false
-            handleDisconnect()
+            onAuthFailure?()
             return
         }
         session = URLSession(configuration: .default)

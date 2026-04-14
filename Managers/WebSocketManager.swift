@@ -43,7 +43,8 @@ final class WebSocketManager: ObservableObject {
 
         guard let baseURL = try? BeekeeperConfig.wssURL(),
               let url = URL(string: "\(baseURL.absoluteString)?token=\(token)") else {
-            handleDisconnect()
+            print("[WS] host not configured — routing to auth gate")
+            onAuthFailure?()
             return
         }
         let config = URLSessionConfiguration.default

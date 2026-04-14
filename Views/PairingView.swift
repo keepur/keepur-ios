@@ -214,6 +214,9 @@ struct PairingView: View {
                 code = ""
                 step = 1
                 codeFieldFocused = true
+            } catch BeekeeperConfigError.hostNotConfigured {
+                errorMessage = "Host not configured. Go back and enter your Beekeeper host."
+                isLoading = false
             } catch {
                 errorMessage = "Connection error. Check network."
                 isLoading = false
