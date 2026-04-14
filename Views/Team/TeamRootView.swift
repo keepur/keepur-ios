@@ -7,7 +7,7 @@ struct TeamRootView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             TeamSidebarView(viewModel: viewModel)
-                .navigationTitle("Team")
+                .navigationTitle("Hive")
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
                         Circle()

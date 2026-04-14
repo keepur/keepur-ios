@@ -12,11 +12,11 @@ struct ContentView: View {
         Group {
             if isPaired {
                 TabView {
-                    Tab("Team", systemImage: "person.3.fill") {
+                    Tab("Hive", systemImage: "hexagon.fill") {
                         TeamRootView(viewModel: teamViewModel)
                     }
 
-                    Tab("Beekeeper", systemImage: "hammer.fill") {
+                    Tab("Beekeeper", systemImage: "eyes.inverse") {
                         RootView(viewModel: chatViewModel)
                     }
                 }
