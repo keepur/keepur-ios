@@ -59,7 +59,7 @@ struct TeamSidebarView: View {
                 ContentUnavailableView {
                     Label("No Channels", systemImage: "bubble.left.and.bubble.right")
                 } description: {
-                    Text("Connecting to Team...")
+                    Text("Connecting to Hive...")
                 }
             }
         }
