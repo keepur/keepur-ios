@@ -72,6 +72,7 @@ final class TeamWebSocketManager: ObservableObject {
         isReconnecting = false
         isConnecting = false
         tokenReadRetries = 0
+        currentChannel = nil
         pingTimer?.invalidate()
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -89,7 +90,6 @@ final class TeamWebSocketManager: ObservableObject {
         webSocketTask?.send(.string(string)) { [weak self] error in
             if error != nil {
                 Task { @MainActor in
-                    self?.onReceiveFailure?()
                     self?.handleDisconnect()
                 }
             }
@@ -105,7 +105,6 @@ final class TeamWebSocketManager: ObservableObject {
         webSocketTask?.send(.string(string)) { [weak self] error in
             if error != nil {
                 Task { @MainActor in
-                    self?.onReceiveFailure?()
                     self?.handleDisconnect()
                 }
             }

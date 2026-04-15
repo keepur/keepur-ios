@@ -198,6 +198,15 @@ struct PairingView: View {
 
                 await capabilityManager.refresh()
 
+                if capabilityManager.lastError != nil {
+                    // Roll back the token write so the user isn't left in a half-paired
+                    // state with an orphaned credential that onAuthFailure silently swallowed.
+                    KeychainManager.clearAll()
+                    errorMessage = "Paired, but couldn't load hives. Check network and try again."
+                    isLoading = false
+                    return
+                }
+
                 #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)

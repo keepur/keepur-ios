@@ -47,10 +47,12 @@ struct HivesGridView: View {
         }
         .navigationDestination(isPresented: $navigateToHive) {
             TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
-                .onDisappear {
-                    capabilityManager.selectedHive = nil
-                    teamViewModel.disconnect()
-                }
+        }
+        .onChange(of: navigateToHive) { _, isActive in
+            if !isActive {
+                capabilityManager.selectedHive = nil
+                teamViewModel.disconnect()
+            }
         }
     }
 }
