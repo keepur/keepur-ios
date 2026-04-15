@@ -42,7 +42,7 @@ final class WebSocketManager: ObservableObject {
         cleanupConnection()
 
         guard let baseURL = try? BeekeeperConfig.wssURL(),
-              let url = URL(string: "\(baseURL.absoluteString)?token=\(token)") else {
+              let url = URL(string: "\(baseURL.absoluteString)?token=\(token)&channel=beekeeper") else {
             print("[WS] host not configured — routing to auth gate")
             onAuthFailure?()
             return

@@ -22,6 +22,9 @@ final class TeamViewModel: ObservableObject {
     /// Weak because TeamViewModel does not own SpeechManager — ChatViewModel does.
     weak var speechManager: SpeechManager?
 
+    weak var capabilityManager: CapabilityManager?
+    @Published var disconnectedBanner: String?
+
     /// Cached dynamic vocabulary for prompt rebuilding.
     private var agentNames: [String] = []
     private var channelNames: [String] = []
@@ -40,10 +43,11 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Setup
 
-    func configure(context: ModelContext) {
+    func configure(context: ModelContext, capabilityManager: CapabilityManager) {
         guard modelContext == nil else { return }  // Idempotency guard
         self.modelContext = context
         self.deviceId = KeychainManager.deviceId ?? ""
+        self.capabilityManager = capabilityManager
 
         ws.onMessage = { [weak self] incoming in
             self?.handleIncoming(incoming)
@@ -54,7 +58,41 @@ final class TeamViewModel: ObservableObject {
         ws.onConnect = { [weak self] in
             self?.onConnected()
         }
-        ws.connect()
+        ws.onReceiveFailure = { [weak self] in
+            self?.handleReceiveFailure()
+        }
+        connectIfPossible()
+    }
+
+    func connectIfPossible() {
+        guard let channel = capabilityManager?.selectedHive else {
+            print("[TeamVM] connectIfPossible: no selectedHive, skipping")
+            return
+        }
+        ws.connect(channel: channel)
+    }
+
+    func retryConnect() {
+        disconnectedBanner = nil
+        connectIfPossible()
+    }
+
+    private func handleReceiveFailure() {
+        guard let manager = capabilityManager else { return }
+        let label = manager.selectedHive ?? "hive"
+        disconnectedBanner = "\(label) is unavailable — tap to retry."
+        Task { [weak self] in
+            await manager.refresh()
+            await MainActor.run {
+                guard let self else { return }
+                if let current = manager.selectedHive, manager.hives.contains(current) {
+                    // still available — keep banner, user can tap retry
+                } else {
+                    self.disconnectedBanner = nil
+                    self.ws.disconnect()
+                }
+            }
+        }
     }
 
     func disconnect() {

@@ -5,6 +5,7 @@ import UIKit
 
 struct PairingView: View {
     let onPaired: () -> Void
+    let capabilityManager: CapabilityManager
 
     @State private var host = BeekeeperConfig.host ?? ""
     @State private var code = ""
@@ -194,7 +195,20 @@ struct PairingView: View {
                 KeychainManager.token = response.token
                 KeychainManager.deviceId = response.deviceId
                 KeychainManager.deviceName = response.deviceName
-                KeychainManager.capabilities = response.capabilities
+
+                await capabilityManager.refresh()
+
+                if capabilityManager.lastError != nil {
+                    // Roll back the credentials only — leave BeekeeperConfig.host alone
+                    // so the user can retry without re-entering the host.
+                    KeychainManager.token = nil
+                    KeychainManager.deviceId = nil
+                    KeychainManager.deviceName = nil
+                    UserDefaults.standard.removeObject(forKey: "selectedHive")
+                    errorMessage = "Paired, but couldn't load hives. Check network and try again."
+                    isLoading = false
+                    return
+                }
 
                 #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()

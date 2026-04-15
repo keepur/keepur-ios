@@ -9,6 +9,7 @@ final class TeamWebSocketManager: ObservableObject {
     var onMessage: ((TeamWSIncoming) -> Void)?
     var onAuthFailure: (() -> Void)?
     var onConnect: (() -> Void)?
+    var onReceiveFailure: (() -> Void)?
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -19,14 +20,17 @@ final class TeamWebSocketManager: ObservableObject {
     private let maxReconnectDelay: TimeInterval = 30
     private var tokenReadRetries = 0
     private let maxTokenReadRetries = 3
-    func connect() {
+    private var currentChannel: String?
+
+    func connect(channel: String) {
         guard !isConnected, !isConnecting else { return }
+        currentChannel = channel
         guard let token = KeychainManager.token else {
             if tokenReadRetries < maxTokenReadRetries {
                 tokenReadRetries += 1
                 Task { [weak self] in
                     try? await Task.sleep(for: .seconds(2))
-                    self?.connect()
+                    self?.retryConnect()
                 }
             } else {
                 tokenReadRetries = 0
@@ -40,7 +44,7 @@ final class TeamWebSocketManager: ObservableObject {
         isConnecting = true
 
         guard let baseURL = try? BeekeeperConfig.wssURL(),
-              let url = URL(string: "\(baseURL.absoluteString)/?token=\(token)&channel=team") else {
+              let url = URL(string: "\(baseURL.absoluteString)/?token=\(token)&channel=\(channel)") else {
             print("[TeamWS] host not configured — routing to auth gate")
             isConnecting = false
             onAuthFailure?()
@@ -59,10 +63,16 @@ final class TeamWebSocketManager: ObservableObject {
         onConnect?()
     }
 
+    private func retryConnect() {
+        guard let channel = currentChannel else { return }
+        connect(channel: channel)
+    }
+
     func disconnect() {
         isReconnecting = false
         isConnecting = false
         tokenReadRetries = 0
+        currentChannel = nil
         pingTimer?.invalidate()
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -142,6 +152,7 @@ final class TeamWebSocketManager: ObservableObject {
                     if closeCode.rawValue == 4001 {
                         self.onAuthFailure?()
                     } else {
+                        self.onReceiveFailure?()
                         self.handleDisconnect()
                     }
                 }
@@ -156,7 +167,7 @@ final class TeamWebSocketManager: ObservableObject {
     }
 
     private func scheduleReconnect() {
-        guard KeychainManager.isPaired, !isReconnecting else { return }
+        guard KeychainManager.isPaired, !isReconnecting, let channel = currentChannel else { return }
         isReconnecting = true
         reconnectAttempts += 1
         let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
@@ -164,7 +175,7 @@ final class TeamWebSocketManager: ObservableObject {
             try? await Task.sleep(for: .seconds(delay))
             guard let self, self.isReconnecting else { return }
             self.isConnected = false
-            self.connect()
+            self.connect(channel: channel)
         }
     }
 

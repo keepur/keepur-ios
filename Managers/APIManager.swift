@@ -5,7 +5,6 @@ enum APIManager {
         let token: String
         let deviceId: String
         let deviceName: String
-        let capabilities: [String]
     }
 
     enum PairError: Error {
@@ -38,8 +37,37 @@ enum APIManager {
             throw PairError.invalidCode
         }
 
-        let capabilities = (json["capabilities"] as? [String]) ?? []
-        return PairResponse(token: token, deviceId: deviceId, deviceName: deviceName, capabilities: capabilities)
+        return PairResponse(token: token, deviceId: deviceId, deviceName: deviceName)
+    }
+
+    static func fetchCapabilities() async throws -> [String] {
+        guard let token = KeychainManager.token else { throw APIError.unauthorized }
+
+        let baseURL = try BeekeeperConfig.httpsURL()
+        let url = baseURL.appendingPathComponent("capabilities")
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.requestFailed
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.requestFailed
+        }
+        if http.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+        guard http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let caps = json["capabilities"] as? [String] else {
+            throw APIError.requestFailed
+        }
+        return caps
     }
 
     static func fetchMe() async throws -> String? {
