@@ -199,9 +199,12 @@ struct PairingView: View {
                 await capabilityManager.refresh()
 
                 if capabilityManager.lastError != nil {
-                    // Roll back the token write so the user isn't left in a half-paired
-                    // state with an orphaned credential that onAuthFailure silently swallowed.
-                    KeychainManager.clearAll()
+                    // Roll back the credentials only — leave BeekeeperConfig.host alone
+                    // so the user can retry without re-entering the host.
+                    KeychainManager.token = nil
+                    KeychainManager.deviceId = nil
+                    KeychainManager.deviceName = nil
+                    UserDefaults.standard.removeObject(forKey: "selectedHive")
                     errorMessage = "Paired, but couldn't load hives. Check network and try again."
                     isLoading = false
                     return
