@@ -5,6 +5,7 @@ import UIKit
 
 struct PairingView: View {
     let onPaired: () -> Void
+    let capabilityManager: CapabilityManager
 
     @State private var host = BeekeeperConfig.host ?? ""
     @State private var code = ""
@@ -194,7 +195,8 @@ struct PairingView: View {
                 KeychainManager.token = response.token
                 KeychainManager.deviceId = response.deviceId
                 KeychainManager.deviceName = response.deviceName
-                KeychainManager.capabilities = response.capabilities
+
+                await capabilityManager.refresh()
 
                 #if os(iOS)
                 let generator = UINotificationFeedbackGenerator()
