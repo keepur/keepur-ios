@@ -27,7 +27,7 @@ final class ChatViewModel: ObservableObject {
     @Published var serverSessions: [ServerSession] = []
     @Published var workspaceSessions: [WorkspaceSession] = []
     @Published var pendingMessageIds: Set<String> = []
-    @Published var pendingAttachment: (data: Data, name: String, mimeType: String)? = nil
+    @Published var pendingAttachment: AttachmentData?
 
     let ws = WebSocketManager()
     let speechManager = SpeechManager()
@@ -35,7 +35,7 @@ final class ChatViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
     private var lastCompletedMessageIds: [String: String] = [:]
-    private var pendingMessages: [(text: String, messageId: String, sessionId: String, attachment: (data: Data, name: String, mimeType: String)?)] = []
+    private var pendingMessages: [(text: String, messageId: String, sessionId: String, attachment: AttachmentData?)] = []
     private static let staleBusyTimeout: TimeInterval = 90
     private var busyTimers: [String: Task<Void, Never>] = [:]
     /// Pending `/clear` handoffs, keyed by workspace path. Populated when
@@ -92,6 +92,7 @@ final class ChatViewModel: ObservableObject {
             sendToServer(text: text, attachment: attachment, sessionId: sessionId)
         }
         messageText = ""
+        speechManager.liveText = ""
         pendingAttachment = nil
     }
 
@@ -417,7 +418,7 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func sendToServer(text: String, attachment: (data: Data, name: String, mimeType: String)?, sessionId: String) {
+    private func sendToServer(text: String, attachment: AttachmentData?, sessionId: String) {
         if !text.isEmpty {
             ws.send(.message(text: text, sessionId: sessionId))
         }

@@ -13,9 +13,12 @@ final class TeamViewModel: ObservableObject {
     @Published var isLoadingHistory: Bool = false
     @Published var hasMoreHistory: Bool = true
     @Published var messageText: String = ""
+    @Published var pendingAttachment: AttachmentData?
     @Published var isAuthenticated = true
     @Published var lastLiveMessageId: String?  // Set on live messages only, drives scroll-to-bottom
     @Published var agents: [TeamAgentInfo] = []
+
+    var autoReadAloud = false
 
     /// Reference to SpeechManager for updating Whisper prompt with dynamic vocabulary.
     /// Set by the parent view that owns both TeamViewModel and SpeechManager.
@@ -105,18 +108,20 @@ final class TeamViewModel: ObservableObject {
 
     func sendMessage(text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
+        let attachment = pendingAttachment
+        guard !trimmed.isEmpty || attachment != nil,
               let channelId = activeChannelId,
               let context = modelContext else { return }
 
-        // Check for slash commands
         if trimmed.hasPrefix("/") {
             sendSlashCommand(text: trimmed, channelId: channelId)
             messageText = ""
+            speechManager?.liveText = ""
+            pendingAttachment = nil
             return
         }
 
-        // Create optimistic local message
+        let effectiveText = trimmed.isEmpty ? (attachment?.name ?? "") : trimmed
         let localId = UUID().uuidString
         let message = TeamMessage(
             id: localId,
@@ -124,20 +129,29 @@ final class TeamViewModel: ObservableObject {
             senderId: deviceId,
             senderType: "person",
             senderName: KeychainManager.deviceName ?? "Me",
-            text: trimmed,
+            text: effectiveText,
             pending: true
         )
         context.insert(message)
         try? context.save()
 
-        // Send via WS and track for ack
         if let requestId = ws.sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
             pendingMessageIds[requestId] = localId
+        }
+        if let attachment {
+            let base64 = attachment.data.base64EncodedString()
+            if attachment.mimeType.hasPrefix("image/") {
+                _ = ws.sendWithId(.teamImage(channelId: channelId, data: base64, filename: attachment.name))
+            } else {
+                _ = ws.sendWithId(.teamFile(channelId: channelId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+            }
         }
 
         refreshActiveMessages()
         lastLiveMessageId = localId
         messageText = ""
+        speechManager?.liveText = ""
+        pendingAttachment = nil
     }
 
     func selectChannel(_ channelId: String) {
@@ -300,6 +314,9 @@ final class TeamViewModel: ObservableObject {
             refreshActiveMessages()
             if channelId == activeChannelId {
                 lastLiveMessageId = message.id
+                if autoReadAloud {
+                    speechManager?.speak(text)
+                }
             }
 
         case .systemMessage(let text, _, let agentName, let replyTo):
@@ -616,7 +633,7 @@ final class TeamViewModel: ObservableObject {
                 channel.lastMessageAt = date
             }
             try? context.save()
-            loadChannels(context: context)
+            channels.sort { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
         }
     }
 
