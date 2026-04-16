@@ -34,7 +34,10 @@ struct ContentView: View {
                 chatViewModel.configure(context: modelContext)
                 teamViewModel.speechManager = chatViewModel.speechManager
                 teamViewModel.configure(context: modelContext, capabilityManager: capabilityManager)
-                Task { await capabilityManager.refresh() }
+                Task {
+                    await capabilityManager.refresh()
+                    teamViewModel.connectIfPossible()
+                }
             }
         }
         .onChange(of: scenePhase) {

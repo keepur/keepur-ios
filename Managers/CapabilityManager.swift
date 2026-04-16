@@ -42,6 +42,7 @@ final class CapabilityManager: ObservableObject {
 
         do {
             let all = try await APIManager.fetchCapabilities()
+            print("[Capabilities] raw: \(all)")
             let filtered = all.filter { $0 != "beekeeper" }.sorted()
             hives = filtered
             lastError = nil
