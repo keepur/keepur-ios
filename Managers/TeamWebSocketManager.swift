@@ -55,12 +55,23 @@ final class TeamWebSocketManager: ObservableObject {
         webSocketTask?.resume()
 
         isConnecting = false
-        isConnected = true
-        reconnectAttempts = 0
-        isReconnecting = false
-        startPing()
-        receiveMessage()
-        onConnect?()
+
+        webSocketTask?.sendPing { [weak self] error in
+            Task { @MainActor in
+                guard let self else { return }
+                if error != nil {
+                    self.cleanupConnection()
+                    self.onReceiveFailure?()
+                } else {
+                    self.isConnected = true
+                    self.reconnectAttempts = 0
+                    self.isReconnecting = false
+                    self.startPing()
+                    self.receiveMessage()
+                    self.onConnect?()
+                }
+            }
+        }
     }
 
     private func retryConnect() {
@@ -151,8 +162,10 @@ final class TeamWebSocketManager: ObservableObject {
                     let closeCode = task.closeCode
                     if closeCode.rawValue == 4001 {
                         self.onAuthFailure?()
-                    } else {
+                    } else if self.onReceiveFailure != nil {
+                        self.cleanupConnection()
                         self.onReceiveFailure?()
+                    } else {
                         self.handleDisconnect()
                     }
                 }

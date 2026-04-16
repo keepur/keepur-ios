@@ -64,12 +64,14 @@ final class TeamViewModel: ObservableObject {
         ws.onReceiveFailure = { [weak self] in
             self?.handleReceiveFailure()
         }
-        connectIfPossible()
     }
 
     func connectIfPossible() {
-        guard let channel = capabilityManager?.selectedHive else {
-            print("[TeamVM] connectIfPossible: no selectedHive, skipping")
+        guard let manager = capabilityManager,
+              let channel = manager.selectedHive,
+              manager.hives.contains(channel) else {
+            print("[TeamVM] connectIfPossible: no valid selectedHive, skipping")
+            ws.disconnect()
             return
         }
         ws.connect(channel: channel)
@@ -221,6 +223,7 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Private: Connection
 
     private func onConnected() {
+        disconnectedBanner = nil
         pendingAgentDM = nil
         pendingDMRequestId = nil
         fetchChannels()
