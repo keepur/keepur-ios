@@ -3,6 +3,9 @@ import SwiftUI
 struct TeamChatView: View {
     @ObservedObject var viewModel: TeamViewModel
     @State private var showAgentDetail = false
+    @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "teamAutoReadAloud") {
+        didSet { UserDefaults.standard.set(autoReadAloud, forKey: "teamAutoReadAloud") }
+    }
 
     private var deviceId: String {
         KeychainManager.deviceId ?? ""
@@ -29,7 +32,14 @@ struct TeamChatView: View {
         VStack(spacing: 0) {
             messageList
             Divider()
-            inputBar
+            if let speechManager = viewModel.speechManager {
+                MessageInputBar(
+                    messageText: $viewModel.messageText,
+                    pendingAttachment: $viewModel.pendingAttachment,
+                    speechManager: speechManager,
+                    onSend: { viewModel.sendMessage(text: viewModel.messageText) }
+                )
+            }
         }
         .navigationTitle(channelTitle)
         #if os(iOS)
@@ -37,9 +47,27 @@ struct TeamChatView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                if isDMWithAgent {
-                    Button { showAgentDetail = true } label: {
-                        Image(systemName: "info.circle")
+                HStack(spacing: 8) {
+                    if let speechManager = viewModel.speechManager {
+                        Button {
+                            if speechManager.isSpeaking {
+                                speechManager.stopSpeaking()
+                            } else {
+                                autoReadAloud.toggle()
+                            }
+                        } label: {
+                            Image(systemName: speechManager.isSpeaking ? "stop.circle.fill"
+                                  : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
+                                .font(.subheadline)
+                        }
+                        .foregroundStyle(speechManager.isSpeaking ? .red
+                                         : autoReadAloud ? Color.accentColor : Color.secondary)
+                    }
+
+                    if isDMWithAgent {
+                        Button { showAgentDetail = true } label: {
+                            Image(systemName: "info.circle")
+                        }
                     }
                 }
             }
@@ -52,6 +80,12 @@ struct TeamChatView: View {
         }
         .onChange(of: viewModel.activeChannelId) {
             showAgentDetail = false
+        }
+        .onAppear {
+            viewModel.autoReadAloud = autoReadAloud
+        }
+        .onChange(of: autoReadAloud) {
+            viewModel.autoReadAloud = autoReadAloud
         }
     }
 
@@ -78,7 +112,10 @@ struct TeamChatView: View {
                     ForEach(viewModel.activeMessages, id: \.id) { message in
                         TeamMessageBubble(
                             message: message,
-                            isOwnMessage: message.senderId == deviceId
+                            isOwnMessage: message.senderId == deviceId,
+                            onSpeak: message.senderType == "agent" && message.senderId != "system" ? { text in
+                                viewModel.speechManager?.speak(text)
+                            } : nil
                         )
                         .id(message.id)
                     }
@@ -87,9 +124,6 @@ struct TeamChatView: View {
                 .padding(.vertical, 12)
             }
             .onChange(of: viewModel.lastLiveMessageId) {
-                // Only scroll to bottom on live incoming messages, NOT on
-                // history pagination (which prepends older messages and should
-                // preserve scroll position).
                 if let lastId = viewModel.activeMessages.last?.id {
                     withAnimation {
                         proxy.scrollTo(lastId, anchor: .bottom)
@@ -102,41 +136,5 @@ struct TeamChatView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Input Bar
-
-    private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField("Message...", text: $viewModel.messageText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                )
-                .lineLimit(1...6)
-                .onSubmit {
-                    viewModel.sendMessage(text: viewModel.messageText)
-                }
-
-            Button {
-                viewModel.sendMessage(text: viewModel.messageText)
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(
-                        viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.gray.opacity(0.3) : Color.accentColor
-                    )
-            }
-            .disabled(
-                viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
     }
 }
