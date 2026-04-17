@@ -322,7 +322,7 @@ final class TeamViewModel: ObservableObject {
             if channelId == activeChannelId {
                 lastLiveMessageId = message.id
                 if autoReadAloud {
-                    speechManager?.speak(text)
+                    speechManager?.speak(text, agentId: agentId)
                 }
             }
 

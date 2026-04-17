@@ -1,7 +1,9 @@
 import SwiftUI
+import AVFoundation
 
 struct AgentDetailSheet: View {
     let agent: TeamAgentInfo
+    @ObservedObject var speechManager: SpeechManager
 
     private var statusColor: Color {
         switch agent.status {
@@ -97,6 +99,9 @@ struct AgentDetailSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    // Voice
+                    voiceSection
                 }
                 .padding(.horizontal)
             }
@@ -109,6 +114,40 @@ struct AgentDetailSheet: View {
     }
 
     // MARK: - Subviews
+
+    private var currentVoiceLabel: String {
+        if let voiceId = speechManager.agentVoiceIds[agent.id],
+           let voice = AVSpeechSynthesisVoice(identifier: voiceId) {
+            return voice.name
+        }
+        return "Default"
+    }
+
+    private var voiceSection: some View {
+        NavigationLink {
+            AgentVoicePickerView(agent: agent, speechManager: speechManager)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.secondary)
+                    Text(currentVoiceLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color.secondarySystemGroupedBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
 
     private func infoRow(label: String, value: String) -> some View {
         HStack {

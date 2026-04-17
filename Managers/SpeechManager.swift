@@ -19,6 +19,11 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     @Published var selectedVoiceId: String? {
         didSet { UserDefaults.standard.set(selectedVoiceId, forKey: "selectedVoiceId") }
     }
+    /// Per-agent voice overrides. Key: agent.id, value: AVSpeechSynthesisVoice.identifier.
+    /// Missing key means the agent uses the global default voice.
+    @Published var agentVoiceIds: [String: String] {
+        didSet { UserDefaults.standard.set(agentVoiceIds, forKey: "agentVoiceIds") }
+    }
 
     private let synthesizer = AVSpeechSynthesizer()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -28,6 +33,7 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
     override init() {
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "selectedVoiceId")
+        self.agentVoiceIds = (UserDefaults.standard.dictionary(forKey: "agentVoiceIds") as? [String: String]) ?? [:]
         super.init()
         synthesizer.delegate = self
     }
@@ -174,7 +180,9 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
     // MARK: - TTS
 
-    func speak(_ text: String) {
+    /// Speak text. If `agentId` is provided and has a stored per-agent voice override,
+    /// that voice is used; otherwise the global default voice is used.
+    func speak(_ text: String, agentId: String? = nil) {
         synthesizer.stopSpeaking(at: .immediate)
 
         #if os(iOS)
@@ -186,7 +194,25 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = 0.52
         utterance.pitchMultiplier = 1.05
-        utterance.voice = bestVoice()
+        utterance.voice = voiceForAgent(agentId) ?? bestVoice()
+        isSpeaking = true
+        synthesizer.speak(utterance)
+    }
+
+    /// Speak text in a specific voice — used by voice preview UI.
+    func speak(_ text: String, voice: AVSpeechSynthesisVoice) {
+        synthesizer.stopSpeaking(at: .immediate)
+
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        try? audioSession.setCategory(.playback, mode: .default)
+        try? audioSession.setActive(true)
+        #endif
+
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = 0.52
+        utterance.pitchMultiplier = 1.05
+        utterance.voice = voice
         isSpeaking = true
         synthesizer.speak(utterance)
     }
@@ -194,6 +220,25 @@ final class SpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     func stopSpeaking() {
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
+    }
+
+    // MARK: - Voice Resolution
+
+    /// Resolve the per-agent voice override. Returns nil when no override is set
+    /// or the stored identifier no longer resolves to an installed voice.
+    func voiceForAgent(_ agentId: String?) -> AVSpeechSynthesisVoice? {
+        guard let agentId,
+              let voiceId = agentVoiceIds[agentId] else { return nil }
+        return AVSpeechSynthesisVoice(identifier: voiceId)
+    }
+
+    /// Set or clear the voice override for an agent. Pass nil to revert to default.
+    func setVoice(_ voiceId: String?, forAgent agentId: String) {
+        if let voiceId {
+            agentVoiceIds[agentId] = voiceId
+        } else {
+            agentVoiceIds.removeValue(forKey: agentId)
+        }
     }
 
     private func bestVoice() -> AVSpeechSynthesisVoice? {
