@@ -40,9 +40,9 @@ struct TeamRootView: View {
                     TeamChatView(viewModel: viewModel)
                 } else {
                     ContentUnavailableView {
-                        Label("Select a conversation", systemImage: "bubble.left.and.bubble.right")
+                        Label("Select an agent", systemImage: "bubble.left.and.bubble.right")
                     } description: {
-                        Text("Choose a channel or DM from the sidebar")
+                        Text("Choose an agent to start a conversation")
                     }
                 }
             }
