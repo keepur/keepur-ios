@@ -45,7 +45,7 @@ Add two new optional fields from the agent's DM channel:
 - `lastMessage: String?` — preview text (100 chars, from `TeamChannel.lastMessageText`)
 - `lastMessageAt: Date?` — relative time stamp
 
-The leading status dot uses a 36x36 container (matching the old ChannelRow icon area) with a centered 10pt filled circle, colored by `statusColor`.
+The leading status dot uses a 36x36 container (matching the old ChannelRow icon area) with a centered 10pt filled circle, colored by `statusColor`. The dot is intentionally sized larger than the existing 8pt inline dot because it occupies a prominent leading position rather than sitting next to the name.
 
 Layout becomes:
 ```
@@ -59,7 +59,9 @@ New initializer signature:
 AgentRow(agent: TeamAgentInfo, dmChannel: TeamChannel?, isActive: Bool)
 ```
 
-`AgentRow` reads `dmChannel?.lastMessageText` and `dmChannel?.lastMessageAt` directly. When `dmChannel` is nil or has no preview, fall back to the existing `subtitle` computed property (title/model). No code change needed for the subtitle fallback itself:
+`AgentRow` reads `dmChannel?.lastMessageText` and `dmChannel?.lastMessageAt` directly. The `subtitle` computed property (title/model) is reused unchanged; only the `body` render logic changes to pick `lastMessage ?? subtitle` for the second line. The `isActive` bolding behavior on the name label (`fontWeight(isActive ? .semibold : .regular)`) is preserved as-is.
+
+The relative time stamp uses `Text(lastAt, style: .relative)`, mirroring the existing `ChannelRow` at `TeamSidebarView.swift:104`.
 
 When no conversation exists yet:
 ```
@@ -78,7 +80,7 @@ Add a `@Published` property that merges agent info with DM channel data and sort
 
 **Sort**: `dmChannel?.lastMessageAt` descending (nil sorts last), then `agent.name` ascending.
 
-**DM lookup**: For each agent, find `channels.first { $0.type == "dm" && $0.members.contains(agent.id) }`.
+**DM lookup**: For each agent, find `channels.first { $0.type == "dm" && $0.members.contains(agent.id) }`. This predicate intentionally matches the existing predicate in `openAgentDM(agent:)` (`TeamViewModel.swift:277`) and the existing DM-creation path (`TeamViewModel.swift:445`) — sidebar display and DM navigation stay consistent by using the same lookup rule.
 
 **Important**: This must be a `@Published` stored property, not a computed property. `agents` and `channels` are populated independently by separate WS responses (`agent_list` and `channel_list`) that arrive in unpredictable order. A computed property derived from both wouldn't trigger SwiftUI updates correctly.
 
@@ -117,7 +119,7 @@ Update the detail pane `ContentUnavailableView`:
 
 - Remove `ChannelRow` struct from `TeamSidebarView.swift`
 - Remove `dmChannels` and `groupChannels` computed properties from `TeamSidebarView`
-- Keep `displayName(for:)` in TeamViewModel — it's still used by `TeamChatView` for the nav bar title
+- Keep `displayName(for:)` in TeamViewModel — it's still used by `TeamChatView.swift:28` for the nav bar title. The other two callsites (`TeamSidebarView.swift:26,39`) disappear with `ChannelRow` removal.
 
 ## Files Changed
 
