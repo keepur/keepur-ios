@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 66A392317E85460A9D615D5B /* WhisperKit */; };
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
 		A3B4C5D6E7F809A1B2C3D401 /* SessionReplacedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */; };
@@ -76,8 +75,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */,
-				2BC4EDF48E4E4B8C83190E4D /* WhisperKit in Frameworks */,
-			);
+							);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		FEF1D9C33E6946E9A1F7E1B9 /* Frameworks */ = {
@@ -152,7 +150,6 @@
 			name = Keepur;
 			packageProductDependencies = (
 				D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */,
-				66A392317E85460A9D615D5B /* WhisperKit */,
 			);
 			productName = Keepur;
 			productReference = A1ABEBC12F79E16C009B0AFC /* Keepur.app */;
@@ -206,7 +203,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
-				EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1ABEBC22F79E16C009B0AFC /* Products */;
@@ -561,22 +557,9 @@
 				minimumVersion = 2.4.1;
 			};
 		};
-		EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
-			requirement = {
-				kind = exactVersion;
-				version = 0.18.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		66A392317E85460A9D615D5B /* WhisperKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EEC58AFADFE34002952E6517 /* XCRemoteSwiftPackageReference "WhisperKit" */;
-			productName = WhisperKit;
-		};
 		D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C1D2E3F4A5B6C7D8E9F0A1B2 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
