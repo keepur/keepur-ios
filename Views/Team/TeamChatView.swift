@@ -73,8 +73,8 @@ struct TeamChatView: View {
             }
         }
         .sheet(isPresented: $showAgentDetail) {
-            if let agent = activeAgent {
-                AgentDetailSheet(agent: agent)
+            if let agent = activeAgent, let speechManager = viewModel.speechManager {
+                AgentDetailSheet(agent: agent, speechManager: speechManager)
                     .presentationDetents([.medium, .large])
             }
         }
@@ -114,7 +114,7 @@ struct TeamChatView: View {
                             message: message,
                             isOwnMessage: message.senderId == deviceId,
                             onSpeak: message.senderType == "agent" && message.senderId != "system" ? { text in
-                                viewModel.speechManager?.speak(text)
+                                viewModel.speechManager?.speak(text, agentId: message.senderId)
                             } : nil
                         )
                         .id(message.id)
