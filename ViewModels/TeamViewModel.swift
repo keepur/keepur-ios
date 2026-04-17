@@ -20,7 +20,7 @@ final class TeamViewModel: ObservableObject {
 
     var autoReadAloud = false
 
-    /// Reference to SpeechManager for updating Whisper prompt with dynamic vocabulary.
+    /// Reference to the shared SpeechManager (owned by ChatViewModel).
     /// Set by the parent view that owns both TeamViewModel and SpeechManager.
     /// Weak because TeamViewModel does not own SpeechManager — ChatViewModel does.
     weak var speechManager: SpeechManager?
@@ -28,10 +28,6 @@ final class TeamViewModel: ObservableObject {
     weak var capabilityManager: CapabilityManager?
     @Published var disconnectedBanner: String?
 
-    /// Cached dynamic vocabulary for prompt rebuilding.
-    private var agentNames: [String] = []
-    private var channelNames: [String] = []
-    private var commandNames: [String] = []
 
     // MARK: - Internal State
 
@@ -74,6 +70,7 @@ final class TeamViewModel: ObservableObject {
             ws.disconnect()
             return
         }
+        print("[TeamVM] connectIfPossible: connecting to \(channel)")
         ws.connect(channel: channel)
     }
 
@@ -227,8 +224,8 @@ final class TeamViewModel: ObservableObject {
         pendingAgentDM = nil
         pendingDMRequestId = nil
         fetchChannels()
-        ws.send(.agentList)       // Extract agent names for Whisper vocabulary
-        ws.send(.commandList)     // Extract command names for Whisper vocabulary
+        ws.send(.agentList)
+        ws.send(.commandList)
         // Reconnect gap-fill: fetch latest messages for the active channel.
         // Use fetchHistory (not direct ws.send) so cursor and loading state
         // are managed correctly and we don't race with seeding fetches.
@@ -361,8 +358,6 @@ final class TeamViewModel: ObservableObject {
 
         case .channelList(let channelInfos, _):
             syncChannels(channelInfos, context: context)
-            channelNames = channelInfos.map(\.name)
-            rebuildWhisperPrompt()
             // Seed previews with 1-message history per channel.
             // Skip the active channel — a full-page fetch is already in flight
             // from onConnected/selectChannel, and a seeding response would
@@ -405,12 +400,9 @@ final class TeamViewModel: ObservableObject {
 
         case .agentList(let agents, _):
             self.agents = agents
-            agentNames = agents.map(\.name)
-            rebuildWhisperPrompt()
 
-        case .commandList(let commands, _):
-            commandNames = commands.map(\.name)
-            rebuildWhisperPrompt()
+        case .commandList:
+            break
         }
     }
 
@@ -640,15 +632,6 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Private: Whisper Prompt
-
-    private func rebuildWhisperPrompt() {
-        speechManager?.whisperPrompt = WhisperPromptBuilder.buildPrompt(
-            agentNames: agentNames,
-            channelNames: channelNames,
-            commandNames: commandNames
-        )
-    }
 
     /// Resolve a channel's user-facing title. For DMs the server's `name`
     /// reflects the user's own device (the counterparty from the server's

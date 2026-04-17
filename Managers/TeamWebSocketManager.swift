@@ -44,7 +44,7 @@ final class TeamWebSocketManager: ObservableObject {
         isConnecting = true
 
         guard let baseURL = try? BeekeeperConfig.wssURL(),
-              let url = URL(string: "\(baseURL.absoluteString)/?token=\(token)&channel=\(channel)") else {
+              let url = URL(string: "\(baseURL.absoluteString)?token=\(token)&channel=\(channel)") else {
             print("[TeamWS] host not configured — routing to auth gate")
             isConnecting = false
             onAuthFailure?()
@@ -54,15 +54,17 @@ final class TeamWebSocketManager: ObservableObject {
         webSocketTask = session?.webSocketTask(with: url)
         webSocketTask?.resume()
 
-        isConnecting = false
-
+        print("[TeamWS] connecting to \(url)")
         webSocketTask?.sendPing { [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
-                if error != nil {
+                self.isConnecting = false
+                if let error {
+                    print("[TeamWS] handshake failed: \(error.localizedDescription)")
                     self.cleanupConnection()
                     self.onReceiveFailure?()
                 } else {
+                    print("[TeamWS] handshake succeeded")
                     self.isConnected = true
                     self.reconnectAttempts = 0
                     self.isReconnecting = false
