@@ -18,6 +18,13 @@ final class TeamViewModel: ObservableObject {
     @Published var lastLiveMessageId: String?  // Set on live messages only, drives scroll-to-bottom
     @Published var agents: [TeamAgentInfo] = []
 
+    /// Agents paired with their DM channel (if any), sorted for sidebar display.
+    /// Sort: `dmChannel?.lastMessageAt` descending (nil last), then `agent.name` ascending.
+    /// Must be a stored @Published (not computed) — `agents` and `channels` arrive
+    /// via separate WS responses in unpredictable order, and a computed derivation
+    /// wouldn't reliably trigger SwiftUI updates.
+    @Published var sortedAgents: [(agent: TeamAgentInfo, dmChannel: TeamChannel?)] = []
+
     var autoReadAloud = false
 
     /// Reference to the shared SpeechManager (owned by ChatViewModel).
@@ -400,6 +407,7 @@ final class TeamViewModel: ObservableObject {
 
         case .agentList(let agents, _):
             self.agents = agents
+            recomputeSortedAgents()
 
         case .commandList:
             break
@@ -461,6 +469,7 @@ final class TeamViewModel: ObservableObject {
             sortBy: [SortDescriptor(\TeamChannel.lastMessageAt, order: .reverse)]
         )
         channels = (try? context.fetch(descriptor)) ?? []
+        recomputeSortedAgents()
     }
 
     // MARK: - Private: History Processing with Dedup
@@ -629,6 +638,7 @@ final class TeamViewModel: ObservableObject {
             }
             try? context.save()
             channels.sort { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
+            recomputeSortedAgents()
         }
     }
 
@@ -658,5 +668,31 @@ final class TeamViewModel: ObservableObject {
             sortBy: [SortDescriptor(\TeamMessage.createdAt)]
         )
         activeMessages = (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Rebuild `sortedAgents` from current `agents` and `channels`.
+    /// DM predicate (`type == "dm"` + members contains agent.id) intentionally
+    /// matches the existing predicate in `openAgentDM(agent:)` and `syncChannels`
+    /// so sidebar display and DM navigation stay consistent.
+    func recomputeSortedAgents() {
+        let paired: [(agent: TeamAgentInfo, dmChannel: TeamChannel?)] = agents.map { agent in
+            let dm = channels.first { $0.type == "dm" && $0.members.contains(agent.id) }
+            return (agent: agent, dmChannel: dm)
+        }
+        sortedAgents = paired.sorted { lhs, rhs in
+            let lDate = lhs.dmChannel?.lastMessageAt
+            let rDate = rhs.dmChannel?.lastMessageAt
+            switch (lDate, rDate) {
+            case let (l?, r?):
+                if l != r { return l > r }
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                break
+            }
+            return lhs.agent.name.localizedCaseInsensitiveCompare(rhs.agent.name) == .orderedAscending
+        }
     }
 }

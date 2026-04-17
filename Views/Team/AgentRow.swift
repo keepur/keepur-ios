@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AgentRow: View {
     let agent: TeamAgentInfo
+    let dmChannel: TeamChannel?
     let isActive: Bool
 
     private var statusColor: Color {
@@ -11,10 +12,6 @@ struct AgentRow: View {
         case "error", "stopped": return .red
         default: return .gray
         }
-    }
-
-    private var iconText: String {
-        agent.icon.isEmpty ? "🤖" : agent.icon
     }
 
     private var subtitle: String? {
@@ -27,24 +24,32 @@ struct AgentRow: View {
         return nil
     }
 
+    /// Second-line text: DM preview if a conversation exists, else fall back
+    /// to the agent's title/model subtitle.
+    private var secondLineText: String? {
+        if let preview = dmChannel?.lastMessageText, !preview.isEmpty {
+            return preview
+        }
+        return subtitle
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            Text(iconText)
-                .font(.title2)
-                .frame(width: 32, height: 32)
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+            }
+            .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(agent.name)
-                        .font(.body)
-                        .fontWeight(isActive ? .semibold : .regular)
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                }
+                Text(agent.name)
+                    .font(.body)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .lineLimit(1)
 
-                if let subtitle {
-                    Text(subtitle)
+                if let secondLineText {
+                    Text(secondLineText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -52,7 +57,14 @@ struct AgentRow: View {
             }
 
             Spacer()
+
+            if let lastAt = dmChannel?.lastMessageAt {
+                Text(lastAt, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
     }
 }
