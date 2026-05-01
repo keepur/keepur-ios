@@ -10,6 +10,7 @@
 		1C64CC96FCCA12E0C18D2594 /* KeepurTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 879A9EB01FA2519B78E8311D /* KeepurTheme.swift */; };
 		1CDCE353A1AF570D5405BF45 /* JetBrainsMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */; };
 		78E25B1ECA5E1C013B9BC97A /* KeepurThemeFontsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */; };
+		7B43BBA1D24DCEDD5FDB5396 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */; };
 		7EF2A7DA26678EB140E42C7F /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */; };
 		894B13146C2E79CF9905E5FC /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6E8B9481A07498C49CD22328 /* OFL.txt */; };
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
@@ -50,6 +51,7 @@
 		D070EA0CD6314C1DB43F7E3B /* TeamSortedAgentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSortedAgentsTests.swift; sourceTree = "<group>"; };
 		D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResilienceTests.swift; sourceTree = "<group>"; };
+		D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
 		E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyStateRecoveryTests.swift; sourceTree = "<group>"; };
 		F14E65891B51453D96E01CF1 /* KeeperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KeeperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextClearedTests.swift; sourceTree = "<group>"; };
@@ -112,6 +114,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		86E3C5B2B906AAB8C221E5D9 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */,
+			);
+			name = Components;
+			path = Components;
+			sourceTree = "<group>";
+		};
 		A1ABEBB82F79E16C009B0AFC = {
 			isa = PBXGroup;
 			children = (
@@ -169,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				879A9EB01FA2519B78E8311D /* KeepurTheme.swift */,
+				86E3C5B2B906AAB8C221E5D9 /* Components */,
 			);
 			name = Theme;
 			path = Theme;
@@ -293,6 +305,7 @@
 			files = (
 				A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */,
 				1C64CC96FCCA12E0C18D2594 /* KeepurTheme.swift in Sources */,
+				7B43BBA1D24DCEDD5FDB5396 /* PrimaryButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
