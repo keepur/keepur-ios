@@ -56,7 +56,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: KeepurTheme.Spacing.s3) {
                         ForEach(messages, id: \.id) { message in
                             MessageBubble(
                                 message: message,
@@ -73,8 +73,8 @@ struct ChatView: View {
                                 .id("status")
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, KeepurTheme.Spacing.s4)
+                    .padding(.vertical, KeepurTheme.Spacing.s3)
                 }
                 .onAppear {
                     if let lastId = messages.last?.id {
@@ -114,7 +114,7 @@ struct ChatView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                HStack(spacing: 8) {
+                HStack(spacing: KeepurTheme.Spacing.s2) {
                     Button {
                         if viewModel.speechManager.isSpeaking {
                             viewModel.speechManager.stopSpeaking()
@@ -124,16 +124,19 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: viewModel.speechManager.isSpeaking ? "stop.circle.fill"
                               : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
-                            .font(.subheadline)
+                            .font(KeepurTheme.Font.bodySm)
                     }
-                    .foregroundStyle(viewModel.speechManager.isSpeaking ? .red
-                                     : autoReadAloud ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(
+                        viewModel.speechManager.isSpeaking ? KeepurTheme.Color.danger
+                        : autoReadAloud ? KeepurTheme.Color.honey500
+                        : KeepurTheme.Color.fgSecondaryDynamic
+                    )
 
                     #if os(iOS)
                     Button {
                         showSettings = true
                     } label: {
-                        Image(systemName: "gearshape")
+                        Image(systemName: KeepurTheme.Symbol.settings)
                     }
                     #endif
                 }
@@ -171,11 +174,11 @@ struct ChatView: View {
         HStack {
             Spacer()
             Text("Session ended — read only")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             Spacer()
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, KeepurTheme.Spacing.s3)
         .background(.ultraThinMaterial)
     }
 }
@@ -190,43 +193,43 @@ struct StatusIndicator: View {
 
     var body: some View {
         HStack {
-            HStack(spacing: 6) {
+            HStack(spacing: KeepurTheme.Spacing.s1 + 2) {
                 if status == "thinking" {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
-                            .fill(.secondary)
+                            .fill(KeepurTheme.Color.fgSecondaryDynamic)
                             .frame(width: 8, height: 8)
                             .offset(y: sin(phase + Double(i) * 0.8) * 4)
                     }
                 } else if status == "busy" {
                     Image(systemName: "clock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     Text("Server busy...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 } else {
                     Image(systemName: "hammer.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     Text("Running \(toolName ?? "tool")...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 }
 
                 if let onCancel {
                     Button(action: onCancel) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(KeepurTheme.Font.caption)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, KeepurTheme.Spacing.s4)
+            .padding(.vertical, KeepurTheme.Spacing.s3)
             .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.secondarySystemFill)
+                RoundedRectangle(cornerRadius: KeepurTheme.Radius.lg)
+                    .fill(KeepurTheme.Color.bgSunkenDynamic)
             )
             Spacer()
         }

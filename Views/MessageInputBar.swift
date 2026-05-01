@@ -24,14 +24,14 @@ struct MessageInputBar: View {
         VStack(spacing: 0) {
             if let attachment = pendingAttachment {
                 attachmentPreview(name: attachment.name, data: attachment.data, mimeType: attachment.mimeType)
-                    .padding(.top, 8)
+                    .padding(.top, KeepurTheme.Spacing.s2)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: KeepurTheme.Spacing.s2) {
                 Button { showAttachmentOptions = true } label: {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: KeepurTheme.Symbol.plus)
                         .font(.system(size: 26))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(KeepurTheme.Color.fgMuted)
                 }
                 .popover(isPresented: $showAttachmentOptions) {
                     VStack(spacing: 0) {
@@ -41,8 +41,8 @@ struct MessageInputBar: View {
                         } label: {
                             Label("Choose File", systemImage: "doc")
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
+                                .padding(.horizontal, KeepurTheme.Spacing.s4)
+                                .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
                         }
                         .buttonStyle(.plain)
 
@@ -51,8 +51,8 @@ struct MessageInputBar: View {
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
                             Label("Photo Library", systemImage: "photo")
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
+                                .padding(.horizontal, KeepurTheme.Spacing.s4)
+                                .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
                         }
                         .buttonStyle(.plain)
                         .onChange(of: selectedPhoto) {
@@ -60,15 +60,16 @@ struct MessageInputBar: View {
                         }
                     }
                     .frame(width: 200)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, KeepurTheme.Spacing.s1)
                 }
 
                 TextField("Message...", text: $messageText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .font(KeepurTheme.Font.body)
+                    .padding(.horizontal, KeepurTheme.Spacing.s3)
+                    .padding(.vertical, KeepurTheme.Spacing.s2)
                     .background(
-                        RoundedRectangle(cornerRadius: 20)
+                        RoundedRectangle(cornerRadius: KeepurTheme.Radius.pill)
                             .fill(.ultraThinMaterial)
                     )
                     .lineLimit(1...6)
@@ -77,14 +78,14 @@ struct MessageInputBar: View {
                 VoiceButton(speechManager: speechManager)
 
                 Button { onSend() } label: {
-                    Image(systemName: "arrow.up.circle.fill")
+                    Image(systemName: KeepurTheme.Symbol.send)
                         .font(.system(size: 32))
-                        .foregroundStyle(sendButtonColor)
+                        .foregroundStyle(canSend ? KeepurTheme.Color.honey500 : KeepurTheme.Color.fgMuted)
                 }
                 .disabled(!canSend)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, KeepurTheme.Spacing.s3)
+            .padding(.vertical, KeepurTheme.Spacing.s2)
         }
         .background(.ultraThinMaterial)
         .onChange(of: selectedPhoto) {
@@ -142,10 +143,6 @@ struct MessageInputBar: View {
         !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pendingAttachment != nil
     }
 
-    private var sendButtonColor: Color {
-        canSend ? Color.accentColor : Color.gray.opacity(0.3)
-    }
-
     private func loadAttachment(from url: URL) {
         guard let data = try? Data(contentsOf: url) else {
             attachmentError = "Could not read the selected file."
@@ -165,25 +162,25 @@ struct MessageInputBar: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
             } else {
                 Image(systemName: "doc.fill")
                     .font(.title2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             }
             Text(name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 .lineLimit(1)
             Spacer()
             Button { pendingAttachment = nil } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondarySystemFill))
-        .padding(.horizontal, 4)
+        .padding(.horizontal, KeepurTheme.Spacing.s3)
+        .padding(.vertical, KeepurTheme.Spacing.s1 + 2)
+        .background(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm).fill(KeepurTheme.Color.bgSunkenDynamic))
+        .padding(.horizontal, KeepurTheme.Spacing.s1)
     }
 }
