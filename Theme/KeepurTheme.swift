@@ -249,6 +249,7 @@ public extension KeepurTheme {
         public static let terminal    = "terminal.fill"
         public static let chat        = "bubble.left.and.bubble.right"
         public static let bolt        = "bolt.fill"
+        public static let compose     = "square.and.pencil"
         public static let server      = "server.rack"
         public static let chevronBack = "chevron.left"
         public static let check       = "checkmark"
