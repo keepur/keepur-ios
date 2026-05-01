@@ -25,54 +25,57 @@ struct MessageBubble: View {
     private var userBubble: some View {
         HStack {
             Spacer(minLength: 60)
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: KeepurTheme.Spacing.s1) {
                 ZStack(alignment: .bottomTrailing) {
-                    VStack(alignment: .trailing, spacing: 8) {
+                    VStack(alignment: .trailing, spacing: KeepurTheme.Spacing.s2) {
                         if let data = message.attachmentData, let mimeType = message.attachmentType {
                             if mimeType.hasPrefix("image/"), let img = PlatformImage(data: data) {
                                 Image(platformImage: img)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(maxHeight: 200)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
                             } else {
-                                HStack(spacing: 6) {
+                                HStack(spacing: KeepurTheme.Spacing.s1) {
                                     Image(systemName: "doc.fill")
-                                        .font(.caption)
+                                        .font(KeepurTheme.Font.caption)
                                     Text(message.attachmentName ?? "Attachment")
-                                        .font(.caption)
+                                        .font(KeepurTheme.Font.caption)
                                         .lineLimit(1)
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(Color.white.opacity(0.2))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.xs))
                             }
                         }
 
                         if !message.text.isEmpty && message.text != message.attachmentName {
                             Text(Self.attributedText(message.text))
-                                .font(.body)
+                                .font(KeepurTheme.Font.body)
                                 .textSelection(.enabled)
                         }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.accentColor)
-                    )
-                    .foregroundStyle(.white)
+                    .background(KeepurTheme.Color.honey500)
+                    .clipShape(.rect(
+                        topLeadingRadius:     KeepurTheme.Radius.lg,
+                        bottomLeadingRadius:  KeepurTheme.Radius.lg,
+                        bottomTrailingRadius: 6,
+                        topTrailingRadius:    KeepurTheme.Radius.lg
+                    ))
+                    .foregroundStyle(KeepurTheme.Color.fgOnHoney)
 
                     if showWaitingBadge {
                         Text("waiting")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .padding(.horizontal, 8)
+                            .font(KeepurTheme.Font.caption)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                            .padding(.horizontal, KeepurTheme.Spacing.s2)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule()
-                                    .fill(Color.secondary)
+                                    .fill(KeepurTheme.Color.honey200)
                             )
                             .offset(x: 4, y: 4)
                             .opacity(isPulsing ? 0.6 : 1.0)
@@ -82,35 +85,35 @@ struct MessageBubble: View {
                 }
 
                 Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
         }
     }
 
     private var assistantBubble: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
                 Markdown(message.text)
                     .markdownTheme(.keepur)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.secondarySystemFill)
+                        RoundedRectangle(cornerRadius: KeepurTheme.Radius.lg)
+                            .fill(KeepurTheme.Color.bgSunkenDynamic)
                     )
 
-                HStack(spacing: 12) {
+                HStack(spacing: KeepurTheme.Spacing.s3) {
                     Text(message.timestamp, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgTertiary)
 
                     if let onSpeak {
                         Button { onSpeak(message.text) } label: {
-                            Image(systemName: "speaker.wave.2")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            Image(systemName: KeepurTheme.Symbol.speaker)
+                                .font(KeepurTheme.Font.caption)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
                 }
@@ -121,24 +124,25 @@ struct MessageBubble: View {
 
     private var unknownBubble: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
                 Text("Unsupported message")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
 
                 Text(message.text)
-                    .font(.body)
+                    .font(KeepurTheme.Font.body)
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.secondarySystemFill)
+                        RoundedRectangle(cornerRadius: KeepurTheme.Radius.lg)
+                            .fill(KeepurTheme.Color.bgSunkenDynamic)
                     )
 
                 Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
             Spacer(minLength: 60)
         }
@@ -148,10 +152,10 @@ struct MessageBubble: View {
         HStack {
             Spacer()
             Text(message.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 .textSelection(.enabled)
-                .padding(.vertical, 8)
+                .padding(.vertical, KeepurTheme.Spacing.s2)
             Spacer()
         }
     }
@@ -167,35 +171,37 @@ struct MessageBubble: View {
         let output = parts.count > 1 ? String(parts[1]) : ""
 
         return HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "terminal.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
+                VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s2) {
+                    HStack(spacing: KeepurTheme.Spacing.s1) {
+                        Image(systemName: KeepurTheme.Symbol.terminal)
+                            .font(KeepurTheme.Font.caption)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         Text(toolName)
-                            .font(.caption2.bold())
-                            .foregroundStyle(.secondary)
+                            .font(KeepurTheme.Font.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     }
 
                     ScrollView {
                         Text(output)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     .frame(maxHeight: 200)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, KeepurTheme.Spacing.s3)
+                .padding(.vertical, KeepurTheme.Spacing.s2)
                 .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.tertiarySystemFill)
+                    RoundedRectangle(cornerRadius: KeepurTheme.Radius.md)
+                        .fill(KeepurTheme.Color.bgSunkenDynamic)
                 )
 
                 Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
             Spacer(minLength: 60)
         }
