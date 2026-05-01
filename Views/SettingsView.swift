@@ -23,70 +23,86 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Device") {
+                Section {
                     HStack {
                         Text("Name")
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                         Spacer()
                         Text(KeychainManager.deviceName ?? "Unknown")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     }
+                    .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
 
                     if let deviceId = KeychainManager.deviceId {
                         HStack {
                             Text("Device ID")
+                                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             Spacer()
                             Text(String(deviceId.prefix(8)))
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
+                        .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                     }
+                } header: {
+                    eyebrowHeader("DEVICE")
                 }
 
-                Section("Connection") {
+                Section {
                     HStack {
                         Text("Status")
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                         Spacer()
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(viewModel.ws.isConnected ? .green : .red)
+                                .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                                 .frame(width: 8, height: 8)
                             Text(viewModel.ws.isConnected ? "Connected" : "Disconnected")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
+                    .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
 
                     if let sessionId = viewModel.currentSessionId {
                         HStack {
                             Text("Session")
+                                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             Spacer()
                             Text(String(sessionId.prefix(8)))
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
+                        .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                     }
 
                     if !viewModel.currentPath.isEmpty {
                         HStack {
                             Text("Workspace")
+                                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             Spacer()
                             Text(viewModel.currentPath)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                 .lineLimit(1)
                         }
+                        .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                     }
+                } header: {
+                    eyebrowHeader("CONNECTION")
                 }
 
                 if !savedWorkspaces.isEmpty {
-                    Section("Saved Workspaces") {
+                    Section {
                         ForEach(savedWorkspaces, id: \.path) { workspace in
                             VStack(alignment: .leading) {
                                 Text(workspace.displayName)
-                                    .font(.body)
+                                    .font(KeepurTheme.Font.body)
+                                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                 Text(workspace.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(KeepurTheme.Font.caption)
+                                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                             }
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                         }
                         .onDelete { offsets in
                             for index in offsets {
@@ -94,13 +110,18 @@ struct SettingsView: View {
                             }
                             try? modelContext.save()
                         }
+                    } header: {
+                        eyebrowHeader("SAVED WORKSPACES")
                     }
                 }
 
-                Section("Voice") {
+                Section {
                     ForEach(englishVoices, id: \.identifier) { voice in
                         voiceRow(voice)
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                     }
+                } header: {
+                    eyebrowHeader("VOICE")
                 }
 
                 Section {
@@ -111,10 +132,12 @@ struct SettingsView: View {
                             viewModel.ws.connect()
                         }
                     }
+                    .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
 
                     Button("Unpair Device", role: .destructive) {
                         showUnpairConfirmation = true
                     }
+                    .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                     .confirmationDialog(
                         "Unpair this device?",
                         isPresented: $showUnpairConfirmation,
@@ -129,6 +152,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(KeepurTheme.Color.bgPageDynamic)
             .navigationTitle("Settings")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -141,6 +166,16 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Eyebrow header
+
+    private func eyebrowHeader(_ title: String) -> some View {
+        Text(title)
+            .font(KeepurTheme.Font.eyebrow)
+            .tracking(KeepurTheme.Font.lsEyebrow)
+            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+            .textCase(nil)
+    }
+
     @ViewBuilder
     private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
         Button {
@@ -151,19 +186,19 @@ struct SettingsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(voice.name)
-                        .font(.body)
+                        .font(KeepurTheme.Font.body)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     Text(qualityLabel(voice.quality))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 }
                 Spacer()
                 if viewModel.speechManager.selectedVoiceId == voice.identifier {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.blue)
+                    Image(systemName: KeepurTheme.Symbol.check)
+                        .foregroundStyle(KeepurTheme.Color.honey500)
                 }
             }
         }
-        .foregroundStyle(.primary)
     }
 
     private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
