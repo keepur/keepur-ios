@@ -10,7 +10,7 @@ struct WorkspacePickerView: View {
         NavigationStack {
             List {
                 if !recentWorkspaces.isEmpty {
-                    Section("Recent Workspaces") {
+                    Section {
                         ForEach(recentWorkspaces.prefix(5), id: \.path) { workspace in
                             Button {
                                 viewModel.newSession(path: workspace.path)
@@ -18,18 +18,21 @@ struct WorkspacePickerView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "clock.arrow.circlepath")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                     VStack(alignment: .leading) {
                                         Text(workspace.displayName)
-                                            .font(.body)
+                                            .font(KeepurTheme.Font.body)
+                                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                         Text(workspace.path)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                     }
                                 }
                             }
-                            .foregroundStyle(.primary)
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                         }
+                    } header: {
+                        eyebrowHeader("RECENT WORKSPACES")
                     }
                 }
 
@@ -45,7 +48,8 @@ struct WorkspacePickerView: View {
                                 viewModel.ws.connect()
                                 viewModel.browse()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(KeepurPrimaryButtonStyle())
+                            .padding(.horizontal, KeepurTheme.Spacing.s7)
                         }
                     } else if let error = viewModel.browseError {
                         ContentUnavailableView {
@@ -54,7 +58,8 @@ struct WorkspacePickerView: View {
                             Text(error)
                         } actions: {
                             Button("Retry") { viewModel.browse() }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(KeepurPrimaryButtonStyle())
+                                .padding(.horizontal, KeepurTheme.Spacing.s7)
                         }
                     } else if viewModel.browsePath.isEmpty {
                         ProgressView("Loading…")
@@ -63,12 +68,12 @@ struct WorkspacePickerView: View {
                     } else {
                         HStack {
                             Image(systemName: "folder.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                             Text(viewModel.browsePath)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
-                        .listRowBackground(Color.tertiarySystemFill)
+                        .listRowBackground(KeepurTheme.Color.bgSunkenDynamic)
 
                         if !isHome {
                             Button {
@@ -77,11 +82,12 @@ struct WorkspacePickerView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "arrow.up.doc")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                     Text("..")
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                 }
                             }
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                         }
 
                         ForEach(viewModel.browseEntries.filter(\.isDirectory), id: \.name) { entry in
@@ -94,19 +100,20 @@ struct WorkspacePickerView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "folder")
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(KeepurTheme.Color.honey700)
                                     Text(entry.name)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                 }
                             }
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                         }
                     }
                 } header: {
-                    Text("Browse")
+                    eyebrowHeader("BROWSE")
                 }
 
                 if !viewModel.workspaceSessions.isEmpty {
-                    Section("Session History") {
+                    Section {
                         ForEach(viewModel.workspaceSessions, id: \.sessionId) { ws in
                             Button {
                                 if ws.active {
@@ -119,32 +126,31 @@ struct WorkspacePickerView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: ws.active ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
-                                        .foregroundStyle(ws.active ? .green : .secondary)
+                                        .foregroundStyle(ws.active ? KeepurTheme.Color.success : KeepurTheme.Color.fgSecondaryDynamic)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(ws.preview)
-                                            .font(.subheadline)
+                                            .font(KeepurTheme.Font.bodySm)
+                                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                             .lineLimit(2)
                                         Text(ws.lastActiveAt, style: .relative)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(KeepurTheme.Font.caption)
+                                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                     }
                                     Spacer()
                                     if ws.active {
-                                        Text("Active")
-                                            .font(.caption2)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.green.opacity(0.2))
-                                            .clipShape(Capsule())
-                                            .foregroundStyle(.green)
+                                        semanticBadge("Active", tint: KeepurTheme.Color.success)
                                     }
                                 }
                             }
-                            .foregroundStyle(.primary)
+                            .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                         }
+                    } header: {
+                        eyebrowHeader("SESSION HISTORY")
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(KeepurTheme.Color.bgPageDynamic)
             .navigationTitle("Select Workspace")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -173,5 +179,25 @@ struct WorkspacePickerView: View {
 
     private var isHome: Bool {
         viewModel.browsePath == "/" || viewModel.browsePath.hasSuffix("/~") || viewModel.browsePath == "~"
+    }
+
+    // MARK: - Eyebrow header
+
+    private func eyebrowHeader(_ title: String) -> some View {
+        Text(title)
+            .font(KeepurTheme.Font.eyebrow)
+            .tracking(KeepurTheme.Font.lsEyebrow)
+            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+            .textCase(nil)
+    }
+
+    private func semanticBadge(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(KeepurTheme.Font.caption)
+            .padding(.horizontal, KeepurTheme.Spacing.s2)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.15))
+            .clipShape(Capsule())
+            .foregroundStyle(tint)
     }
 }
