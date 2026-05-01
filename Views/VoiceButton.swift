@@ -23,15 +23,15 @@ struct VoiceButton: View {
             ZStack {
                 if speechManager.isRecording {
                     Circle()
-                        .fill(Color.red)
+                        .fill(KeepurTheme.Color.danger)
                         .frame(width: 44, height: 44)
                     Image(systemName: "stop.fill")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(KeepurTheme.Color.fgOnDark)
                 } else {
-                    Image(systemName: "mic.fill")
+                    Image(systemName: KeepurTheme.Symbol.mic)
                         .font(.title2)
-                        .foregroundStyle(speechManager.modelReady ? Color.accentColor : .gray)
+                        .foregroundStyle(speechManager.modelReady ? KeepurTheme.Color.honey500 : KeepurTheme.Color.fgMuted)
                         .frame(width: 44, height: 44)
                 }
             }
