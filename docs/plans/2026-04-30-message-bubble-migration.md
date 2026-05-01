@@ -1,3 +1,84 @@
+# MessageBubble Migration Implementation Plan
+
+> **For agentic workers:** Use `dodi-dev:implement` to execute this plan.
+
+**Goal:** Migrate `Views/MessageBubble.swift` to consume `KeepurTheme` tokens. User bubble = honey-500 with asymmetric 6pt tail; assistant/unknown = wax surface; tool = wax sunken card with JetBrains Mono output; waiting badge = amber capsule.
+
+**Architecture:** Single-file rewrite, no foundation changes, no new files.
+
+**Tech Stack:** SwiftUI, MarkdownUI, NSDataDetector. iOS 26.2+ / macOS 15.0+.
+
+**Spec:** [docs/specs/2026-04-30-message-bubble-migration.md](../specs/2026-04-30-message-bubble-migration.md)
+
+**Out of scope:** `MessageInputBar` (DOD-395), `ChatView` chrome (DOD-395), `MarkdownTheme.keepur`, link-detection helpers.
+
+---
+
+## File Map
+
+| File | Change |
+|------|--------|
+| `Views/MessageBubble.swift` | **Rewrite** — same surface, all values from `KeepurTheme.*` |
+
+---
+
+## Task 1: Preflight verification
+
+- [ ] **Step 1.1:** Confirm worktree state.
+
+```bash
+pwd
+git rev-parse --abbrev-ref HEAD
+git log --oneline -2
+```
+
+Expected: `/Users/mayhuang/github/keepur-ios-DOD-394`, branch `DOD-394`, top commit is the spec.
+
+- [ ] **Step 1.2:** Confirm tokens used resolve.
+
+```bash
+for sym in honey500 honey200 fgOnHoney bgSunkenDynamic fgPrimaryDynamic fgSecondaryDynamic fgTertiary; do
+  printf "Color.%-22s -> %s\n" "$sym" "$(grep -c "let $sym" Theme/KeepurTheme.swift)"
+done
+for sym in body caption; do
+  printf "Font.%-23s -> %s\n" "$sym" "$(grep -c "let $sym" Theme/KeepurTheme.swift)"
+done
+for sym in s1 s2 s3; do
+  printf "Spacing.%-20s -> %s\n" "$sym" "$(grep -c "let $sym:" Theme/KeepurTheme.swift)"
+done
+for sym in xs sm md lg; do
+  printf "Radius.%-21s -> %s\n" "$sym" "$(grep -c "let $sym:" Theme/KeepurTheme.swift)"
+done
+for sym in mono; do
+  printf "FontName.%-19s -> %s\n" "$sym" "$(grep -c "let $sym " Theme/KeepurTheme.swift)"
+done
+for sym in terminal speaker; do
+  printf "Symbol.%-21s -> %s\n" "$sym" "$(grep -c "let $sym " Theme/KeepurTheme.swift)"
+done
+```
+
+Expected: every count ≥ 1. (`Font.body` = 2 due to `FontName.mono` shadowing in regex.)
+
+- [ ] **Step 1.3:** Confirm no MessageBubble test references.
+
+```bash
+grep -rln "MessageBubble" KeeperTests/ 2>/dev/null || echo "(no matches)"
+```
+
+Expected: `(no matches)`.
+
+- [ ] **Step 1.4:** No commit.
+
+---
+
+## Task 2: Rewrite `Views/MessageBubble.swift`
+
+**Files:**
+- Modify: `Views/MessageBubble.swift` (full rewrite, same surface, same behavior)
+
+- [ ] **Step 2.1:** Replace the entire file with this version.
+
+```swift
 import MarkdownUI
 import SwiftUI
 
@@ -240,3 +321,126 @@ struct MessageBubble: View {
         return result
     }
 }
+```
+
+Notes vs current:
+- `userBubble`: honey-500 fill, charcoal text via `fgOnHoney`, asymmetric 6pt bottom-trailing tail (was symmetric 18pt). Inner spacing/padding constants kept inline (14/10) per the foundation reference snippet.
+- `assistantBubble`: `bgSunkenDynamic` instead of `secondarySystemFill`. Markdown theme unchanged.
+- `unknownBubble`: same surface as assistant; explicit `fgPrimaryDynamic` text color.
+- `toolBubble`: `bgSunkenDynamic` background, `Symbol.terminal`, JetBrains Mono output, `Radius.md` (14pt) to differentiate from chat bubbles' 18pt. Tool name is `Font.caption` semibold (was caption2 bold).
+- `systemBubble`: `fgSecondaryDynamic` (was `.secondary`).
+- Speaker button: `Symbol.speaker` constant.
+- Timestamp: `Font.caption` + `fgTertiary` (was `caption2` + `.tertiary`). Uniform across all variants.
+- Waiting badge: amber capsule (`honey200` background, `fgPrimaryDynamic` text). Pulse animation timing unchanged.
+- Attachment chip: `Color.white.opacity(0.2)` background preserved (translucent overlay on honey surface, not a token), radius mapped to `Radius.xs` (6pt).
+- Image attachment radius: `Radius.sm` (10pt).
+- Link helpers `attributedText` / `wrapBareURLs` unchanged.
+
+- [ ] **Step 2.2:** iOS build.
+
+```bash
+xcodebuild build -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -quiet 2>&1 | tail -5
+```
+
+Expected: `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 2.3:** macOS build.
+
+```bash
+xcodebuild build -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=macOS' \
+  -quiet 2>&1 | tail -5
+```
+
+Expected: `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 2.4:** iOS unit tests.
+
+```bash
+set -o pipefail
+xcodebuild test -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:KeeperTests \
+  -quiet > /tmp/dod-394-ios-test.log 2>&1
+echo "EXIT=$?"
+echo "passed: $(grep -c 'passed on' /tmp/dod-394-ios-test.log)"
+echo "failed: $(grep -c 'failed on' /tmp/dod-394-ios-test.log)"
+```
+
+Expected: `EXIT=0`, `failed: 0`.
+
+- [ ] **Step 2.5:** macOS unit tests.
+
+```bash
+set -o pipefail
+xcodebuild test -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=macOS' \
+  -only-testing:KeeperTests \
+  -quiet \
+  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+  > /tmp/dod-394-mac-test.log 2>&1
+echo "EXIT=$?"
+echo "passed: $(grep -c 'passed on' /tmp/dod-394-mac-test.log)"
+echo "failed: $(grep -c 'failed on' /tmp/dod-394-mac-test.log)"
+```
+
+Expected: `EXIT=0`, `failed: 0`.
+
+- [ ] **Step 2.6:** Commit.
+
+```bash
+git add Views/MessageBubble.swift
+git commit -m "$(cat <<'EOF'
+feat: migrate MessageBubble to KeepurTheme tokens (DOD-394)
+
+The brand's marquee surface — every conversation paints with this.
+
+Visible changes:
+- User bubble: honey-500 fill, charcoal text (fgOnHoney), 18pt
+  rounded corners with a 6pt bottom-trailing tail (matches the
+  reference snippet at the bottom of KeepurTheme.swift)
+- Assistant + unknown bubbles: bgSunkenDynamic surface (wax-100
+  light, charcoal-tinted dark), 18pt radius, charcoal text
+- Tool bubble: bgSunkenDynamic surface with terminal eyebrow,
+  JetBrains Mono output at 12pt, 14pt radius — distinct from chat
+  bubbles' 18pt to signal "this is code-like, not a message"
+- System bubble: fgSecondaryDynamic centered text
+- Timestamp: Font.caption (12pt) + fgTertiary, uniform across
+  all variants (was caption2 + .tertiary)
+- Speaker button on assistant bubble: Symbol.speaker constant
+- Waiting badge: amber capsule (honey200 bg + charcoal text)
+  instead of gray, semantic "in flight"; pulse animation unchanged
+- Attachment chip on user bubble: white@20% overlay preserved
+  (translucent on honey surface, not a token), Radius.xs corners
+- Image attachment: Radius.sm (10pt) corners
+
+No behavior changes. Tap selection, link detection (NSDataDetector
++ markdown wrapping), MarkdownTheme.keepur, pulse timing, onSpeak
+optional callback, attachment shape detection, tool message parsing
+all preserved.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Task 3: Final regression sweep
+
+- [ ] **Step 3.1:** Confirm clean tree and 2 commits ahead of main.
+
+```bash
+git status --short
+git log --oneline main..HEAD
+```
+
+---
+
+## After the plan
+
+1. `/quality-gate`
+2. `dodi-dev:review`
+3. `dodi-dev:submit` — PR + cleanup, **no auto-merge**
