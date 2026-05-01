@@ -15,22 +15,27 @@ struct PairingView: View {
     @State private var errorMessage: String?
     @FocusState private var codeFieldFocused: Bool
     @FocusState private var hostFieldFocused: Bool
+    @FocusState private var deviceNameFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: KeepurTheme.Spacing.s6) {
             Spacer()
 
-            VStack(spacing: 8) {
-                Image(systemName: "server.rack")
+            VStack(spacing: KeepurTheme.Spacing.s2) {
+                Image(systemName: KeepurTheme.Symbol.server)
                     .font(.system(size: 48))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(KeepurTheme.Color.honey500)
+
                 Text("Keepur")
-                    .font(.largeTitle.bold())
+                    .font(KeepurTheme.Font.h1)
+                    .tracking(KeepurTheme.Font.lsH1)
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+
                 Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(KeepurTheme.Font.bodySm)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, KeepurTheme.Spacing.s7)
             }
 
             switch step {
@@ -41,9 +46,9 @@ struct PairingView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 40)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.danger)
+                    .padding(.horizontal, KeepurTheme.Spacing.s7)
             }
 
             if isLoading {
@@ -53,6 +58,8 @@ struct PairingView: View {
             Spacer()
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(KeepurTheme.Color.bgPageDynamic)
     }
 
     private var subtitle: String {
@@ -66,29 +73,30 @@ struct PairingView: View {
     // MARK: - Step 0: Host Entry
 
     private var hostEntryView: some View {
-        VStack(spacing: 16) {
-            TextField("beekeeper.example.com", text: $host)
-                .font(.title3)
-                .multilineTextAlignment(.center)
-                .textFieldStyle(.roundedBorder)
-                #if os(iOS)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                #endif
-                .autocorrectionDisabled(true)
-                .focused($hostFieldFocused)
-                .padding(.horizontal, 40)
-                .onSubmit(continueFromHost)
+        VStack(spacing: KeepurTheme.Spacing.s4) {
+            keepurTextField(
+                placeholder: "beekeeper.example.com",
+                text: $host,
+                focus: $hostFieldFocused
+            )
+            #if os(iOS)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            #endif
+            .autocorrectionDisabled(true)
+            .onSubmit(continueFromHost)
+            .padding(.horizontal, KeepurTheme.Spacing.s7)
 
             Text("Your administrator will give you this address.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, KeepurTheme.Spacing.s7)
 
             Button("Continue", action: continueFromHost)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(KeepurPrimaryButtonStyle())
                 .disabled(BeekeeperConfig.validate(host) == nil)
+                .padding(.horizontal, KeepurTheme.Spacing.s7)
         }
         .onAppear { hostFieldFocused = true }
     }
@@ -108,13 +116,13 @@ struct PairingView: View {
     // MARK: - Step 1: Code Entry
 
     private var codeEntryView: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 8) {
+        VStack(spacing: KeepurTheme.Spacing.s4) {
+            HStack(spacing: KeepurTheme.Spacing.s2) {
                 ForEach(0..<6, id: \.self) { index in
                     digitBox(at: index)
                 }
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, KeepurTheme.Spacing.s7)
 
             TextField("", text: $code)
                 #if os(iOS)
@@ -136,48 +144,83 @@ struct PairingView: View {
                 step = 0
                 hostFieldFocused = true
             }
-            .font(.footnote)
+            .font(KeepurTheme.Font.bodySm)
+            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
         }
         .onAppear { codeFieldFocused = true }
     }
 
     private func digitBox(at index: Int) -> some View {
-        let digit = index < code.count ? String(code[code.index(code.startIndex, offsetBy: index)]) : ""
+        let digit = index < code.count
+            ? String(code[code.index(code.startIndex, offsetBy: index)])
+            : ""
         return Text(digit)
-            .font(.system(size: 36, weight: .bold, design: .monospaced))
+            .font(.custom(KeepurTheme.FontName.monoBold, size: 32))
+            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
             .frame(maxWidth: .infinity)
             .frame(height: 56)
-            .background(Color.tertiarySystemFill)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(KeepurTheme.Color.charcoal900.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.xs))
+            .contentShape(Rectangle())
             .onTapGesture { codeFieldFocused = true }
     }
 
     // MARK: - Step 2: Device Name
 
     private var nameEntryView: some View {
-        VStack(spacing: 16) {
-            TextField("Device name", text: $deviceName)
-                .font(.title3)
-                .multilineTextAlignment(.center)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 40)
-                .disabled(isLoading)
+        VStack(spacing: KeepurTheme.Spacing.s4) {
+            keepurTextField(
+                placeholder: "Device name",
+                text: $deviceName,
+                focus: $deviceNameFieldFocused
+            )
+            .disabled(isLoading)
+            .padding(.horizontal, KeepurTheme.Spacing.s7)
 
-            HStack(spacing: 12) {
-                Button("Back") {
-                    code = ""
-                    errorMessage = nil
-                    step = 1
-                }
-                .disabled(isLoading)
-
-                Button("Continue") {
-                    pair()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+            Button("Continue") {
+                pair()
             }
+            .buttonStyle(KeepurPrimaryButtonStyle())
+            .disabled(deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+            .padding(.horizontal, KeepurTheme.Spacing.s7)
+
+            Button("Back") {
+                code = ""
+                errorMessage = nil
+                step = 1
+            }
+            .font(KeepurTheme.Font.bodySm)
+            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+            .disabled(isLoading)
         }
+        .onAppear { deviceNameFieldFocused = true }
+    }
+
+    // MARK: - Branded text field
+
+    /// Wax-surface text field with 1px wax-200 border and a honey focus ring.
+    /// Inline helper for now — extract to Theme/Components/ once a second
+    /// screen needs it (see Theme/Components/PrimaryButton.swift for the
+    /// extraction pattern).
+    private func keepurTextField(
+        placeholder: String,
+        text: Binding<String>,
+        focus: FocusState<Bool>.Binding
+    ) -> some View {
+        TextField(placeholder, text: text)
+            .font(KeepurTheme.Font.body)
+            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+            .multilineTextAlignment(.center)
+            .focused(focus)
+            .padding(.vertical, KeepurTheme.Spacing.s3)
+            .padding(.horizontal, KeepurTheme.Spacing.s4)
+            .background(KeepurTheme.Color.bgSurfaceDynamic)
+            .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm)
+                    .stroke(KeepurTheme.Color.borderDefaultDynamic, lineWidth: 1)
+            )
+            .keepurFocusRing(focus.wrappedValue, radius: KeepurTheme.Radius.sm)
     }
 
     // MARK: - Pairing
