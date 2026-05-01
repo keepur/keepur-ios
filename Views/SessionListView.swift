@@ -28,20 +28,22 @@ struct SessionListView: View {
                 Button {
                     showSettings = true
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: KeepurTheme.Spacing.s2) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(KeepurTheme.Color.warning)
                         Text(daysRemaining == 0
                             ? "Device pairing expires today"
                             : daysRemaining == 1
                                 ? "Device pairing expires in 1 day"
                                 : "Device pairing expires in \(daysRemaining) days")
-                            .font(.subheadline.weight(.medium))
+                            .font(KeepurTheme.Font.bodySm)
+                            .fontWeight(.medium)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, KeepurTheme.Spacing.s1)
                 }
-                .listRowBackground(Color.orange.opacity(0.1))
+                .listRowBackground(KeepurTheme.Color.honey100)
             }
 
             ForEach(sessions, id: \.id) { session in
@@ -87,20 +89,22 @@ struct SessionListView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(KeepurTheme.Color.bgPageDynamic)
     }
 
     private var sessionToolbar: some ToolbarContent {
         Group {
             ToolbarItem(placement: .navigation) {
                 Circle()
-                    .fill(viewModel.ws.isConnected ? .green : .red)
+                    .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                     .frame(width: 8, height: 8)
             }
             ToolbarItem(placement: .automatic) {
                 Button {
                     showSettings = true
                 } label: {
-                    Image(systemName: "gearshape")
+                    Image(systemName: KeepurTheme.Symbol.settings)
                         .font(.title3)
                 }
             }
@@ -108,7 +112,7 @@ struct SessionListView: View {
                 Button {
                     showWorkspacePicker = true
                 } label: {
-                    Image(systemName: "square.and.pencil")
+                    Image(systemName: KeepurTheme.Symbol.compose)
                         .font(.title3)
                 }
             }
@@ -124,7 +128,8 @@ struct SessionListView: View {
                     Text("Start a new session to chat with Claude Code")
                 } actions: {
                     Button("New Session") { showWorkspacePicker = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(KeepurPrimaryButtonStyle())
+                        .padding(.horizontal, KeepurTheme.Spacing.s7)
                 }
             }
         }
@@ -272,49 +277,38 @@ struct SessionRow: View {
     let modelContext: ModelContext
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: KeepurTheme.Spacing.s3) {
             Circle()
-                .fill(isActive ? Color.green : Color.accentColor.opacity(0.15))
+                .fill(isActive ? KeepurTheme.Color.honey500 : KeepurTheme.Color.honey100)
                 .frame(width: 44, height: 44)
                 .overlay {
-                    Image(systemName: isActive ? "bolt.fill" : "bubble.left.fill")
-                        .foregroundStyle(isActive ? .white : Color.accentColor)
+                    Image(systemName: isActive ? KeepurTheme.Symbol.bolt : "bubble.left.fill")
+                        .foregroundStyle(isActive ? KeepurTheme.Color.fgOnHoney : KeepurTheme.Color.honey700)
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
                 HStack {
                     Text(session.displayName)
-                        .font(.body)
+                        .font(KeepurTheme.Font.body)
                         .fontWeight(.medium)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     if isActive {
-                        Text("Active")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.2))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.green)
+                        semanticBadge("Active", tint: KeepurTheme.Color.success)
                     }
                     if session.isStale {
-                        Text("Stale")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.orange)
+                        semanticBadge("Stale", tint: KeepurTheme.Color.warning)
                     }
                 }
 
                 Text(session.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     .lineLimit(1)
 
                 if let preview = lastMessagePreview {
                     Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.bodySm)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         .lineLimit(1)
                 }
             }
@@ -322,10 +316,20 @@ struct SessionRow: View {
             Spacer()
 
             Text(session.createdAt, style: .relative)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgTertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, KeepurTheme.Spacing.s1)
+    }
+
+    private func semanticBadge(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(KeepurTheme.Font.caption)
+            .padding(.horizontal, KeepurTheme.Spacing.s2)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.15))
+            .clipShape(Capsule())
+            .foregroundStyle(tint)
     }
 
     private var lastMessagePreview: String? {
