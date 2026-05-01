@@ -25,14 +25,16 @@ This ticket lays the foundation only. **No view migrations.** Each screen's rede
 
 - Migrating any existing view to use the tokens (separate epic).
 - Inter Tight or IBM Plex Sans — the Swift port intentionally uses SF for UI.
-- Dark-mode work beyond what `KeepurTheme.Color.*Dynamic` already provides.
+- Dark-mode work beyond what `KeepurTheme.Color.*Dynamic` already provides. **Note:** the `dynamic(light:dark:)` helper is gated by `#if canImport(UIKit)` and falls through to the `light` value on macOS. So `*Dynamic` aliases used on macOS are effectively static-light until a follow-up ports them to `NSColor(name:dynamicProvider:)`. Acceptable for this ticket because no view migrations land here.
 - Any visual change a user can see.
 
 ## Design Decisions
 
 ### D1. Font sourcing — bundle from JetBrains official release, pinned
 
-The design-system kit references a `fonts/` directory but ships empty (web side loads from Google Fonts at runtime; iOS can't). We download three weights from [github.com/JetBrains/JetBrainsMono](https://github.com/JetBrains/JetBrainsMono) **release v2.304** (current stable as of 2026-04-30, OFL-1.1) and commit the `.ttf` files. Pinning the version makes the commit reproducible and the smoke test's PostScript-name expectations stable across re-runs.
+The design-system kit references a `fonts/` directory but ships empty (web side loads from Google Fonts at runtime; iOS can't). We download three weights from [github.com/JetBrains/JetBrainsMono](https://github.com/JetBrains/JetBrainsMono) and commit the `.ttf` files. Pinning the version makes the commit reproducible and the smoke test's PostScript-name expectations stable across re-runs.
+
+**Pinned version: v2.304** (current stable as of 2026-04-30, OFL-1.1). This is the single source of truth — all other references in this spec derive from this line. If step 1's precondition finds v2.304 unpublished or yanked, update *only this line* to the next stable tag; downstream steps reference "the version pinned in D1" rather than the literal tag.
 
 Rationale: JetBrains Mono is the brand's intended monospace and is visibly different from SF Mono. The added bundle size is ~600 KB total. SF Mono fallback is acceptable but loses brand fidelity in pairing codes, code blocks, and `.mono` eyebrow treatments — exactly the surfaces that lean on monospace character.
 
@@ -79,9 +81,20 @@ One test in `KeeperTests/`:
 
 ```swift
 func testJetBrainsMonoFontsRegister() {
-    for name in [KeepurTheme.FontName.mono,
-                 KeepurTheme.FontName.monoMedium,
-                 KeepurTheme.FontName.monoBold] {
+    let weights: [(name: String, file: String)] = [
+        (KeepurTheme.FontName.mono,       "JetBrainsMono-Regular"),
+        (KeepurTheme.FontName.monoMedium, "JetBrainsMono-Medium"),
+        (KeepurTheme.FontName.monoBold,   "JetBrainsMono-SemiBold"),
+    ]
+    for (name, file) in weights {
+        // Bundle presence — catches removal from Copy Bundle Resources.
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: file, withExtension: "ttf"),
+            "\(file).ttf missing from bundle"
+        )
+        // Font resolves by PostScript name — catches missing plist entry,
+        // wrong PostScript name, and guards against accidentally hitting a
+        // system-installed JetBrains Mono on dev machines (Homebrew users).
         #if os(iOS)
         XCTAssertNotNil(UIFont(name: name, size: 14),
                         "Font \(name) failed to register")
@@ -93,7 +106,7 @@ func testJetBrainsMonoFontsRegister() {
 }
 ```
 
-This catches every regression that matters: missing `.ttf`, wrong PostScript name, missing plist entry on either platform. Hex-color parsing and other token correctness are out of scope — they're pure compute on stdlib types.
+Two asserts per weight cover the full regression surface: bundle presence catches "removed from Copy Bundle Resources"; font-by-name catches "missing plist entry / wrong PostScript name / shadowed by a system install". Hex-color parsing and other token correctness are out of scope — pure compute on stdlib types.
 
 ## File Layout (after this ticket)
 
@@ -113,17 +126,20 @@ Keepur.xcodeproj/project.pbxproj            (UPDATED, file references for above)
 
 ## Implementation Outline
 
-1. **Preconditions**:
-   - Confirm no existing `Color(hex:)` extension in the repo (`grep -rn "extension Color\b" .` and `grep -rn "init(hex:" .`). If one exists, reconcile before adding the Swift port.
-   - Confirm `KeeperTests` target's supported platforms include macOS. If iOS-only, dual-target it as part of step 6 below (this is a hard requirement, not optional — see step 6).
-2. Download JetBrains Mono **release v2.304** (pinned per D1); extract Regular / Medium / SemiBold `.ttf` files. Confirm PostScript names match `KeepurTheme.FontName.*` constants — `JetBrainsMono-Regular`, `JetBrainsMono-Medium`, `JetBrainsMono-SemiBold`. If they don't, update either the constants or rename the files (PostScript names live inside the binary and can be inspected with `mdls -name kMDItemFonts`).
+1. **Preconditions** (verify at implementation time; all expected to already hold against `main` HEAD):
+   - **No `Color(hex:)` collision** — `grep -rn "extension Color\b" .` and `grep -rn "init(hex:" .` should return nothing matching the Swift port's signature. If one exists, reconcile before adding `KeepurTheme.swift`.
+   - **`KeeperTests` is dual-targeted** — `SUPPORTED_PLATFORMS` for the test target should include `macosx`. As of 2026-04-30 this is already true (`Keepur.xcodeproj/project.pbxproj` lines 287/308). If a future change has removed macOS, restore it as part of step 6.
+   - **macOS test scheme actually runs the test bundle** — target membership alone doesn't guarantee a scheme exercises it. The project has no shared schemes (`Keepur.xcodeproj/xcshareddata/xcschemes/` is empty); schemes are autogenerated per developer in `xcuserdata/`. Verify in Xcode → Product → Scheme → Edit Scheme → Test that `KeeperTests` is checked under the macOS scheme. If not, check it. Without this, the macOS branch of the smoke test never executes and D4's regression catch is a no-op there.
+   - **macOS app target shares `Info.plist`** — `INFOPLIST_FILE = Info.plist` should resolve in the macOS build configuration too (currently visible at lines 445/491 in `project.pbxproj`). If the macOS config has been split out to a different plist, update both files or consolidate.
+   - **Pinned font release exists** — JetBrainsMono occasionally skips patch numbers between releases; confirm the version pinned in D1 is published before downloading. If not, update D1 only (step 2 below derefs D1) to the next stable tag.
+2. Download the JetBrains Mono release pinned in D1; extract Regular / Medium / SemiBold `.ttf` files. Confirm PostScript names match `KeepurTheme.FontName.*` constants — `JetBrainsMono-Regular`, `JetBrainsMono-Medium`, `JetBrainsMono-SemiBold`. To inspect PostScript names, prefer `fc-scan --format "%{postscriptname}\n" <file>.ttf` (Homebrew fontconfig) or a Swift one-liner via `CTFontManagerCreateFontDescriptorsFromURL` — `mdls -name kMDItemFonts` returns the human-readable name, not always the PostScript name. If they mismatch, update either the constants or rename the files.
 3. Create `Theme/` and `Fonts/` directories at repo root. Drop in the files above.
 4. Add file references to `Keepur.xcodeproj`:
    - `Theme/KeepurTheme.swift` → **Compile Sources** for both iOS and macOS targets.
    - Each `Fonts/*.ttf` → **Copy Bundle Resources** for both iOS and macOS targets independently. In `project.pbxproj`, every `.ttf` must appear in *each* target's `PBXResourcesBuildPhase` section. Missing one is the classic "works on iOS, font missing on macOS" failure that the smoke test below is designed to catch.
-   - `Fonts/OFL.txt` → **Copy Bundle Resources** (license redistribution).
+   - `Fonts/OFL.txt` → **Copy Bundle Resources** for both iOS and macOS targets (license redistribution travels with the font binaries on every platform that ships them).
 5. Update `Info.plist` per D2.
-6. Write the smoke test per D4 in `KeeperTests`. **`KeeperTests` must be dual-targeted (iOS + macOS) before this ticket ships** — without macOS test execution, D4 cannot catch macOS-specific font registration regressions and the ticket's main quality gate is a no-op there. Per step 1's precondition, dual-targeting is part of the implementation work, not a ship-time fallback.
+6. Write the smoke test per D4 in `KeeperTests`. Dual-targeting is verified in step 1's preconditions and is expected to already be in place — if step 1 found it missing, restore it here before writing the test. Without macOS test execution, D4 cannot catch macOS-specific font registration regressions and the ticket's main quality gate is a no-op there.
 7. Run the test suite on both iOS and macOS schemes. Confirm the new test passes on each.
 8. Sanity-check that no existing test or view broke (none should — this is pure addition).
 
