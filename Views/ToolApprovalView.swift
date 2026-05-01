@@ -11,59 +11,64 @@ struct ToolApprovalView: View {
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: KeepurTheme.Spacing.s5) {
             Spacer()
 
             Image(systemName: "exclamationmark.shield.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.orange)
+                .foregroundStyle(KeepurTheme.Color.warning)
 
             Text("Approval Required")
-                .font(.title2.bold())
+                .font(KeepurTheme.Font.h3)
+                .tracking(KeepurTheme.Font.lsH3)
+                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
 
-            VStack(spacing: 8) {
-                Text("Tool: \(approval.tool)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            VStack(spacing: KeepurTheme.Spacing.s2) {
+                Text("TOOL")
+                    .font(KeepurTheme.Font.eyebrow)
+                    .tracking(KeepurTheme.Font.lsEyebrow)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(approval.tool)
+                    .font(KeepurTheme.Font.bodySm)
+                    .fontWeight(.medium)
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(approval.input)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(12)
+                    .font(.custom(KeepurTheme.FontName.mono, size: 14))
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                    .padding(KeepurTheme.Spacing.s3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.tertiarySystemFill)
+                        RoundedRectangle(cornerRadius: KeepurTheme.Radius.md)
+                            .fill(KeepurTheme.Color.bgSunkenDynamic)
                     )
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, KeepurTheme.Spacing.s5)
 
             Text("Auto-deny in \(remainingSeconds)s")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
 
-            HStack(spacing: 16) {
-                Button {
-                    onDeny()
-                } label: {
+            HStack(spacing: KeepurTheme.Spacing.s4) {
+                Button { onDeny() } label: {
                     Text("Deny")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(.red)
+                .buttonStyle(KeepurDestructiveButtonStyle())
 
-                Button {
-                    onApprove()
-                } label: {
+                Button { onApprove() } label: {
                     Text("Approve")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .buttonStyle(KeepurPrimaryButtonStyle())
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, KeepurTheme.Spacing.s5)
 
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(KeepurTheme.Color.bgPageDynamic)
         .onReceive(timer) { _ in
             if remainingSeconds > 0 {
                 remainingSeconds -= 1
