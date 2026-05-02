@@ -17,7 +17,7 @@ struct HivesGridView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: KeepurTheme.Spacing.s4) {
                         ForEach(capabilityManager.hives, id: \.self) { hive in
                             Button {
                                 capabilityManager.selectedHive = hive
@@ -33,6 +33,7 @@ struct HivesGridView: View {
                 }
             }
         }
+        .background(KeepurTheme.Color.bgPageDynamic)
         .navigationTitle("Hives")
         .refreshable {
             await capabilityManager.refresh()
@@ -61,18 +62,20 @@ private struct HiveCard: View {
     let name: String
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: KeepurTheme.Spacing.s3) {
             Image(systemName: "hexagon.fill")
                 .font(.system(size: 36))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(KeepurTheme.Color.honey500)
             Text(name)
-                .font(.headline)
+                .font(KeepurTheme.Font.h4)
+                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 140)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(KeepurTheme.Color.bgSurfaceDynamic)
+        .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.md))
+        .keepurBorder(KeepurTheme.Color.borderDefaultDynamic, radius: KeepurTheme.Radius.md, width: 1)
     }
 }

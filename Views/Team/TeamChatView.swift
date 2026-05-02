@@ -47,7 +47,7 @@ struct TeamChatView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                HStack(spacing: 8) {
+                HStack(spacing: KeepurTheme.Spacing.s2) {
                     if let speechManager = viewModel.speechManager {
                         Button {
                             if speechManager.isSpeaking {
@@ -58,10 +58,13 @@ struct TeamChatView: View {
                         } label: {
                             Image(systemName: speechManager.isSpeaking ? "stop.circle.fill"
                                   : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
-                                .font(.subheadline)
+                                .font(KeepurTheme.Font.bodySm)
                         }
-                        .foregroundStyle(speechManager.isSpeaking ? .red
-                                         : autoReadAloud ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(
+                            speechManager.isSpeaking ? KeepurTheme.Color.danger
+                            : autoReadAloud ? KeepurTheme.Color.honey500
+                            : KeepurTheme.Color.fgSecondaryDynamic
+                        )
                     }
 
                     if isDMWithAgent {
@@ -94,7 +97,7 @@ struct TeamChatView: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: KeepurTheme.Spacing.s3) {
                     if viewModel.isLoadingHistory {
                         ProgressView()
                             .padding()
@@ -104,9 +107,9 @@ struct TeamChatView: View {
                                 viewModel.fetchHistory(channelId: channelId)
                             }
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                        .padding(.vertical, KeepurTheme.Spacing.s2)
                     }
 
                     ForEach(viewModel.activeMessages, id: \.id) { message in
@@ -120,8 +123,8 @@ struct TeamChatView: View {
                         .id(message.id)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, KeepurTheme.Spacing.s4)
+                .padding(.vertical, KeepurTheme.Spacing.s3)
             }
             .onChange(of: viewModel.lastLiveMessageId) {
                 if let lastId = viewModel.activeMessages.last?.id {

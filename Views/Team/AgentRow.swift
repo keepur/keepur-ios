@@ -7,10 +7,10 @@ struct AgentRow: View {
 
     private var statusColor: Color {
         switch agent.status {
-        case "idle": return .green
-        case "processing": return .yellow
-        case "error", "stopped": return .red
-        default: return .gray
+        case "idle": return KeepurTheme.Color.success
+        case "processing": return KeepurTheme.Color.warning
+        case "error", "stopped": return KeepurTheme.Color.danger
+        default: return KeepurTheme.Color.fgMuted
         }
     }
 
@@ -34,7 +34,7 @@ struct AgentRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: KeepurTheme.Spacing.s3) {
             ZStack {
                 Circle()
                     .fill(statusColor)
@@ -44,14 +44,15 @@ struct AgentRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(agent.name)
-                    .font(.body)
+                    .font(KeepurTheme.Font.body)
                     .fontWeight(isActive ? .semibold : .regular)
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     .lineLimit(1)
 
                 if let secondLineText {
                     Text(secondLineText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         .lineLimit(1)
                 }
             }
@@ -60,8 +61,8 @@ struct AgentRow: View {
 
             if let lastAt = dmChannel?.lastMessageAt {
                 Text(lastAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
         }
         .padding(.vertical, 2)
