@@ -25,6 +25,8 @@ struct TeamSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(KeepurTheme.Color.bgPageDynamic)
         .overlay {
             if viewModel.agents.isEmpty {
                 ContentUnavailableView {

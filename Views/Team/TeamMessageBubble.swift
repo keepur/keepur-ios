@@ -22,25 +22,28 @@ struct TeamMessageBubble: View {
     private var userBubble: some View {
         HStack {
             Spacer(minLength: 60)
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: KeepurTheme.Spacing.s1) {
                 ZStack(alignment: .bottomTrailing) {
                     Text(message.text)
-                        .font(.body)
+                        .font(KeepurTheme.Font.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color.accentColor)
-                        )
-                        .foregroundStyle(.white)
+                        .background(KeepurTheme.Color.honey500)
+                        .clipShape(.rect(
+                            topLeadingRadius:     KeepurTheme.Radius.lg,
+                            bottomLeadingRadius:  KeepurTheme.Radius.lg,
+                            bottomTrailingRadius: 6,
+                            topTrailingRadius:    KeepurTheme.Radius.lg
+                        ))
+                        .foregroundStyle(KeepurTheme.Color.fgOnHoney)
 
                     if message.pending {
                         Text("sending")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .padding(.horizontal, 8)
+                            .font(KeepurTheme.Font.caption)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                            .padding(.horizontal, KeepurTheme.Spacing.s2)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.secondary))
+                            .background(Capsule().fill(KeepurTheme.Color.honey200))
                             .offset(x: 4, y: 4)
                             .opacity(isPulsing ? 0.6 : 1.0)
                             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
@@ -49,8 +52,8 @@ struct TeamMessageBubble: View {
                 }
 
                 Text(message.createdAt, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
         }
     }
@@ -59,10 +62,10 @@ struct TeamMessageBubble: View {
 
     private var agentBubble: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
                 Text(message.senderName)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
 
                 Markdown(message.text)
                     .markdownTheme(.keepur)
@@ -70,20 +73,20 @@ struct TeamMessageBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.secondarySystemFill)
+                        RoundedRectangle(cornerRadius: KeepurTheme.Radius.lg)
+                            .fill(KeepurTheme.Color.bgSunkenDynamic)
                     )
 
-                HStack(spacing: 12) {
+                HStack(spacing: KeepurTheme.Spacing.s3) {
                     Text(message.createdAt, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgTertiary)
 
                     if let onSpeak {
                         Button { onSpeak(message.text) } label: {
-                            Image(systemName: "speaker.wave.2")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            Image(systemName: KeepurTheme.Symbol.speaker)
+                                .font(KeepurTheme.Font.caption)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
                 }
@@ -98,9 +101,9 @@ struct TeamMessageBubble: View {
         HStack {
             Spacer()
             Text(message.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 8)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                .padding(.vertical, KeepurTheme.Spacing.s2)
             Spacer()
         }
     }

@@ -7,10 +7,10 @@ struct AgentDetailSheet: View {
 
     private var statusColor: Color {
         switch agent.status {
-        case "idle": return .green
-        case "processing": return .yellow
-        case "error", "stopped": return .red
-        default: return .gray
+        case "idle": return KeepurTheme.Color.success
+        case "processing": return KeepurTheme.Color.warning
+        case "error", "stopped": return KeepurTheme.Color.danger
+        default: return KeepurTheme.Color.fgMuted
         }
     }
 
@@ -31,20 +31,22 @@ struct AgentDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: KeepurTheme.Spacing.s5) {
                     // Header
-                    VStack(spacing: 8) {
+                    VStack(spacing: KeepurTheme.Spacing.s2) {
                         Text(iconText)
                             .font(.system(size: 48))
                         Text(agent.name)
-                            .font(.title2.bold())
+                            .font(KeepurTheme.Font.h3)
+                            .tracking(KeepurTheme.Font.lsH3)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(statusColor)
                                 .frame(width: 10, height: 10)
                             Text(agent.status)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .font(KeepurTheme.Font.bodySm)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
                     .padding(.top)
@@ -60,30 +62,31 @@ struct AgentDetailSheet: View {
                         infoRow(label: "Messages", value: "\(agent.messagesProcessed)")
                         infoRow(label: "Last Active", date: lastActivityDate)
                     }
-                    .background(Color.secondarySystemGroupedBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .background(KeepurTheme.Color.bgSurfaceDynamic)
+                    .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
 
                     // Tools
                     if !agent.tools.isEmpty {
-                        sectionCard(title: "Tools") {
+                        sectionCard(title: "TOOLS") {
                             Text(agent.tools.joined(separator: ", "))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .font(KeepurTheme.Font.bodySm)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
 
                     // Schedule
                     if !agent.schedule.isEmpty {
-                        sectionCard(title: "Schedule") {
-                            VStack(alignment: .leading, spacing: 6) {
+                        sectionCard(title: "SCHEDULE") {
+                            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1 + 2) {
                                 ForEach(Array(agent.schedule.enumerated()), id: \.offset) { _, entry in
                                     if let cron = entry["cron"], let task = entry["task"] {
-                                        HStack(alignment: .top, spacing: 8) {
+                                        HStack(alignment: .top, spacing: KeepurTheme.Spacing.s2) {
                                             Text(cron)
-                                                .font(.caption.monospaced())
-                                                .foregroundStyle(.secondary)
+                                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                                             Text("— \(task)")
-                                                .font(.subheadline)
+                                                .font(KeepurTheme.Font.bodySm)
+                                                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                         }
                                     }
                                 }
@@ -93,10 +96,10 @@ struct AgentDetailSheet: View {
 
                     // Channels
                     if !agent.channels.isEmpty {
-                        sectionCard(title: "Channels") {
+                        sectionCard(title: "CHANNELS") {
                             Text(agent.channels.map { "#\($0)" }.joined(separator: ", "))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .font(KeepurTheme.Font.bodySm)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                     }
 
@@ -105,7 +108,7 @@ struct AgentDetailSheet: View {
                 }
                 .padding(.horizontal)
             }
-            .background(Color.systemGroupedBackground)
+            .background(KeepurTheme.Color.bgPageDynamic)
             .navigationTitle("Agent Info")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -128,23 +131,25 @@ struct AgentDetailSheet: View {
             AgentVoicePickerView(agent: agent, speechManager: speechManager)
         } label: {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Voice")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
+                    Text("VOICE")
+                        .font(KeepurTheme.Font.eyebrow)
+                        .tracking(KeepurTheme.Font.lsEyebrow)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                        .textCase(nil)
                     Text(currentVoiceLabel)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
+                        .font(KeepurTheme.Font.bodySm)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
+                    .font(KeepurTheme.Font.bodySm)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Color.secondarySystemGroupedBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(KeepurTheme.Spacing.s4)
+            .background(KeepurTheme.Color.bgSurfaceDynamic)
+            .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
         }
         .buttonStyle(.plain)
     }
@@ -152,41 +157,46 @@ struct AgentDetailSheet: View {
     private func infoRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             Spacer()
             Text(value)
+                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .font(KeepurTheme.Font.bodySm)
+        .padding(.horizontal, KeepurTheme.Spacing.s4)
+        .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
     }
 
     private func infoRow(label: String, date: Date?) -> some View {
         HStack {
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             Spacer()
             if let date {
                 Text(date, style: .relative)
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
             } else {
                 Text("Never")
+                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .font(KeepurTheme.Font.bodySm)
+        .padding(.horizontal, KeepurTheme.Spacing.s4)
+        .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
     }
 
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s2) {
             Text(title)
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
+                .font(KeepurTheme.Font.eyebrow)
+                .tracking(KeepurTheme.Font.lsEyebrow)
+                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                .textCase(nil)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.secondarySystemGroupedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(KeepurTheme.Spacing.s4)
+        .background(KeepurTheme.Color.bgSurfaceDynamic)
+        .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
     }
 }

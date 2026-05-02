@@ -13,14 +13,18 @@ struct TeamRootView: View {
                 } label: {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(KeepurTheme.Color.warning)
                         Text(banner)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                         Spacer()
-                        Text("Retry").bold()
+                        Text("Retry")
+                            .fontWeight(.bold)
+                            .foregroundStyle(KeepurTheme.Color.honey700)
                     }
-                    .padding(12)
-                    .foregroundStyle(.white)
+                    .font(KeepurTheme.Font.bodySm)
+                    .padding(KeepurTheme.Spacing.s3)
                     .frame(maxWidth: .infinity)
-                    .background(Color.orange)
+                    .background(KeepurTheme.Color.honey100)
                 }
                 .buttonStyle(.plain)
             }
@@ -31,7 +35,7 @@ struct TeamRootView: View {
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Circle()
-                                .fill(viewModel.ws.isConnected ? .green : .red)
+                                .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                                 .frame(width: 8, height: 8)
                         }
                     }

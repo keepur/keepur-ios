@@ -29,31 +29,45 @@ struct AgentVoicePickerView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Use default")
-                                .font(.body)
+                                .font(KeepurTheme.Font.body)
+                                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             Text("Falls back to the app's selected voice")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(KeepurTheme.Font.caption)
+                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         }
                         Spacer()
                         if selectedVoiceId == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
+                            Image(systemName: KeepurTheme.Symbol.check)
+                                .foregroundStyle(KeepurTheme.Color.honey500)
                         }
                     }
                 }
-                .foregroundStyle(.primary)
+                .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
             }
 
-            Section("Voices") {
+            Section {
                 ForEach(voices, id: \.identifier) { voice in
                     voiceRow(voice)
+                        .listRowBackground(KeepurTheme.Color.bgSurfaceDynamic)
                 }
+            } header: {
+                eyebrowHeader("VOICES")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(KeepurTheme.Color.bgPageDynamic)
         .navigationTitle("Voice for \(agent.name)")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+
+    private func eyebrowHeader(_ title: String) -> some View {
+        Text(title)
+            .font(KeepurTheme.Font.eyebrow)
+            .tracking(KeepurTheme.Font.lsEyebrow)
+            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+            .textCase(nil)
     }
 
     @ViewBuilder
@@ -66,19 +80,19 @@ struct AgentVoicePickerView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(voice.name)
-                        .font(.body)
+                        .font(KeepurTheme.Font.body)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                     Text(qualityLabel(voice.quality))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 }
                 Spacer()
                 if selectedVoiceId == voice.identifier {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.blue)
+                    Image(systemName: KeepurTheme.Symbol.check)
+                        .foregroundStyle(KeepurTheme.Color.honey500)
                 }
             }
         }
-        .foregroundStyle(.primary)
     }
 
     private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
