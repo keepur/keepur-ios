@@ -7,14 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D39AAF3E645BAE559DDCDBF /* KeepurMetricGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D7B8087FEE0BC4EB99FED /* KeepurMetricGrid.swift */; };
 		1C64CC96FCCA12E0C18D2594 /* KeepurTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 879A9EB01FA2519B78E8311D /* KeepurTheme.swift */; };
 		1CDCE353A1AF570D5405BF45 /* JetBrainsMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */; };
 		216B496287E4BF496BC000D8 /* KeepurAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D153EC33642E244594FD4D4F /* KeepurAvatar.swift */; };
 		656C3BCFBEB753F522F6E2E0 /* KeepurFoundationAtomsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */; };
+		679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */; };
 		778B5B2F21A88DBB2AA4CBDB /* KeepurStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */; };
 		78E25B1ECA5E1C013B9BC97A /* KeepurThemeFontsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */; };
 		7B43BBA1D24DCEDD5FDB5396 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */; };
 		7EF2A7DA26678EB140E42C7F /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */; };
+		809AF38C35B3EAD3349473EF /* KeepurCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */; };
 		894B13146C2E79CF9905E5FC /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6E8B9481A07498C49CD22328 /* OFL.txt */; };
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
@@ -25,6 +28,7 @@
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
+		DF5AC392B7D729D76FFA902C /* KeepurChipCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */; };
 		E1B4C5D6F7A8490B2CD3EF01 /* BusyStateRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B4C5D6F7A8490B2CD3EF02 /* BusyStateRecoveryTests.swift */; };
 		F2A3B4C5D6E7F8091A2B3C41 /* ContextClearedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C42 /* ContextClearedTests.swift */; };
 		F40B14C9624E4BBA369E10E7 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9EEA1750D496605899414990 /* JetBrainsMono-Regular.ttf */; };
@@ -42,8 +46,11 @@
 
 /* Begin PBXFileReference section */
 		03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurStatusPill.swift; sourceTree = "<group>"; };
+		1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationDataDisplayTests.swift; sourceTree = "<group>"; };
 		331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationAtomsTests.swift; sourceTree = "<group>"; };
+		345D7B8087FEE0BC4EB99FED /* KeepurMetricGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurMetricGrid.swift; sourceTree = "<group>"; };
 		3B669DE13B938A5E448DA899 /* KeepurUnreadBadge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurUnreadBadge.swift; sourceTree = "<group>"; };
+		4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurCard.swift; sourceTree = "<group>"; };
 		4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurThemeFontsTests.swift; sourceTree = "<group>"; };
 		6E8B9481A07498C49CD22328 /* OFL.txt */ = {isa = PBXFileReference; includeInIndex = 1; path = OFL.txt; sourceTree = "<group>"; };
 		879A9EB01FA2519B78E8311D /* KeepurTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurTheme.swift; sourceTree = "<group>"; };
@@ -54,6 +61,7 @@
 		A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReplacedTests.swift; sourceTree = "<group>"; };
 		AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
 		BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeekeeperConfigTests.swift; sourceTree = "<group>"; };
+		CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurChipCluster.swift; sourceTree = "<group>"; };
 		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
 		D070EA0CD6314C1DB43F7E3B /* TeamSortedAgentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSortedAgentsTests.swift; sourceTree = "<group>"; };
 		D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
@@ -129,6 +137,9 @@
 				D153EC33642E244594FD4D4F /* KeepurAvatar.swift */,
 				03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */,
 				3B669DE13B938A5E448DA899 /* KeepurUnreadBadge.swift */,
+				CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */,
+				345D7B8087FEE0BC4EB99FED /* KeepurMetricGrid.swift */,
+				4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */,
 			);
 			name = Components;
 			path = Components;
@@ -172,6 +183,7 @@
 				CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */,
 				4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */,
 				331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */,
+				1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */,
 			);
 			path = KeeperTests;
 			sourceTree = "<group>";
@@ -321,6 +333,9 @@
 				216B496287E4BF496BC000D8 /* KeepurAvatar.swift in Sources */,
 				778B5B2F21A88DBB2AA4CBDB /* KeepurStatusPill.swift in Sources */,
 				A7E6E1EEC8C1CB9138421004 /* KeepurUnreadBadge.swift in Sources */,
+				DF5AC392B7D729D76FFA902C /* KeepurChipCluster.swift in Sources */,
+				0D39AAF3E645BAE559DDCDBF /* KeepurMetricGrid.swift in Sources */,
+				809AF38C35B3EAD3349473EF /* KeepurCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -337,6 +352,7 @@
 				CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */,
 				78E25B1ECA5E1C013B9BC97A /* KeepurThemeFontsTests.swift in Sources */,
 				656C3BCFBEB753F522F6E2E0 /* KeepurFoundationAtomsTests.swift in Sources */,
+				679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
