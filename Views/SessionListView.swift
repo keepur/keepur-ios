@@ -7,7 +7,6 @@ struct SessionListView: View {
     @Query(sort: \Session.createdAt, order: .reverse) private var sessions: [Session]
     @State private var selectedSessionId: String?
     @State private var daysRemaining: Int?
-    @State private var showSettings = false
     @State private var showWorkspacePicker = false
     @State private var renamingSession: Session?
     @State private var renameText = ""
@@ -25,24 +24,20 @@ struct SessionListView: View {
     private var sessionList: some View {
         List(selection: $selectedSessionId) {
             if let daysRemaining, daysRemaining >= 0, daysRemaining <= 7 {
-                Button {
-                    showSettings = true
-                } label: {
-                    HStack(spacing: KeepurTheme.Spacing.s2) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(KeepurTheme.Color.warning)
-                        Text(daysRemaining == 0
-                            ? "Device pairing expires today"
-                            : daysRemaining == 1
-                                ? "Device pairing expires in 1 day"
-                                : "Device pairing expires in \(daysRemaining) days")
-                            .font(KeepurTheme.Font.bodySm)
-                            .fontWeight(.medium)
-                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, KeepurTheme.Spacing.s1)
+                HStack(spacing: KeepurTheme.Spacing.s2) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(KeepurTheme.Color.warning)
+                    Text(daysRemaining == 0
+                        ? "Device pairing expires today"
+                        : daysRemaining == 1
+                            ? "Device pairing expires in 1 day"
+                            : "Device pairing expires in \(daysRemaining) days")
+                        .font(KeepurTheme.Font.bodySm)
+                        .fontWeight(.medium)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, KeepurTheme.Spacing.s1)
                 .listRowBackground(KeepurTheme.Color.honey100)
             }
 
@@ -100,14 +95,6 @@ struct SessionListView: View {
                     .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                     .frame(width: 8, height: 8)
             }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: KeepurTheme.Symbol.settings)
-                        .font(.title3)
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showWorkspacePicker = true
@@ -137,9 +124,6 @@ struct SessionListView: View {
 
     private var sessionSheets: some View {
         EmptyView()
-            .sheet(isPresented: $showSettings) {
-                SettingsView(viewModel: viewModel)
-            }
             .sheet(isPresented: $showWorkspacePicker) {
                 WorkspacePickerView(viewModel: viewModel)
             }
@@ -201,10 +185,6 @@ struct SessionListView: View {
             if let expiry = KeychainManager.tokenExpiryDate {
                 daysRemaining = Calendar.current.dateComponents([.day], from: .now, to: expiry).day
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(viewModel: viewModel)
-                .frame(minWidth: 450, minHeight: 500)
         }
         .sheet(isPresented: $showWorkspacePicker) {
             WorkspacePickerView(viewModel: viewModel)

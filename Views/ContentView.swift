@@ -70,23 +70,39 @@ struct ContentView: View {
     @ViewBuilder
     private var tabView: some View {
         TabView {
-            if capabilityManager.hives.count == 1 {
-                Tab("Hive", systemImage: "hexagon.fill") {
-                    TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
-                }
-            } else if capabilityManager.hives.count >= 2 {
-                Tab("Hives", systemImage: "hexagon.fill") {
-                    NavigationStack {
-                        HivesGridView(
-                            capabilityManager: capabilityManager,
-                            teamViewModel: teamViewModel
-                        )
-                    }
+            Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
+                NavigationStack {
+                    BeekeeperRootView()
                 }
             }
 
-            Tab("Beekeeper", systemImage: "eyes.inverse") {
-                RootView(viewModel: chatViewModel)
+            Tab("Hive", systemImage: "hexagon.fill") {
+                NavigationStack {
+                    HivesGridView(
+                        capabilityManager: capabilityManager,
+                        teamViewModel: teamViewModel
+                    )
+                }
+            }
+
+            Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
+                SessionListView(viewModel: chatViewModel)
+            }
+
+            Tab("Settings", systemImage: KeepurTheme.Symbol.settings) {
+                SettingsView(viewModel: chatViewModel)
+            }
+        }
+        .tint(KeepurTheme.Color.honey500)
+        .task {
+            do {
+                _ = try await APIManager.fetchMe()
+            } catch APIManager.APIError.unauthorized {
+                chatViewModel.unpair()
+            } catch BeekeeperConfigError.hostNotConfigured {
+                chatViewModel.unpair()
+            } catch {
+                // Network error — don't log out
             }
         }
     }
