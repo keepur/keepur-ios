@@ -5,86 +5,30 @@ struct AgentDetailSheet: View {
     let agent: TeamAgentInfo
     @ObservedObject var speechManager: SpeechManager
 
-    private var statusColor: Color {
-        switch agent.status {
-        case "idle": return KeepurTheme.Color.success
-        case "processing": return KeepurTheme.Color.warning
-        case "error", "stopped": return KeepurTheme.Color.danger
-        default: return KeepurTheme.Color.fgMuted
-        }
-    }
-
-    private var iconText: String {
-        agent.icon.isEmpty ? "🤖" : agent.icon
-    }
-
-    private var lastActivityDate: Date? {
-        guard let str = agent.lastActivity else { return nil }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: str) { return date }
-        // Fallback: server may omit fractional seconds
-        iso.formatOptions = [.withInternetDateTime]
-        return iso.date(from: str)
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: KeepurTheme.Spacing.s5) {
-                    // Header
-                    VStack(spacing: KeepurTheme.Spacing.s2) {
-                        Text(iconText)
-                            .font(.system(size: 48))
-                        Text(agent.name)
-                            .font(KeepurTheme.Font.h3)
-                            .tracking(KeepurTheme.Font.lsH3)
-                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(statusColor)
-                                .frame(width: 10, height: 10)
-                            Text(agent.status)
-                                .font(KeepurTheme.Font.bodySm)
-                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                        }
-                    }
-                    .padding(.top)
-
-                    // Info grid
-                    VStack(spacing: 0) {
-                        if let title = agent.title, !title.isEmpty {
-                            infoRow(label: "Title", value: title)
-                        }
-                        if !agent.model.isEmpty {
-                            infoRow(label: "Model", value: agent.model)
-                        }
-                        infoRow(label: "Messages", value: "\(agent.messagesProcessed)")
-                        infoRow(label: "Last Active", date: lastActivityDate)
-                    }
-                    .background(KeepurTheme.Color.bgSurfaceDynamic)
-                    .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
-
-                    // Tools
+                    headerSection
+                    metricGridSection
                     if !agent.tools.isEmpty {
-                        sectionCard(title: "TOOLS") {
-                            Text(agent.tools.joined(separator: ", "))
-                                .font(KeepurTheme.Font.bodySm)
-                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                        eyebrowSection(title: "TOOLS") {
+                            KeepurChipCluster(agent.tools, maxVisible: 6)
                         }
                     }
-
-                    // Schedule
+                    if !agent.channels.isEmpty {
+                        eyebrowSection(title: "CHANNELS") {
+                            KeepurChipCluster(agent.channels.map { "#\($0)" }, maxVisible: 6)
+                        }
+                    }
                     if !agent.schedule.isEmpty {
-                        sectionCard(title: "SCHEDULE") {
-                            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1 + 2) {
+                        eyebrowSection(title: "SCHEDULE") {
+                            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s2) {
                                 ForEach(Array(agent.schedule.enumerated()), id: \.offset) { _, entry in
                                     if let cron = entry["cron"], let task = entry["task"] {
-                                        HStack(alignment: .top, spacing: KeepurTheme.Spacing.s2) {
-                                            Text(cron)
-                                                .font(.custom(KeepurTheme.FontName.mono, size: 12))
-                                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                                            Text("— \(task)")
+                                        HStack(alignment: .firstTextBaseline, spacing: KeepurTheme.Spacing.s2) {
+                                            cronChip(cron)
+                                            Text(task)
                                                 .font(KeepurTheme.Font.bodySm)
                                                 .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                                         }
@@ -93,17 +37,6 @@ struct AgentDetailSheet: View {
                             }
                         }
                     }
-
-                    // Channels
-                    if !agent.channels.isEmpty {
-                        sectionCard(title: "CHANNELS") {
-                            Text(agent.channels.map { "#\($0)" }.joined(separator: ", "))
-                                .font(KeepurTheme.Font.bodySm)
-                                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                        }
-                    }
-
-                    // Voice
                     voiceSection
                 }
                 .padding(.horizontal)
@@ -116,7 +49,38 @@ struct AgentDetailSheet: View {
         }
     }
 
-    // MARK: - Subviews
+    // MARK: - Sections
+
+    private var headerSection: some View {
+        VStack(spacing: KeepurTheme.Spacing.s2) {
+            KeepurAvatar(
+                size: 60,
+                content: AgentDetailSheet.headerAvatarContent(for: agent)
+            )
+            Text(agent.name)
+                .font(KeepurTheme.Font.h2)
+                .tracking(KeepurTheme.Font.lsH3)
+                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+            if let title = agent.title, !title.isEmpty {
+                Text(title)
+                    .font(KeepurTheme.Font.bodySm)
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+            }
+            KeepurStatusPill(
+                AgentDetailSheet.statusDisplay(for: agent.status),
+                tint: AgentDetailSheet.statusTint(for: agent.status)
+            )
+        }
+        .padding(.top)
+    }
+
+    private var metricGridSection: some View {
+        KeepurMetricGrid([
+            .init(label: "MODEL",       value: AgentDetailSheet.modelDisplay(for: agent)),
+            .init(label: "MESSAGES",    value: "\(agent.messagesProcessed)"),
+            .init(label: "LAST ACTIVE", value: AgentDetailSheet.lastActiveDisplay(from: agent.lastActivity)),
+        ])
+    }
 
     private var currentVoiceLabel: String {
         if let voiceId = speechManager.agentVoiceIds[agent.id],
@@ -130,62 +94,35 @@ struct AgentDetailSheet: View {
         NavigationLink {
             AgentVoicePickerView(agent: agent, speechManager: speechManager)
         } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
-                    Text("VOICE")
-                        .font(KeepurTheme.Font.eyebrow)
-                        .tracking(KeepurTheme.Font.lsEyebrow)
-                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                        .textCase(nil)
-                    Text(currentVoiceLabel)
+            KeepurCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
+                        Text("VOICE")
+                            .font(KeepurTheme.Font.eyebrow)
+                            .tracking(KeepurTheme.Font.lsEyebrow)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                            .textCase(nil)
+                        Text(currentVoiceLabel)
+                            .font(KeepurTheme.Font.bodySm)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .font(KeepurTheme.Font.bodySm)
-                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                        .foregroundStyle(KeepurTheme.Color.fgTertiary)
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(KeepurTheme.Font.bodySm)
-                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(KeepurTheme.Spacing.s4)
-            .background(KeepurTheme.Color.bgSurfaceDynamic)
-            .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
         }
         .buttonStyle(.plain)
     }
 
-    private func infoRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-            Spacer()
-            Text(value)
-                .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-        }
-        .font(KeepurTheme.Font.bodySm)
-        .padding(.horizontal, KeepurTheme.Spacing.s4)
-        .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
-    }
+    // MARK: - View helpers
 
-    private func infoRow(label: String, date: Date?) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-            Spacer()
-            if let date {
-                Text(date, style: .relative)
-                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-            } else {
-                Text("Never")
-                    .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-            }
-        }
-        .font(KeepurTheme.Font.bodySm)
-        .padding(.horizontal, KeepurTheme.Spacing.s4)
-        .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
-    }
-
-    private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    @ViewBuilder
+    private func eyebrowSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s2) {
             Text(title)
                 .font(KeepurTheme.Font.eyebrow)
@@ -195,8 +132,59 @@ struct AgentDetailSheet: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(KeepurTheme.Spacing.s4)
-        .background(KeepurTheme.Color.bgSurfaceDynamic)
-        .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.sm))
+    }
+
+    private func cronChip(_ cron: String) -> some View {
+        Text(cron)
+            .font(.custom(KeepurTheme.FontName.mono, size: 12))
+            .foregroundStyle(KeepurTheme.Color.fgSecondary)
+            .padding(.horizontal, KeepurTheme.Spacing.s2)
+            .padding(.vertical, KeepurTheme.Spacing.s1)
+            .background(KeepurTheme.Color.wax100)
+            .clipShape(RoundedRectangle(cornerRadius: KeepurTheme.Radius.xs))
+    }
+
+    // MARK: - Pure helpers (testable)
+
+    static func statusTint(for status: String) -> KeepurStatusPill.Tint {
+        switch status {
+        case "idle":             return .success
+        case "processing":       return .warning
+        case "error", "stopped": return .danger
+        default:                 return .muted
+        }
+    }
+
+    static func statusDisplay(for status: String) -> String {
+        status.prefix(1).uppercased() + status.dropFirst()
+    }
+
+    static func lastActiveDisplay(from iso: String?) -> String {
+        guard let iso, let date = parseISO8601(iso) else { return "Never" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    static func parseISO8601(_ str: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: str) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        return iso.date(from: str)
+    }
+
+    static func headerAvatarContent(for agent: TeamAgentInfo) -> KeepurAvatar.Content {
+        if !agent.icon.isEmpty {
+            return .emoji(agent.icon)
+        }
+        if !agent.name.isEmpty {
+            return .letter(agent.name)
+        }
+        return .letter("?")
+    }
+
+    static func modelDisplay(for agent: TeamAgentInfo) -> String {
+        agent.model.isEmpty ? "—" : agent.model
     }
 }
