@@ -35,6 +35,7 @@ extension URL {
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \Message.timestamp) private var allMessages: [Message]
     @State private var showSettings = false
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
@@ -111,36 +112,27 @@ struct ChatView: View {
         .navigationTitle(navigationTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         #endif
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: KeepurTheme.Spacing.s2) {
-                    Button {
-                        if viewModel.speechManager.isSpeaking {
-                            viewModel.speechManager.stopSpeaking()
-                        } else {
-                            autoReadAloud.toggle()
-                        }
-                    } label: {
-                        Image(systemName: viewModel.speechManager.isSpeaking ? "stop.circle.fill"
-                              : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
-                            .font(KeepurTheme.Font.bodySm)
-                    }
-                    .foregroundStyle(
-                        viewModel.speechManager.isSpeaking ? KeepurTheme.Color.danger
-                        : autoReadAloud ? KeepurTheme.Color.honey500
-                        : KeepurTheme.Color.fgSecondaryDynamic
-                    )
-
-                    #if os(iOS)
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: KeepurTheme.Symbol.settings)
-                    }
-                    #endif
-                }
+            #if os(iOS)
+            ToolbarItem(placement: .topBarLeading) {
+                KeepurChatHeader.BackButton(onBack: backAction)
             }
+            ToolbarItem(placement: .principal) {
+                KeepurChatHeader.TitleBlock(
+                    title: navigationTitle,
+                    statusText: headerStatusText,
+                    statusDate: headerStatusDate,
+                    isStatusActive: headerIsStatusActive
+                )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                KeepurChatHeader.TrailingStack(actions: headerTrailingActions)
+            }
+            #else
+            ToolbarItem(placement: .automatic) { chatHeader }
+            #endif
         }
         #if os(iOS)
         .sheet(isPresented: $showSettings) {
@@ -166,6 +158,63 @@ struct ChatView: View {
         .onChange(of: autoReadAloud) {
             viewModel.autoReadAloud = autoReadAloud
         }
+    }
+
+    // MARK: - Chat Header
+
+    private var chatHeader: KeepurChatHeader {
+        KeepurChatHeader(
+            title: navigationTitle,
+            statusText: headerStatusText,
+            statusDate: headerStatusDate,
+            isStatusActive: headerIsStatusActive,
+            onBack: backAction,
+            trailingActions: headerTrailingActions
+        )
+    }
+
+    static func mapSessionStatus(_ status: String) -> (text: String?, isActive: Bool) {
+        switch status {
+        case "idle": return (nil, false)
+        case "thinking": return ("thinking", true)
+        case "tool_running": return ("running tool", true)
+        case "tool_starting": return ("starting tool", true)
+        case "busy": return ("server busy", true)
+        default: return (status, false)
+        }
+    }
+
+    private var headerStatusText: String? { Self.mapSessionStatus(viewModel.statusFor(sessionId)).text }
+    private var headerIsStatusActive: Bool { Self.mapSessionStatus(viewModel.statusFor(sessionId)).isActive }
+    private var headerStatusDate: Date? { messages.last?.timestamp }
+
+    private var backAction: (() -> Void)? {
+        #if os(iOS)
+        return { dismiss() }
+        #else
+        return nil
+        #endif
+    }
+
+    private var headerTrailingActions: [KeepurChatHeader.Action] {
+        var actions: [KeepurChatHeader.Action] = [
+            .init(symbol: speakerSymbol) {
+                if viewModel.speechManager.isSpeaking {
+                    viewModel.speechManager.stopSpeaking()
+                } else {
+                    autoReadAloud.toggle()
+                }
+            }
+        ]
+        #if os(iOS)
+        actions.append(.init(symbol: KeepurTheme.Symbol.settings) { showSettings = true })
+        #endif
+        return actions
+    }
+
+    private var speakerSymbol: String {
+        if viewModel.speechManager.isSpeaking { return "stop.circle.fill" }
+        return autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash"
     }
 
     // MARK: - Read-only Bar (old sessions)

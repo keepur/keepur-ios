@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TeamChatView: View {
     @ObservedObject var viewModel: TeamViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showAgentDetail = false
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "teamAutoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "teamAutoReadAloud") }
@@ -44,36 +45,27 @@ struct TeamChatView: View {
         .navigationTitle(channelTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         #endif
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: KeepurTheme.Spacing.s2) {
-                    if let speechManager = viewModel.speechManager {
-                        Button {
-                            if speechManager.isSpeaking {
-                                speechManager.stopSpeaking()
-                            } else {
-                                autoReadAloud.toggle()
-                            }
-                        } label: {
-                            Image(systemName: speechManager.isSpeaking ? "stop.circle.fill"
-                                  : autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash")
-                                .font(KeepurTheme.Font.bodySm)
-                        }
-                        .foregroundStyle(
-                            speechManager.isSpeaking ? KeepurTheme.Color.danger
-                            : autoReadAloud ? KeepurTheme.Color.honey500
-                            : KeepurTheme.Color.fgSecondaryDynamic
-                        )
-                    }
-
-                    if isDMWithAgent {
-                        Button { showAgentDetail = true } label: {
-                            Image(systemName: "info.circle")
-                        }
-                    }
-                }
+            #if os(iOS)
+            ToolbarItem(placement: .topBarLeading) {
+                KeepurChatHeader.BackButton(onBack: backAction)
             }
+            ToolbarItem(placement: .principal) {
+                KeepurChatHeader.TitleBlock(
+                    title: channelTitle,
+                    statusText: headerStatusText,
+                    statusDate: headerStatusDate,
+                    isStatusActive: headerIsStatusActive
+                )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                KeepurChatHeader.TrailingStack(actions: headerTrailingActions)
+            }
+            #else
+            ToolbarItem(placement: .automatic) { chatHeader }
+            #endif
         }
         .sheet(isPresented: $showAgentDetail) {
             if let agent = activeAgent, let speechManager = viewModel.speechManager {
@@ -90,6 +82,64 @@ struct TeamChatView: View {
         .onChange(of: autoReadAloud) {
             viewModel.autoReadAloud = autoReadAloud
         }
+    }
+
+    // MARK: - Chat Header
+
+    private var activeChannel: TeamChannel? {
+        guard let id = viewModel.activeChannelId else { return nil }
+        return viewModel.channels.first(where: { $0.id == id })
+    }
+
+    private var chatHeader: KeepurChatHeader {
+        KeepurChatHeader(
+            title: channelTitle,
+            statusText: headerStatusText,
+            statusDate: headerStatusDate,
+            isStatusActive: headerIsStatusActive,
+            onBack: backAction,
+            trailingActions: headerTrailingActions
+        )
+    }
+
+    static func mapAgentStatus(_ status: String?) -> (text: String?, isActive: Bool) {
+        switch status {
+        case nil, "idle": return (nil, false)
+        case "processing": return ("working", true)
+        case "error": return ("error", false)
+        case "stopped": return ("stopped", false)
+        case let other?: return (other, false)
+        }
+    }
+
+    private var headerStatusText: String? { Self.mapAgentStatus(activeAgent?.status).text }
+    private var headerIsStatusActive: Bool { Self.mapAgentStatus(activeAgent?.status).isActive }
+    private var headerStatusDate: Date? { activeChannel?.lastMessageAt }
+
+    private var backAction: (() -> Void)? {
+        #if os(iOS)
+        return { dismiss() }
+        #else
+        return nil
+        #endif
+    }
+
+    private var headerTrailingActions: [KeepurChatHeader.Action] {
+        var actions: [KeepurChatHeader.Action] = []
+        if let speech = viewModel.speechManager {
+            actions.append(.init(symbol: speakerSymbol(speech)) {
+                if speech.isSpeaking { speech.stopSpeaking() } else { autoReadAloud.toggle() }
+            })
+        }
+        if isDMWithAgent {
+            actions.append(.init(symbol: "info.circle") { showAgentDetail = true })
+        }
+        return actions
+    }
+
+    private func speakerSymbol(_ speech: SpeechManager) -> String {
+        if speech.isSpeaking { return "stop.circle.fill" }
+        return autoReadAloud ? "speaker.wave.2.fill" : "speaker.slash"
     }
 
     // MARK: - Message List

@@ -4,6 +4,7 @@ struct TeamRootView: View {
     @ObservedObject var viewModel: TeamViewModel
     @ObservedObject var capabilityManager: CapabilityManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var isViewingChat = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,6 +33,9 @@ struct TeamRootView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 TeamSidebarView(viewModel: viewModel)
                     .navigationTitle(capabilityManager.selectedHive ?? "Hive")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Circle()
@@ -42,6 +46,8 @@ struct TeamRootView: View {
             } detail: {
                 if viewModel.activeChannelId != nil {
                     TeamChatView(viewModel: viewModel)
+                        .onAppear { isViewingChat = true }
+                        .onDisappear { isViewingChat = false }
                 } else {
                     ContentUnavailableView {
                         Label("Select an agent", systemImage: "bubble.left.and.bubble.right")
@@ -52,5 +58,8 @@ struct TeamRootView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
+        #if os(iOS)
+        .toolbar(isViewingChat ? .hidden : .visible, for: .tabBar)
+        #endif
     }
 }

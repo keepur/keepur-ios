@@ -70,12 +70,16 @@ struct ContentView: View {
     @ViewBuilder
     private var tabView: some View {
         TabView {
-            if capabilityManager.hives.count == 1 {
-                Tab("Hive", systemImage: "hexagon.fill") {
-                    TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
+            Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
+                NavigationStack {
+                    BeekeeperRootView()
                 }
-            } else if capabilityManager.hives.count >= 2 {
-                Tab("Hives", systemImage: "hexagon.fill") {
+            }
+
+            Tab("Hive", systemImage: "hexagon.fill") {
+                if capabilityManager.hives.count == 1 {
+                    TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
+                } else {
                     NavigationStack {
                         HivesGridView(
                             capabilityManager: capabilityManager,
@@ -85,8 +89,24 @@ struct ContentView: View {
                 }
             }
 
-            Tab("Beekeeper", systemImage: "eyes.inverse") {
-                RootView(viewModel: chatViewModel)
+            Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
+                SessionListView(viewModel: chatViewModel)
+            }
+
+            Tab("Settings", systemImage: KeepurTheme.Symbol.settings) {
+                SettingsView(viewModel: chatViewModel)
+            }
+        }
+        .tint(KeepurTheme.Color.honey500)
+        .task {
+            do {
+                _ = try await APIManager.fetchMe()
+            } catch APIManager.APIError.unauthorized {
+                chatViewModel.unpair()
+            } catch BeekeeperConfigError.hostNotConfigured {
+                chatViewModel.unpair()
+            } catch {
+                // Network error — don't log out
             }
         }
     }
