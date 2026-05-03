@@ -34,6 +34,7 @@ struct TeamRootView: View {
                     .navigationTitle(capabilityManager.selectedHive ?? "Hive")
                     #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(.visible, for: .tabBar)
                     #endif
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
