@@ -77,11 +77,15 @@ struct ContentView: View {
             }
 
             Tab("Hive", systemImage: "hexagon.fill") {
-                NavigationStack {
-                    HivesGridView(
-                        capabilityManager: capabilityManager,
-                        teamViewModel: teamViewModel
-                    )
+                if capabilityManager.hives.count == 1 {
+                    TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
+                } else {
+                    NavigationStack {
+                        HivesGridView(
+                            capabilityManager: capabilityManager,
+                            teamViewModel: teamViewModel
+                        )
+                    }
                 }
             }
 
