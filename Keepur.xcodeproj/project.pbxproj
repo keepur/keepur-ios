@@ -15,6 +15,7 @@
 		54BEA9841CFA355E1BEE1E7A /* TeamMessageBubbleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48594D11593C7D5D417E027D /* TeamMessageBubbleTests.swift */; };
 		656C3BCFBEB753F522F6E2E0 /* KeepurFoundationAtomsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */; };
 		679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */; };
+		6E3FF8A08F201A2ECCF979E0 /* MessageInputBarAttachSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AB31342D75A124FF0F48C7 /* MessageInputBarAttachSheetTests.swift */; };
 		778B5B2F21A88DBB2AA4CBDB /* KeepurStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */; };
 		78E25B1ECA5E1C013B9BC97A /* KeepurThemeFontsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */; };
 		7B43BBA1D24DCEDD5FDB5396 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */; };
@@ -74,6 +75,7 @@
 		A3B4C5D6E7F809A1B2C3D402 /* SessionReplacedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReplacedTests.swift; sourceTree = "<group>"; };
 		AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
 		B31BDB567D5A0BD76B26AA46 /* KeepurActionSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurActionSheet.swift; sourceTree = "<group>"; };
+		B4AB31342D75A124FF0F48C7 /* MessageInputBarAttachSheetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MessageInputBarAttachSheetTests.swift; sourceTree = "<group>"; };
 		BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeekeeperConfigTests.swift; sourceTree = "<group>"; };
 		CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurChipCluster.swift; sourceTree = "<group>"; };
 		CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowsingTests.swift; sourceTree = "<group>"; };
@@ -205,6 +207,7 @@
 				1B682946EA84E6BCD5BA280B /* SessionRowTests.swift */,
 				8D5FCC4B161AF46C2A5BC33D /* AgentRowTests.swift */,
 				48594D11593C7D5D417E027D /* TeamMessageBubbleTests.swift */,
+				B4AB31342D75A124FF0F48C7 /* MessageInputBarAttachSheetTests.swift */,
 			);
 			path = KeeperTests;
 			sourceTree = "<group>";
@@ -381,6 +384,7 @@
 				42CD407ED938001572137714 /* SessionRowTests.swift in Sources */,
 				9EC1AD5D896DAD8DDC2AB854 /* AgentRowTests.swift in Sources */,
 				54BEA9841CFA355E1BEE1E7A /* TeamMessageBubbleTests.swift in Sources */,
+				6E3FF8A08F201A2ECCF979E0 /* MessageInputBarAttachSheetTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
