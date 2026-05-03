@@ -11,6 +11,7 @@
 		1C64CC96FCCA12E0C18D2594 /* KeepurTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 879A9EB01FA2519B78E8311D /* KeepurTheme.swift */; };
 		1CDCE353A1AF570D5405BF45 /* JetBrainsMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */; };
 		216B496287E4BF496BC000D8 /* KeepurAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D153EC33642E244594FD4D4F /* KeepurAvatar.swift */; };
+		42CD407ED938001572137714 /* SessionRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B682946EA84E6BCD5BA280B /* SessionRowTests.swift */; };
 		656C3BCFBEB753F522F6E2E0 /* KeepurFoundationAtomsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */; };
 		679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */; };
 		778B5B2F21A88DBB2AA4CBDB /* KeepurStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */; };
@@ -50,6 +51,7 @@
 
 /* Begin PBXFileReference section */
 		03C4FDF6650BF95061BFE211 /* KeepurStatusPill.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurStatusPill.swift; sourceTree = "<group>"; };
+		1B682946EA84E6BCD5BA280B /* SessionRowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionRowTests.swift; sourceTree = "<group>"; };
 		1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationDataDisplayTests.swift; sourceTree = "<group>"; };
 		331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationAtomsTests.swift; sourceTree = "<group>"; };
 		345D7B8087FEE0BC4EB99FED /* KeepurMetricGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurMetricGrid.swift; sourceTree = "<group>"; };
@@ -196,6 +198,7 @@
 				1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */,
 				6FA72BD5F1AE1AF7ADE34AA2 /* KeepurFoundationCompositesTests.swift */,
 				3AD6E35A0B334D4EAF228E73 /* KeepurTabBarRootTests.swift */,
+				1B682946EA84E6BCD5BA280B /* SessionRowTests.swift */,
 			);
 			path = KeeperTests;
 			sourceTree = "<group>";
@@ -369,6 +372,7 @@
 				679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */,
 				85AE5F35471F0FDD59B061AE /* KeepurFoundationCompositesTests.swift in Sources */,
 				830951CD01DED91157835C37 /* KeepurTabBarRootTests.swift in Sources */,
+				42CD407ED938001572137714 /* SessionRowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

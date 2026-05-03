@@ -49,6 +49,7 @@ struct SessionListView: View {
                 )
                 .opacity(session.isStale ? 0.5 : 1.0)
                 .tag(session.id)
+                .listRowSeparator(.hidden)
                 .contentShape(Rectangle())
                 #if os(iOS)
                 .onTapGesture {
@@ -259,59 +260,47 @@ struct SessionRow: View {
     let modelContext: ModelContext
 
     var body: some View {
-        HStack(spacing: KeepurTheme.Spacing.s3) {
-            Circle()
-                .fill(isActive ? KeepurTheme.Color.honey500 : KeepurTheme.Color.honey100)
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Image(systemName: isActive ? KeepurTheme.Symbol.bolt : "bubble.left.fill")
-                        .foregroundStyle(isActive ? KeepurTheme.Color.fgOnHoney : KeepurTheme.Color.honey700)
-                }
-
-            VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
-                HStack {
-                    Text(session.displayName)
-                        .font(KeepurTheme.Font.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-                    if isActive {
-                        semanticBadge("Active", tint: KeepurTheme.Color.success)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: KeepurTheme.Spacing.s3) {
+                VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
+                    HStack(spacing: KeepurTheme.Spacing.s2) {
+                        Text(session.displayName)
+                            .font(KeepurTheme.Font.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                        if isActive {
+                            KeepurStatusPill("Active", tint: .success)
+                        }
+                        if session.isStale {
+                            KeepurStatusPill("Stale", tint: .warning)
+                        }
                     }
-                    if session.isStale {
-                        semanticBadge("Stale", tint: KeepurTheme.Color.warning)
-                    }
-                }
 
-                Text(session.path)
-                    .font(.custom(KeepurTheme.FontName.mono, size: 12))
-                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                    .lineLimit(1)
-
-                if let preview = lastMessagePreview {
-                    Text(preview)
-                        .font(KeepurTheme.Font.bodySm)
+                    Text(session.path)
+                        .font(.custom(KeepurTheme.FontName.mono, size: 12))
                         .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                         .lineLimit(1)
+
+                    if let preview = lastMessagePreview {
+                        Text(preview)
+                            .font(KeepurTheme.Font.bodySm)
+                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                            .lineLimit(1)
+                    }
                 }
+
+                Spacer()
+
+                Text(session.createdAt, style: .relative)
+                    .font(KeepurTheme.Font.caption)
+                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
             }
+            .padding(.vertical, KeepurTheme.Spacing.s1)
 
-            Spacer()
-
-            Text(session.createdAt, style: .relative)
-                .font(KeepurTheme.Font.caption)
-                .foregroundStyle(KeepurTheme.Color.fgTertiary)
+            Rectangle()
+                .fill(KeepurTheme.Color.borderSubtle)
+                .frame(height: 0.5)
         }
-        .padding(.vertical, KeepurTheme.Spacing.s1)
-    }
-
-    private func semanticBadge(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(KeepurTheme.Font.caption)
-            .padding(.horizontal, KeepurTheme.Spacing.s2)
-            .padding(.vertical, 2)
-            .background(tint.opacity(0.15))
-            .clipShape(Capsule())
-            .foregroundStyle(tint)
     }
 
     private var lastMessagePreview: String? {
