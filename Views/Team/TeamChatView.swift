@@ -49,7 +49,20 @@ struct TeamChatView: View {
         #endif
         .toolbar {
             #if os(iOS)
-            ToolbarItem(placement: .principal) { chatHeader }
+            ToolbarItem(placement: .topBarLeading) {
+                KeepurChatHeader.BackButton(onBack: backAction)
+            }
+            ToolbarItem(placement: .principal) {
+                KeepurChatHeader.TitleBlock(
+                    title: channelTitle,
+                    statusText: headerStatusText,
+                    statusDate: headerStatusDate,
+                    isStatusActive: headerIsStatusActive
+                )
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                KeepurChatHeader.TrailingStack(actions: headerTrailingActions)
+            }
             #else
             ToolbarItem(placement: .automatic) { chatHeader }
             #endif
