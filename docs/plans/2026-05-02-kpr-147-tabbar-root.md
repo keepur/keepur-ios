@@ -252,14 +252,14 @@ group_views = project.main_group['Views']
 group_tests = project.main_group['KeeperTests']
 
 # Add BeekeeperRootView.swift to the app target (single multi-platform target).
-beekeeper_ref = group_views.new_reference("Views/BeekeeperRootView.swift")
+beekeeper_ref = group_views.new_reference("BeekeeperRootView.swift")
 project.targets.each do |t|
   next unless t.name == 'Keepur'
   t.source_build_phase.add_file_reference(beekeeper_ref)
 end
 
 # Add KeepurTabBarRootTests.swift to test targets only.
-test_ref = group_tests.new_reference("KeeperTests/KeepurTabBarRootTests.swift")
+test_ref = group_tests.new_reference("KeepurTabBarRootTests.swift")
 project.targets.each do |t|
   next unless t.name.include?('Tests')
   t.source_build_phase.add_file_reference(test_ref)

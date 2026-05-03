@@ -135,7 +135,7 @@ group_tests = project.main_group['KeeperTests']
 
 # Add component files to both iOS + macOS targets
 ['KeepurActionSheet.swift', 'KeepurChatHeader.swift'].each do |name|
-  ref = group_components.new_reference("Theme/Components/#{name}")
+  ref = group_components.new_reference(name)
   project.targets.each do |t|
     next unless t.name == 'Keepur'
     t.source_build_phase.add_file_reference(ref)
@@ -143,7 +143,7 @@ group_tests = project.main_group['KeeperTests']
 end
 
 # Add test file to test targets only
-ref = group_tests.new_reference("KeeperTests/KeepurFoundationCompositesTests.swift")
+ref = group_tests.new_reference("KeepurFoundationCompositesTests.swift")
 project.targets.each do |t|
   next unless t.name.include?('Tests')
   t.source_build_phase.add_file_reference(ref)
