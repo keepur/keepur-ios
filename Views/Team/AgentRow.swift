@@ -5,15 +5,6 @@ struct AgentRow: View {
     let dmChannel: TeamChannel?
     let isActive: Bool
 
-    private var statusColor: Color {
-        switch agent.status {
-        case "idle": return KeepurTheme.Color.success
-        case "processing": return KeepurTheme.Color.warning
-        case "error", "stopped": return KeepurTheme.Color.danger
-        default: return KeepurTheme.Color.fgMuted
-        }
-    }
-
     private var subtitle: String? {
         if let title = agent.title, !title.isEmpty {
             return title
@@ -35,12 +26,11 @@ struct AgentRow: View {
 
     var body: some View {
         HStack(spacing: KeepurTheme.Spacing.s3) {
-            ZStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 10, height: 10)
-            }
-            .frame(width: 36, height: 36)
+            KeepurAvatar(
+                size: 56,
+                content: .letter(agent.name),
+                statusOverlay: agent.statusTint
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(agent.name)
@@ -59,13 +49,27 @@ struct AgentRow: View {
 
             Spacer()
 
-            if let lastAt = dmChannel?.lastMessageAt {
-                Text(lastAt, style: .relative)
-                    .font(KeepurTheme.Font.caption)
-                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
+            HStack(spacing: KeepurTheme.Spacing.s2) {
+                if let lastAt = dmChannel?.lastMessageAt {
+                    Text(lastAt, style: .relative)
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgTertiary)
+                }
+                KeepurUnreadBadge(count: 0)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, KeepurTheme.Spacing.s2)
         .contentShape(Rectangle())
+    }
+}
+
+private extension TeamAgentInfo {
+    var statusTint: KeepurStatusPill.Tint {
+        switch status {
+        case "idle": return .success
+        case "processing": return .warning
+        case "error", "stopped": return .danger
+        default: return .muted
+        }
     }
 }
