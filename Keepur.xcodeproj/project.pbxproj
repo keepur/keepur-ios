@@ -34,6 +34,7 @@
 		A7E6E1EEC8C1CB9138421004 /* KeepurUnreadBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B669DE13B938A5E448DA899 /* KeepurUnreadBadge.swift */; };
 		BC4F12A3D9E847C60002 /* BeekeeperConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4F12A3D9E847C60001 /* BeekeeperConfigTests.swift */; };
 		BD0BB479F443475EA7D512A6 /* TeamSortedAgentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D070EA0CD6314C1DB43F7E3B /* TeamSortedAgentsTests.swift */; };
+		CC25654B0F7941DBF3A12E4D /* ChatHeaderMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798F1F20792860E12738AA5A /* ChatHeaderMappingTests.swift */; };
 		CE9D0085AE1C4725914A0857 /* WorkspaceBrowsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB2BCCE6B8DE4CCF84DB3E65 /* WorkspaceBrowsingTests.swift */; };
 		D1A2B3C4E5F647890AB1CD23 /* ChatResilienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F647890AB1CD24 /* ChatResilienceTests.swift */; };
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
@@ -70,6 +71,7 @@
 		626FDAD2BE69B79D0203005C /* AgentDetailSheetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDetailSheetTests.swift; sourceTree = "<group>"; };
 		6E8B9481A07498C49CD22328 /* OFL.txt */ = {isa = PBXFileReference; includeInIndex = 1; path = OFL.txt; sourceTree = "<group>"; };
 		6FA72BD5F1AE1AF7ADE34AA2 /* KeepurFoundationCompositesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationCompositesTests.swift; sourceTree = "<group>"; };
+		798F1F20792860E12738AA5A /* ChatHeaderMappingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChatHeaderMappingTests.swift; sourceTree = "<group>"; };
 		879A9EB01FA2519B78E8311D /* KeepurTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurTheme.swift; sourceTree = "<group>"; };
 		8D5FCC4B161AF46C2A5BC33D /* AgentRowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentRowTests.swift; sourceTree = "<group>"; };
 		9EEA1750D496605899414990 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 				B4AB31342D75A124FF0F48C7 /* MessageInputBarAttachSheetTests.swift */,
 				307848A4601C0FA4F9E0F3D5 /* SavedWorkspacesPlaceholderViewTests.swift */,
 				626FDAD2BE69B79D0203005C /* AgentDetailSheetTests.swift */,
+				798F1F20792860E12738AA5A /* ChatHeaderMappingTests.swift */,
 			);
 			path = KeeperTests;
 			sourceTree = "<group>";
@@ -393,6 +396,7 @@
 				6E3FF8A08F201A2ECCF979E0 /* MessageInputBarAttachSheetTests.swift in Sources */,
 				2C831BDB96474A1668B0C43E /* SavedWorkspacesPlaceholderViewTests.swift in Sources */,
 				29D2CAFEFD63CE50A4ECA9AF /* AgentDetailSheetTests.swift in Sources */,
+				CC25654B0F7941DBF3A12E4D /* ChatHeaderMappingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
