@@ -297,8 +297,9 @@ struct SessionRow: View {
             }
             .padding(.vertical, KeepurTheme.Spacing.s1)
 
-            Divider()
-                .background(KeepurTheme.Color.borderSubtle)
+            Rectangle()
+                .fill(KeepurTheme.Color.borderSubtle)
+                .frame(height: 0.5)
         }
     }
 
