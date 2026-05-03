@@ -103,7 +103,7 @@ group_tests = project.main_group['KeeperTests']
 ['KeepurAvatar.swift', 'KeepurStatusPill.swift', 'KeepurUnreadBadge.swift'].each do |name|
   ref = group_components.new_reference("Theme/Components/#{name}")
   project.targets.each do |t|
-    next unless ['Keepur', 'Keepur (macOS)'].include?(t.name)
+    next unless t.name == 'Keepur'
     t.source_build_phase.add_file_reference(ref)
   end
 end
@@ -129,7 +129,8 @@ xcodebuild -project Keepur.xcodeproj -scheme Keepur \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -quiet build
 
-xcodebuild -project Keepur.xcodeproj -scheme 'Keepur (macOS)' \
+xcodebuild -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=macOS' \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
   -quiet build
 ```
