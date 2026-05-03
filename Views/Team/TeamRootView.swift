@@ -55,5 +55,8 @@ struct TeamRootView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
+        #if os(iOS)
+        .toolbar(viewModel.activeChannelId == nil ? .visible : .hidden, for: .tabBar)
+        #endif
     }
 }
