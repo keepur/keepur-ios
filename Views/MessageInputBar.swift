@@ -17,6 +17,8 @@ struct MessageInputBar: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showDocumentPicker = false
     @State private var showAttachmentOptions = false
+    @State private var showPhotoPicker = false
+    @State private var showCameraPlaceholder = false
     @State private var attachmentError: String?
     private static let maxAttachmentSize = 10 * 1024 * 1024 // 10 MB
 
@@ -32,35 +34,6 @@ struct MessageInputBar: View {
                     Image(systemName: KeepurTheme.Symbol.plus)
                         .font(.system(size: 26))
                         .foregroundStyle(KeepurTheme.Color.fgMuted)
-                }
-                .popover(isPresented: $showAttachmentOptions) {
-                    VStack(spacing: 0) {
-                        Button {
-                            showAttachmentOptions = false
-                            showDocumentPicker = true
-                        } label: {
-                            Label("Choose File", systemImage: "doc")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, KeepurTheme.Spacing.s4)
-                                .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
-                        }
-                        .buttonStyle(.plain)
-
-                        Divider()
-
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("Photo Library", systemImage: "photo")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, KeepurTheme.Spacing.s4)
-                                .padding(.vertical, KeepurTheme.Spacing.s2 + 2)
-                        }
-                        .buttonStyle(.plain)
-                        .onChange(of: selectedPhoto) {
-                            if selectedPhoto != nil { showAttachmentOptions = false }
-                        }
-                    }
-                    .frame(width: 200)
-                    .padding(.vertical, KeepurTheme.Spacing.s1)
                 }
 
                 TextField("Message...", text: $messageText, axis: .vertical)
@@ -134,6 +107,48 @@ struct MessageInputBar: View {
             Button("OK") { attachmentError = nil }
         } message: {
             Text(attachmentError ?? "")
+        }
+        .sheet(isPresented: $showAttachmentOptions) {
+            KeepurActionSheet(
+                title: "Attach",
+                subtitle: "Add a file or photo to the message.",
+                actions: [
+                    .init(
+                        symbol: "doc",
+                        title: "Choose file",
+                        subtitle: "Browse documents on this device"
+                    ) {
+                        showAttachmentOptions = false
+                        DispatchQueue.main.async { showDocumentPicker = true }
+                    },
+                    .init(
+                        symbol: "photo",
+                        title: "Photo library",
+                        subtitle: "Pick from your photos"
+                    ) {
+                        showAttachmentOptions = false
+                        DispatchQueue.main.async { showPhotoPicker = true }
+                    },
+                    .init(
+                        symbol: "camera",
+                        title: "Take photo",
+                        subtitle: "Use the camera now"
+                    ) {
+                        showAttachmentOptions = false
+                        DispatchQueue.main.async { showCameraPlaceholder = true }
+                    },
+                ]
+            )
+            .presentationDetents([.medium])
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+        .alert(
+            "Camera capture coming soon",
+            isPresented: $showCameraPlaceholder
+        ) {
+            Button("OK", role: .cancel) { showCameraPlaceholder = false }
+        } message: {
+            Text("Take photo will be wired up when KPR-159 lands. For now, choose a file or pick from your photo library.")
         }
     }
 
