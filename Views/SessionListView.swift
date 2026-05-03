@@ -216,6 +216,7 @@ struct SessionListView: View {
         NavigationStack {
             sessionList
                 .navigationTitle("Sessions")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar { sessionToolbar }
                 .overlay { sessionOverlay }
                 // `isPresented:` (not `item:`) so that when the session id swaps

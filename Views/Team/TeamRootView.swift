@@ -32,6 +32,9 @@ struct TeamRootView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 TeamSidebarView(viewModel: viewModel)
                     .navigationTitle(capabilityManager.selectedHive ?? "Hive")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Circle()
