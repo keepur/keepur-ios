@@ -63,10 +63,6 @@ struct TeamMessageBubble: View {
     private var agentBubble: some View {
         HStack {
             VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
-                Text(message.senderName)
-                    .font(KeepurTheme.Font.caption)
-                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-
                 Markdown(message.text)
                     .markdownTheme(.keepur)
                     .textSelection(.enabled)
@@ -77,10 +73,13 @@ struct TeamMessageBubble: View {
                             .fill(KeepurTheme.Color.bgSunkenDynamic)
                     )
 
-                HStack(spacing: KeepurTheme.Spacing.s3) {
-                    Text(message.createdAt, style: .time)
-                        .font(KeepurTheme.Font.caption)
-                        .foregroundStyle(KeepurTheme.Color.fgTertiary)
+                HStack(alignment: .center, spacing: KeepurTheme.Spacing.s3) {
+                    HStack(spacing: KeepurTheme.Spacing.s2) {
+                        KeepurAvatar(size: 24, content: .letter(message.senderName))
+                        Text(message.createdAt, style: .time)
+                            .font(KeepurTheme.Font.caption)
+                            .foregroundStyle(KeepurTheme.Color.fgTertiary)
+                    }
 
                     if let onSpeak {
                         Button { onSpeak(message.text) } label: {
