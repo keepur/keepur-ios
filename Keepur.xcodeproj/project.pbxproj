@@ -18,6 +18,7 @@
 		7B43BBA1D24DCEDD5FDB5396 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A2A3B9CC795E558220AED0 /* PrimaryButton.swift */; };
 		7EF2A7DA26678EB140E42C7F /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */; };
 		809AF38C35B3EAD3349473EF /* KeepurCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */; };
+		830951CD01DED91157835C37 /* KeepurTabBarRootTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD6E35A0B334D4EAF228E73 /* KeepurTabBarRootTests.swift */; };
 		85AE5F35471F0FDD59B061AE /* KeepurFoundationCompositesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA72BD5F1AE1AF7ADE34AA2 /* KeepurFoundationCompositesTests.swift */; };
 		894B13146C2E79CF9905E5FC /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6E8B9481A07498C49CD22328 /* OFL.txt */; };
 		94129812225D71F33A70FE11 /* KeepurChatHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DEB9F85E98BE473CD9920FD /* KeepurChatHeader.swift */; };
@@ -52,6 +53,7 @@
 		1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationDataDisplayTests.swift; sourceTree = "<group>"; };
 		331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurFoundationAtomsTests.swift; sourceTree = "<group>"; };
 		345D7B8087FEE0BC4EB99FED /* KeepurMetricGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurMetricGrid.swift; sourceTree = "<group>"; };
+		3AD6E35A0B334D4EAF228E73 /* KeepurTabBarRootTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurTabBarRootTests.swift; sourceTree = "<group>"; };
 		3B669DE13B938A5E448DA899 /* KeepurUnreadBadge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurUnreadBadge.swift; sourceTree = "<group>"; };
 		4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurCard.swift; sourceTree = "<group>"; };
 		4D35807F0D15FC800C31DF2A /* KeepurThemeFontsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurThemeFontsTests.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				331D026F5CFC85D2A128291A /* KeepurFoundationAtomsTests.swift */,
 				1CBCB883F52BDA0932B9AA0E /* KeepurFoundationDataDisplayTests.swift */,
 				6FA72BD5F1AE1AF7ADE34AA2 /* KeepurFoundationCompositesTests.swift */,
+				3AD6E35A0B334D4EAF228E73 /* KeepurTabBarRootTests.swift */,
 			);
 			path = KeeperTests;
 			sourceTree = "<group>";
@@ -365,6 +368,7 @@
 				656C3BCFBEB753F522F6E2E0 /* KeepurFoundationAtomsTests.swift in Sources */,
 				679A693466648789BDB3A807 /* KeepurFoundationDataDisplayTests.swift in Sources */,
 				85AE5F35471F0FDD59B061AE /* KeepurFoundationCompositesTests.swift in Sources */,
+				830951CD01DED91157835C37 /* KeepurTabBarRootTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
