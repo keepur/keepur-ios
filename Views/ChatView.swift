@@ -36,21 +36,30 @@ struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Message.timestamp) private var allMessages: [Message]
-    @State private var showSettings = false
+    @Query private var messages: [Message]
+    @Query private var matchingSessions: [Session]
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
     }
 
-    private var messages: [Message] {
-        allMessages.filter { $0.sessionId == sessionId }
+    init(viewModel: ChatViewModel, sessionId: String) {
+        self.viewModel = viewModel
+        self.sessionId = sessionId
+        let sid = sessionId
+        let msgDescriptor = FetchDescriptor<Message>(
+            predicate: #Predicate { $0.sessionId == sid },
+            sortBy: [SortDescriptor(\.timestamp)]
+        )
+        _messages = Query(msgDescriptor)
+        var sessDescriptor = FetchDescriptor<Session>(
+            predicate: #Predicate { $0.id == sid }
+        )
+        sessDescriptor.fetchLimit = 1
+        _matchingSessions = Query(sessDescriptor)
     }
 
-    @Query private var allSessions: [Session]
-
     private var navigationTitle: String {
-        guard let session = allSessions.first(where: { $0.id == sessionId }) else { return "Keepur" }
-        return session.displayName
+        matchingSessions.first?.displayName ?? "Keepur"
     }
 
     var body: some View {
@@ -134,11 +143,6 @@ struct ChatView: View {
             ToolbarItem(placement: .automatic) { chatHeader }
             #endif
         }
-        #if os(iOS)
-        .sheet(isPresented: $showSettings) {
-            SettingsView(viewModel: viewModel)
-        }
-        #endif
         .sheet(item: Binding(
             get: {
                 viewModel.pendingApprovals[sessionId]
@@ -197,7 +201,7 @@ struct ChatView: View {
     }
 
     private var headerTrailingActions: [KeepurChatHeader.Action] {
-        var actions: [KeepurChatHeader.Action] = [
+        [
             .init(symbol: speakerSymbol) {
                 if viewModel.speechManager.isSpeaking {
                     viewModel.speechManager.stopSpeaking()
@@ -206,10 +210,6 @@ struct ChatView: View {
                 }
             }
         ]
-        #if os(iOS)
-        actions.append(.init(symbol: KeepurTheme.Symbol.settings) { showSettings = true })
-        #endif
-        return actions
     }
 
     private var speakerSymbol: String {

@@ -21,9 +21,12 @@ import SwiftUI
 /// distinct from the principal slot.
 struct KeepurChatHeader: View {
     struct Action: Identifiable {
-        let id = UUID()
         let symbol: String
         let action: () -> Void
+
+        /// SF Symbol name doubles as the stable identity for ForEach diffing.
+        /// Two trailing actions in the same header should never share a symbol.
+        var id: String { symbol }
 
         init(symbol: String, action: @escaping () -> Void) {
             self.symbol = symbol
