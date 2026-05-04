@@ -100,8 +100,6 @@ extension KeepurChatHeader {
         let statusDate: Date?
         let isStatusActive: Bool
 
-        @State private var pulse = false
-
         var body: some View {
             VStack(spacing: 2) {
                 Text(title)
@@ -114,18 +112,17 @@ extension KeepurChatHeader {
                     statusLine
                 }
             }
-            .onAppear {
-                if isStatusActive {
-                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
-                        pulse = true
-                    }
-                }
-            }
         }
 
         private var statusLine: some View {
             HStack(spacing: KeepurTheme.Spacing.s1) {
-                pulseDot
+                if isStatusActive {
+                    PulsingDot()
+                } else {
+                    Circle()
+                        .fill(KeepurTheme.Color.fgMuted)
+                        .frame(width: 6, height: 6)
+                }
                 if let s = statusText {
                     Text(s)
                         .font(KeepurTheme.Font.caption)
@@ -143,13 +140,26 @@ extension KeepurChatHeader {
                 }
             }
         }
+    }
 
-        private var pulseDot: some View {
+    /// Pulsing honey dot for active-status indicator. Lives only as long as
+    /// the surrounding status is active — when the parent flips inactive,
+    /// the view is removed from the tree and the repeating animation
+    /// unmounts cleanly.
+    fileprivate struct PulsingDot: View {
+        @State private var pulse = false
+
+        var body: some View {
             Circle()
-                .fill(isStatusActive ? KeepurTheme.Color.honey500 : KeepurTheme.Color.fgMuted)
+                .fill(KeepurTheme.Color.honey500)
                 .frame(width: 6, height: 6)
-                .scaleEffect(isStatusActive && pulse ? 1.4 : 1.0)
-                .opacity(isStatusActive && pulse ? 0.6 : 1.0)
+                .scaleEffect(pulse ? 1.4 : 1.0)
+                .opacity(pulse ? 0.6 : 1.0)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
         }
     }
 
