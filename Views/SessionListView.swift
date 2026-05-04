@@ -49,7 +49,6 @@ struct SessionListView: View {
                 )
                 .opacity(session.isStale ? 0.5 : 1.0)
                 .tag(session.id)
-                .listRowSeparator(.hidden)
                 .contentShape(Rectangle())
                 #if os(iOS)
                 .onTapGesture {
@@ -258,59 +257,66 @@ struct SessionRow: View {
     let session: Session
     let isActive: Bool
     let modelContext: ModelContext
+    @Query private var latestMessages: [Message]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: KeepurTheme.Spacing.s3) {
-                VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s1) {
-                    HStack(spacing: KeepurTheme.Spacing.s2) {
-                        Text(session.displayName)
-                            .font(KeepurTheme.Font.body)
-                            .fontWeight(.medium)
-                            .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
-                        if isActive {
-                            KeepurStatusPill("Active", tint: .success)
-                        }
-                        if session.isStale {
-                            KeepurStatusPill("Stale", tint: .warning)
-                        }
-                    }
-
-                    Text(session.path)
-                        .font(.custom(KeepurTheme.FontName.mono, size: 12))
-                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                        .lineLimit(1)
-
-                    if let preview = lastMessagePreview {
-                        Text(preview)
-                            .font(KeepurTheme.Font.bodySm)
-                            .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer()
-
-                Text(session.createdAt, style: .relative)
-                    .font(KeepurTheme.Font.caption)
-                    .foregroundStyle(KeepurTheme.Color.fgTertiary)
-            }
-            .padding(.vertical, KeepurTheme.Spacing.s1)
-
-            Rectangle()
-                .fill(KeepurTheme.Color.borderSubtle)
-                .frame(height: 0.5)
-        }
-    }
-
-    private var lastMessagePreview: String? {
+    init(session: Session, isActive: Bool, modelContext: ModelContext) {
+        self.session = session
+        self.isActive = isActive
+        self.modelContext = modelContext
         let sid = session.id
         var descriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sid },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
         descriptor.fetchLimit = 1
-        guard let msg = try? modelContext.fetch(descriptor).first else { return nil }
+        _latestMessages = Query(descriptor)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: KeepurTheme.Spacing.s3) {
+            KeepurAvatar(
+                size: 56,
+                content: .letter(session.displayName),
+                statusOverlay: isActive ? .success : nil
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: KeepurTheme.Spacing.s2) {
+                    Text(session.displayName)
+                        .font(KeepurTheme.Font.body)
+                        .fontWeight(isActive ? .semibold : .medium)
+                        .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
+                        .lineLimit(1)
+                    if session.isStale {
+                        KeepurStatusPill("Stale", tint: .warning)
+                    }
+                }
+
+                Text(session.path)
+                    .font(.custom(KeepurTheme.FontName.mono, size: 12))
+                    .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                    .lineLimit(1)
+
+                if let preview = lastMessagePreview {
+                    Text(preview)
+                        .font(KeepurTheme.Font.bodySm)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Text(session.createdAt, style: .relative)
+                .font(KeepurTheme.Font.caption)
+                .foregroundStyle(KeepurTheme.Color.fgTertiary)
+        }
+        .padding(.vertical, KeepurTheme.Spacing.s2)
+        .contentShape(Rectangle())
+    }
+
+    private var lastMessagePreview: String? {
+        guard let msg = latestMessages.first else { return nil }
         return msg.role == "user" ? msg.text : "Claude: \(msg.text)"
     }
 }

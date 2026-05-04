@@ -6,19 +6,9 @@ struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showUnpairConfirmation = false
+    @State private var englishVoices: [AVSpeechSynthesisVoice] = []
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workspace.lastUsed, order: .reverse) private var savedWorkspaces: [Workspace]
-
-    private var englishVoices: [AVSpeechSynthesisVoice] {
-        let voices = AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.lowercased().hasPrefix("en") }
-        return voices.sorted { (lhs: AVSpeechSynthesisVoice, rhs: AVSpeechSynthesisVoice) -> Bool in
-            if lhs.quality.rawValue != rhs.quality.rawValue {
-                return lhs.quality.rawValue > rhs.quality.rawValue
-            }
-            return lhs.name < rhs.name
-        }
-    }
 
     var body: some View {
         NavigationStack {
@@ -45,7 +35,25 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .task {
+                if englishVoices.isEmpty {
+                    englishVoices = await loadEnglishVoices()
+                }
+            }
         }
+    }
+
+    private func loadEnglishVoices() async -> [AVSpeechSynthesisVoice] {
+        await Task.detached(priority: .userInitiated) {
+            AVSpeechSynthesisVoice.speechVoices()
+                .filter { $0.language.lowercased().hasPrefix("en") }
+                .sorted { lhs, rhs in
+                    if lhs.quality.rawValue != rhs.quality.rawValue {
+                        return lhs.quality.rawValue > rhs.quality.rawValue
+                    }
+                    return lhs.name < rhs.name
+                }
+        }.value
     }
 
     // MARK: - Sections
