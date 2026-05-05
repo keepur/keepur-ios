@@ -243,21 +243,32 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
   Edit `Keepur.xcodeproj/project.pbxproj`:
 
-  1. **Add `PBXFileReference` entries** for the `.mlpackage` (as `wrapper`), each `.npy` voice (as `file.binary` or `file`), and the two LICENSE files (as `text`). Use stable random hex IDs (24-char uppercase) — generate once and reuse.
+  1. **Add `PBXFileReference` entries** for:
+     - `kokoro-v1_0.mlpackage` — set `lastKnownFileType = wrapper` (let Xcode auto-detect).
+     - `Resources/Kokoro/voices/` — **folder reference** (`lastKnownFileType = folder`, "blue folder" in Xcode). Folder references preserve the directory hierarchy in the bundle, which is required because `KokoroVoiceCatalog`-driven lookups use `Bundle.main.url(forResource:withExtension:subdirectory: "voices")`.
+     - `LICENSE-Kokoro.txt`, `LICENSE-mlalma.txt` — both as `text`.
 
-  2. **Add `PBXBuildFile` entries** for the `.mlpackage`, each `.npy`, and **both LICENSE files** (these all get into the Copy Bundle Resources phase). The LICENSE files ship in the bundle so the Credits screen (Task 9) can read them via `Bundle.main.url(forResource:withExtension:)`.
+     Use stable random hex IDs (24-char uppercase) — generate once and reuse.
 
-  3. **Create a `PBXGroup`** for `Resources/Kokoro/voices/` (children: all `.npy` refs) and a parent group for `Resources/Kokoro/` (children: voices group, `kokoro-v1_0.mlpackage`, two LICENSE refs). Name = `Kokoro`, path = `Resources/Kokoro`, sourceTree = `"<group>"`.
+     **Important:** the individual `.npy` files do **not** get their own `PBXFileReference` or `PBXBuildFile` entries — the parent folder reference handles them. This avoids flattening into the bundle root.
 
-  4. **Create a `PBXGroup`** for `Resources/` (child: Kokoro group). Name = `Resources`, path = `Resources`, sourceTree = `"<group>"`.
+  2. **Add `PBXBuildFile` entries** for the `.mlpackage`, the `voices/` **folder reference**, and **both LICENSE files**. Each entry points at the corresponding `PBXFileReference` from substep 1 and is destined for the Copy Bundle Resources phase. The LICENSE files ship in the bundle so the Credits screen (Task 9) can read them via `Bundle.main.url(forResource:withExtension:)`.
+
+  3. **Create a `PBXGroup` for `Resources/Kokoro/`** with children: the `.mlpackage` ref, the `voices/` folder ref, and the two LICENSE refs. Name = `Kokoro`, path = `Resources/Kokoro`, sourceTree = `"<group>"`.
+
+  4. **Create a `PBXGroup` for `Resources/`** (child: Kokoro group). Name = `Resources`, path = `Resources`, sourceTree = `"<group>"`.
 
   5. **Add the `Resources` group to the root group's children list** (the root group is at `A1ABEBB82F79E16C009B0AFC` per the existing pbxproj at line 172).
 
-  6. **Append the `.mlpackage` and each `.npy` build-file ref to the existing Resources build phase** (`A1ABEBBF2F79E16C009B0AFC /* Resources */`, referenced at pbxproj line 255). Find this phase's `files = (...)` block (alongside the existing `Assets.xcassets` and JetBrainsMono entries) and add new lines.
+  6. **Append the `.mlpackage` ref, the `voices/` folder ref, `LICENSE-Kokoro.txt` ref, and `LICENSE-mlalma.txt` ref to the existing Resources build phase** (`A1ABEBBF2F79E16C009B0AFC /* Resources */`, referenced at pbxproj line 255). Find this phase's `files = (...)` block (alongside the existing `Assets.xcassets` and JetBrainsMono entries) and add the four new lines.
 
   7. **Do NOT add `Resources/Kokoro/` to `fileSystemSynchronizedGroups`** (line 261). That list stays as-is.
 
-  This step is mechanically fiddly. Do it in Xcode's UI if practical: right-click the root → Add Files → select `Resources/Kokoro/` → "Create groups" (not folder reference) → check "Copy items if needed" off (files are already on disk) → check "Keepur" target. Verify the resulting pbxproj diff matches the structure above.
+  This step is mechanically fiddly. The recommended path is Xcode's UI:
+  - Right-click the root in the navigator → **Add Files to "Keepur"…**
+  - Select `Resources/Kokoro/kokoro-v1_0.mlpackage` and the two `LICENSE-*.txt` → "Create groups" → check "Keepur" target → Add.
+  - Right-click again → **Add Files to "Keepur"…** → select `Resources/Kokoro/voices/` → choose **"Create folder references"** (blue folder icon in the navigator after add) → check "Keepur" target → Add.
+  - Verify in the resulting pbxproj diff that the `voices` `PBXFileReference` has `lastKnownFileType = folder` (not `group` and not unset). The blue folder is the visible cue.
 
 - [ ] **Step 2.6:** Verify bundle inclusion.
 
@@ -752,7 +763,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   - Rewrite `speak(_ text: String, voice: AVSpeechSynthesisVoice)` to delegate to `systemEngine.speak(text:voiceId: voice.identifier)`. (Used by preview rows for system voices.)
   - Add `speak(_ text: String, kokoroVoiceId: String)` for preview rows in the new picker section.
   - Add `warmKokoroIfNeeded()` — calls `kokoroEngine.warmUp()` only if the currently selected voice (global or any per-agent) is a Kokoro ID. Fire-and-forget Task; swallows errors.
-  - Replace `bestVoice()` with `SystemTTSEngine.bestEnglishVoice()` (already promoted to `static` in Task 3).
+  - Replace `bestVoice()` calls with `SystemTTSEngine.bestEnglishVoice()` (already promoted to `static` in Task 3).
   - Drop the synthesizer / delegate code since it now lives in `SystemTTSEngine`.
 
   Implementation outline (preserves existing recording code; replaces only the TTS half):
@@ -1251,7 +1262,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
                               .font(KeepurTheme.Font.caption)
                               .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                           if let url = Bundle.main.url(forResource: "LICENSE-Kokoro", withExtension: "txt"),
-                             let text = try? String(contentsOf: url) {
+                             let text = try? String(contentsOf: url, encoding: .utf8) {
                               Text(text)
                                   .font(.custom(KeepurTheme.FontName.mono, size: 11))
                                   .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
@@ -1268,7 +1279,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
                               .font(KeepurTheme.Font.caption)
                               .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                           if let url = Bundle.main.url(forResource: "LICENSE-mlalma", withExtension: "txt"),
-                             let text = try? String(contentsOf: url) {
+                             let text = try? String(contentsOf: url, encoding: .utf8) {
                               Text(text)
                                   .font(.custom(KeepurTheme.FontName.mono, size: 11))
                                   .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
@@ -1287,7 +1298,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   }
   ```
 
-  For the LICENSE files to appear in `Bundle.main`, they must be in the Copy Bundle Resources phase — Task 2 step 2.5 already wired them. If you skipped them there as "source-tree only," add them to the build phase now.
+  The LICENSE files are bundled by Task 2 step 2.5 substeps 2 + 6 (added to Copy Bundle Resources). Confirm `Bundle.main.url(forResource: "LICENSE-Kokoro", withExtension: "txt")` resolves on a clean build.
 
 - [ ] **Step 9.3:** Build + smoke (iOS sim launches, settings opens, credits entry visible, navigates).
 
