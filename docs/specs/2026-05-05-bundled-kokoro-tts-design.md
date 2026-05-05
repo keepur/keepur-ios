@@ -151,7 +151,7 @@ Resources/Kokoro/
     ...
 ```
 
-`Resources/` is referenced by Xcode's project as a folder (Group with synchronized children, per the project convention recorded in memory). We add a build-phase rule to copy `*.mlpackage` and `voices/*.npy` into the app bundle.
+**Xcode wiring caveat:** the project uses synchronized folder groups for `Views/`, `Managers/`, `Models/`, etc. Project memory records that the `xcodeproj` gem's `new_reference` fails on synchronized folders, and that `Theme/Components` and `KeeperTests` are the only existing manually-wired groups. `Resources/` will follow the manually-wired pattern: explicit file references in the `.pbxproj` plus a Copy Bundle Resources build phase entry for the `.mlpackage` and the `voices/` directory. This is the riskiest mechanical step in implementation — the plan must call it out as a discrete task with verification (build the app, dump the bundle, confirm assets present).
 
 ### D9. Both platforms get Kokoro
 
@@ -172,10 +172,14 @@ If the engine returns a non-finalised stream (some versions of MLX-Kokoro emit c
 3. **Voice grading drift.** The Kokoro project occasionally re-grades voices as new training data lands. Our shortlist (D4) reads grades at implementation time and may need a periodic refresh. Acceptable — a follow-up is cheap.
 4. **First-utterance latency.** Cold-start model load ~500 ms–1 s. Warm-up on `ChatView.onAppear` (D7) hides this. If users still notice, we can move warm-up earlier (app foreground) at the cost of always-on memory.
 5. **Memory footprint.** 82 M params at INT8 ≈ 80 MB resident. On iPhone with 4–6 GB RAM this is fine; on the simulator it's negligible. We do not unload after speak — the warmup payoff disappears if we do.
+6. **License attribution.** Kokoro-82M is Apache 2.0 and `mlalma/kokoro-ios` is MIT. Both require attribution. The plan adds a "Credits / Open Source" entry to the existing Settings footer (or a new sub-screen if needed) listing both notices.
+7. **Intel Mac assumption.** D9 assumes Apple Silicon for all macOS users. If a current user is on Intel Mac, MLX engine init will fail and the silent-fallback path (D7) will route every utterance to `AVSpeechSynthesizer` — functionally fine, but worth confirming this is acceptable before locking it in.
 
 ## Testing Strategy
 
-- **Unit:** `KokoroVoiceCatalog` data tests (catalog non-empty, each entry has display name + description, IDs prefix-correct). `SpeechManager.dispatch` tests confirming `kokoro:*` IDs route to `KokoroEngine` and other IDs route to `AVSpeechSynthesizer`. Use protocol seam to mock both engines.
+We introduce a small `TTSEngine` protocol with a single `func speak(text: String, voiceId: String) async throws` method. `SpeechManager` holds two implementations — `KokoroEngine` (new) and `SystemTTSEngine` (a thin wrapper over `AVSpeechSynthesizer`) — and dispatches based on the `kokoro:` prefix on the voice ID. Tests inject mock conforming types into `SpeechManager` to assert dispatch and fallback behavior without needing real audio output.
+
+- **Unit:** `KokoroVoiceCatalog` data tests (catalog non-empty, each entry has display name + description, IDs prefix-correct). `SpeechManager` dispatch tests confirming `kokoro:*` IDs route to `KokoroEngine` and other IDs route to `SystemTTSEngine` via injected mocks.
 - **Unit (fallback):** When `KokoroEngine.speak` throws, `SpeechManager` falls back to `bestVoice()` system path and the stored ID is preserved.
 - **Smoke:** App launches, ChatView appears, warm-up fires, no crash. (Cannot assert audio output in tests.)
 - **Manual:** Pick each Kokoro voice in Settings, hit preview, hear the right voice. Same for AgentVoicePickerView. Disconnect from network, send a message, hear assistant reply (proves on-device).
