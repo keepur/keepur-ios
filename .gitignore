@@ -12,3 +12,6 @@ xcuserdata/
 # Dependencies
 Pods/
 .build/
+
+# Claude worktrees + agent state
+.claude/
