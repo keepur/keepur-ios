@@ -115,7 +115,7 @@ Two facts about the `mlalma/kokoro-ios` Swift Package are not fully documented i
   - Whether the model path expects a directory, an `.mlpackage` bundle, or some other shape.
 - [ ] **D0.2:** Identify the latest tagged release of `mlalma/kokoro-ios` (or pin to a specific commit SHA if no tag exists). Record version in this plan and the Xcode SPM ref.
 - [ ] **D0.3:** Identify exact filenames and SHA256 hashes for:
-  - The Kokoro INT8 CoreML weights (from `FluidInference/kokoro-82m-coreml` or whatever the test app uses).
+  - The Kokoro INT8 CoreML weights (from `FluidInference/kokoro-82m-coreml` or whatever the test app uses). **Record the bundle filename here** — Tasks 2 and 5 reference the placeholder `kokoro-v1_0.mlpackage`. If the actual filename differs, search-and-replace the placeholder across this plan and the implementation files **before** committing Task 5.
   - The `.npy` voice embedding files for the curated shortlist (Task 4 lists them).
 - [ ] **D0.4:** Re-read [VOICES.md](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md) and lock the curated shortlist (everything graded B- or above for English). Update Task 4's catalog if the spec's illustrative list is now stale.
 
@@ -191,16 +191,20 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
 - [ ] **Step 2.2:** Add LFS tracking for binary asset extensions.
 
+  An `.mlpackage` is a directory bundle, not a single file. LFS filters apply to file paths inside it, so we track the actual binary blobs that CoreML weights ship as. The `Manifest.json` and tiny metadata files stay as regular text in git.
+
   Append to `.gitattributes` (create if missing):
   ```
-  *.mlpackage filter=lfs diff=lfs merge=lfs -text
-  Resources/Kokoro/**/*.mlpackage filter=lfs diff=lfs merge=lfs -text
-  Resources/Kokoro/**/*.mlmodel filter=lfs diff=lfs merge=lfs -text
-  Resources/Kokoro/**/*.mlmodelc filter=lfs diff=lfs merge=lfs -text
-  Resources/Kokoro/voices/*.npy filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.bin       filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.mlmodel   filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.mlmodelc  filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.weights   filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.data      filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/**/*.espresso.* filter=lfs diff=lfs merge=lfs -text
+  Resources/Kokoro/voices/*.npy   filter=lfs diff=lfs merge=lfs -text
   ```
 
-  Note: an `.mlpackage` is a directory. LFS tracks its contained files. Run `git lfs track` from the repo root if Xcode complains about specific inner files.
+  After the `.mlpackage` is downloaded in Step 2.3, run `find Resources/Kokoro -type f -size +500k` and confirm every large file matches one of the patterns above. If a binary extension is missing, append it to `.gitattributes` and run `git lfs migrate import --include="<pattern>"` before staging.
 
 - [ ] **Step 2.3:** Download model + voice files. Use the source identified in D0.3.
 
@@ -241,7 +245,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
   1. **Add `PBXFileReference` entries** for the `.mlpackage` (as `wrapper`), each `.npy` voice (as `file.binary` or `file`), and the two LICENSE files (as `text`). Use stable random hex IDs (24-char uppercase) — generate once and reuse.
 
-  2. **Add `PBXBuildFile` entries** for the `.mlpackage` and each `.npy` (these get into the Copy Bundle Resources phase). The two LICENSE files do **not** ship in the bundle — they go into the source tree only for license compliance and to be embedded into the credits screen at compile time.
+  2. **Add `PBXBuildFile` entries** for the `.mlpackage`, each `.npy`, and **both LICENSE files** (these all get into the Copy Bundle Resources phase). The LICENSE files ship in the bundle so the Credits screen (Task 9) can read them via `Bundle.main.url(forResource:withExtension:)`.
 
   3. **Create a `PBXGroup`** for `Resources/Kokoro/voices/` (children: all `.npy` refs) and a parent group for `Resources/Kokoro/` (children: voices group, `kokoro-v1_0.mlpackage`, two LICENSE refs). Name = `Kokoro`, path = `Resources/Kokoro`, sourceTree = `"<group>"`.
 
@@ -257,12 +261,13 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
 - [ ] **Step 2.6:** Verify bundle inclusion.
 
-  Build for iOS Simulator (Cmd+B), then:
+  Build for iOS Simulator (Cmd+B), then (replace `kokoro-v1_0.mlpackage` with the actual filename recorded in D0.3 if different):
   ```bash
   BUILT=$(find ~/Library/Developer/Xcode/DerivedData -name "Keepur.app" -path "*Debug-iphonesimulator*" | head -1)
-  ls "$BUILT/kokoro-v1_0.mlpackage" && ls "$BUILT/voices/" | head
+  [ -d "$BUILT/kokoro-v1_0.mlpackage" ] && echo "OK: mlpackage bundled as directory"
+  ls "$BUILT/voices/" | head
   ```
-  Expected: `.mlpackage` directory exists in the app bundle, `voices/` directory contains the curated `.npy` files.
+  Expected: prints `OK: mlpackage bundled as directory` and the `voices/` directory listing contains the curated `.npy` files.
 
 - [ ] **Step 2.7:** Commit.
 
@@ -292,13 +297,23 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   /// `SpeechManager` which dispatches based on the voice ID's prefix.
   @MainActor
   protocol TTSEngine: AnyObject {
+      /// Callback fired when the engine begins/ends an utterance. SpeechManager
+      /// hooks this to mirror state into its `@Published var isSpeaking`.
+      var onIsSpeakingChange: ((Bool) -> Void)? { get set }
+
       /// Speak `text` using `voiceId`. Throws if synthesis fails — the caller
-      /// (SpeechManager) handles fallback. Implementations must update their
-      /// own internal isSpeaking state.
+      /// (SpeechManager) handles fallback.
       func speak(text: String, voiceId: String) async throws
 
       /// Stop any in-flight speech immediately.
       func stop()
+
+      /// Optional pre-load. SystemTTSEngine no-ops; KokoroEngine loads weights.
+      func warmUp() async throws
+  }
+
+  extension TTSEngine {
+      func warmUp() async throws { /* default: no-op */ }
   }
 
   /// Wraps `AVSpeechSynthesizer` behind the `TTSEngine` protocol. This is what
@@ -308,6 +323,17 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
       var onIsSpeakingChange: ((Bool) -> Void)?
 
       private let synthesizer = AVSpeechSynthesizer()
+
+      /// Best English system voice — installed Premium → Enhanced → default.
+      /// Static so SpeechManager can call it without owning an instance, and
+      /// so it remains available when Kokoro fallback paths fire.
+      static func bestEnglishVoice() -> AVSpeechSynthesisVoice? {
+          let voices = AVSpeechSynthesisVoice.speechVoices()
+              .filter { $0.language.lowercased().hasPrefix("en") }
+          if let premium = voices.first(where: { $0.quality == .premium }) { return premium }
+          if let enhanced = voices.first(where: { $0.quality == .enhanced }) { return enhanced }
+          return AVSpeechSynthesisVoice(language: "en-US")
+      }
 
       override init() {
           super.init()
@@ -348,11 +374,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
       }
 
       private func bestSystemVoice() -> AVSpeechSynthesisVoice? {
-          let voices = AVSpeechSynthesisVoice.speechVoices()
-              .filter { $0.language.lowercased().hasPrefix("en") }
-          if let premium = voices.first(where: { $0.quality == .premium }) { return premium }
-          if let enhanced = voices.first(where: { $0.quality == .enhanced }) { return enhanced }
-          return AVSpeechSynthesisVoice(language: "en-US")
+          Self.bestEnglishVoice()
       }
 
       // MARK: - AVSpeechSynthesizerDelegate
@@ -519,7 +541,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 - [ ] **Step 4.4:** Run tests.
 
   Run: `xcodebuild test -project Keepur.xcodeproj -scheme Keepur -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:KeeperTests/KokoroVoiceCatalogTests`
-  Expected: 7 tests passed.
+  Expected: 7 tests passed (`testCatalogIsNonEmpty`, `testEveryEntryHasRequiredFields`, `testIDsAreUnique`, `testDefaultVoiceIsInCatalog`, `testIsKokoroIdRecognizesPrefix`, `testRawIdStripsPrefix`, `testEveryCatalogVoiceHasBundledNpy`).
 
   Note: `testEveryCatalogVoiceHasBundledNpy` will fail until Task 2's `.npy` files are in the bundle — that's why Task 2 runs first.
 
@@ -562,6 +584,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
       private var tts: KokoroTTS?
       private var voiceCache: [String: /* MLXArray */ AnyObject] = [:]
       private var player: AVAudioPlayer?
+      private var playerDelegate: AudioPlayerDelegateBridge?
       private var loadTask: Task<KokoroTTS, Error>?
 
       // MARK: - Lifecycle
@@ -651,12 +674,14 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
           #endif
 
           let p = try AVAudioPlayer(contentsOf: url)
-          p.delegate = AudioPlayerDelegateBridge { [weak self] in
+          let bridge = AudioPlayerDelegateBridge { [weak self] in
               Task { @MainActor in self?.onIsSpeakingChange?(false) }
           }
-          // Hold the delegate alive — AVAudioPlayer.delegate is a weak ref.
-          objc_setAssociatedObject(p, &AudioPlayerDelegateBridge.assocKey, p.delegate, .OBJC_ASSOCIATION_RETAIN)
-          player = p
+          // AVAudioPlayer.delegate is a weak ref — store the bridge on `self`
+          // so it lives at least as long as the player.
+          self.playerDelegate = bridge
+          p.delegate = bridge
+          self.player = p
           onIsSpeakingChange?(true)
           p.play()
       }
@@ -674,7 +699,6 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   // MARK: - AVAudioPlayer delegate bridge
 
   private final class AudioPlayerDelegateBridge: NSObject, AVAudioPlayerDelegate {
-      static var assocKey: UInt8 = 0
       let onFinish: () -> Void
       init(onFinish: @escaping () -> Void) {
           self.onFinish = onFinish
@@ -717,8 +741,8 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
   Replace the entire content of `Managers/SpeechManager.swift`. The recording / SFSpeechRecognizer half is unchanged — only the TTS half gets rewritten. The full updated file is included in the implementer's working copy of this plan; the diff outline:
 
-  - Add stored `private let kokoroEngine: KokoroEngine` and `private let systemEngine: SystemTTSEngine` properties.
-  - Add an `init(kokoro: KokoroEngine? = nil, system: SystemTTSEngine? = nil)` overload to support test injection. Default args produce real engines.
+  - Add stored `private let kokoroEngine: any TTSEngine` and `private let systemEngine: any TTSEngine` properties (protocol-typed so tests can inject mocks).
+  - Add an `init(kokoroEngine: (any TTSEngine)? = nil, systemEngine: (any TTSEngine)? = nil)` overload. Defaults instantiate the real `KokoroEngine()` / `SystemTTSEngine()`.
   - Hook `onIsSpeakingChange` callbacks on both engines to mirror state into `@Published var isSpeaking`.
   - Update the `selectedVoiceId` initial value: if `UserDefaults` has no value, default to `KokoroVoiceCatalog.defaultVoiceId`.
   - Rewrite `speak(_ text: String, agentId: String? = nil)` to:
@@ -728,7 +752,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   - Rewrite `speak(_ text: String, voice: AVSpeechSynthesisVoice)` to delegate to `systemEngine.speak(text:voiceId: voice.identifier)`. (Used by preview rows for system voices.)
   - Add `speak(_ text: String, kokoroVoiceId: String)` for preview rows in the new picker section.
   - Add `warmKokoroIfNeeded()` — calls `kokoroEngine.warmUp()` only if the currently selected voice (global or any per-agent) is a Kokoro ID. Fire-and-forget Task; swallows errors.
-  - Replace `bestVoice()` with a delegation to `systemEngine`'s internal best voice (extract that helper into `TTSEngine.swift` as a static helper, or call through to `SystemTTSEngine`).
+  - Replace `bestVoice()` with `SystemTTSEngine.bestEnglishVoice()` (already promoted to `static` in Task 3).
   - Drop the synthesizer / delegate code since it now lives in `SystemTTSEngine`.
 
   Implementation outline (preserves existing recording code; replaces only the TTS half):
@@ -760,10 +784,10 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
           didSet { UserDefaults.standard.set(agentVoiceIds, forKey: "agentVoiceIds") }
       }
 
-      private let kokoroEngine: KokoroEngine
-      private let systemEngine: SystemTTSEngine
+      private let kokoroEngine: any TTSEngine
+      private let systemEngine: any TTSEngine
 
-      init(kokoroEngine: KokoroEngine? = nil, systemEngine: SystemTTSEngine? = nil) {
+      init(kokoroEngine: (any TTSEngine)? = nil, systemEngine: (any TTSEngine)? = nil) {
           self.kokoroEngine = kokoroEngine ?? KokoroEngine()
           self.systemEngine = systemEngine ?? SystemTTSEngine()
 
@@ -821,7 +845,8 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
       }
 
       /// Fire-and-forget. Warms the Kokoro engine if the selected voice (global
-      /// or any per-agent override) is in the Kokoro namespace.
+      /// or any per-agent override) is in the Kokoro namespace. Calls through
+      /// the TTSEngine protocol so test mocks satisfy it via the no-op default.
       func warmKokoroIfNeeded() {
           let usesKokoro = (selectedVoiceId.map(KokoroVoiceCatalog.isKokoroId) ?? false)
               || agentVoiceIds.values.contains(where: KokoroVoiceCatalog.isKokoroId)
@@ -858,7 +883,6 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   }
   ```
 
-  Promote `bestSystemVoice()` → `SystemTTSEngine.bestEnglishVoice()` as a `static func` so SpeechManager can call it without owning an instance.
 
 - [ ] **Step 6.2:** Build and run the existing test suite to confirm no regression.
 
@@ -879,15 +903,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 **Files:**
 - Create: `KeeperTests/SpeechManagerDispatchTests.swift`
 
-- [ ] **Step 7.1:** Add dispatch and fallback tests using injected mocks.
-
-  Note: `KokoroEngine` and `SystemTTSEngine` are concrete types, not the protocol, in `SpeechManager`'s init. To make them mockable, switch the init signature to accept `TTSEngine` instances directly (still defaulting to the real types). Adjust Task 6's init signature accordingly:
-
-  ```swift
-  init(kokoroEngine: TTSEngine? = nil, systemEngine: TTSEngine? = nil)
-  ```
-
-  (And cast/store as `any TTSEngine`.) This keeps the production behavior identical and lets tests pass mock instances.
+- [ ] **Step 7.1:** Add dispatch and fallback tests using mocks injected via the protocol-typed init shipped in Task 6.
 
   Create `KeeperTests/SpeechManagerDispatchTests.swift`:
 
@@ -897,6 +913,20 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
   @MainActor
   final class SpeechManagerDispatchTests: XCTestCase {
+      override func setUp() {
+          super.setUp()
+          // Isolate from any prior selectedVoiceId set by previous tests in the
+          // same simulator process. Each test sets its own state explicitly.
+          UserDefaults.standard.removeObject(forKey: "selectedVoiceId")
+          UserDefaults.standard.removeObject(forKey: "agentVoiceIds")
+      }
+
+      override func tearDown() {
+          UserDefaults.standard.removeObject(forKey: "selectedVoiceId")
+          UserDefaults.standard.removeObject(forKey: "agentVoiceIds")
+          super.tearDown()
+      }
+
       func testKokoroIdRoutesToKokoroEngine() async throws {
           let kokoro = MockTTSEngine()
           let system = MockTTSEngine()
@@ -940,9 +970,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
       }
 
       func testFreshInstallDefaultsToKokoro() async throws {
-          // Wipe any prior selectedVoiceId set by another test in the same suite.
-          UserDefaults.standard.removeObject(forKey: "selectedVoiceId")
-
+          // setUp already cleared selectedVoiceId.
           let mgr = SpeechManager(kokoroEngine: MockTTSEngine(), systemEngine: MockTTSEngine())
 
           XCTAssertEqual(mgr.selectedVoiceId, KokoroVoiceCatalog.defaultVoiceId)
@@ -950,7 +978,6 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
       func testExistingUserSelectionPreserved() async throws {
           UserDefaults.standard.set("com.apple.voice.compact.en-US.Samantha", forKey: "selectedVoiceId")
-          defer { UserDefaults.standard.removeObject(forKey: "selectedVoiceId") }
 
           let mgr = SpeechManager(kokoroEngine: MockTTSEngine(), systemEngine: MockTTSEngine())
 
