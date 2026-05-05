@@ -429,9 +429,9 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
 
   /// Curated English Kokoro voices exposed in the picker. Source of truth — both
   /// the picker UI and the engine pull from this list. Adding a voice requires:
-  ///   1. Bundle the `.npy` file under `Resources/Kokoro/voices/<rawId>.npy`
-  ///   2. Add it to `fileSystemSynchronizedGroups`-adjacent build phase (see plan Task 2)
-  ///   3. Add an entry below
+  ///   1. Drop the `.npy` file into `Resources/Kokoro/voices/<rawId>.npy` — the
+  ///      blue-folder reference picks it up automatically on next build.
+  ///   2. Add an entry below.
   ///
   /// IDs include the `kokoro:` prefix so they can be stored alongside
   /// AVSpeechSynthesisVoice identifiers in UserDefaults.
@@ -729,9 +729,18 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   - **Voice load:** the test app's pattern for converting an `.npy` file to whatever the `voice:` parameter expects.
   - **Audio bridge:** the actual return type of `generateAudio(...)` and how to write it to a 24 kHz WAV file. If the package returns an `AVAudioPCMBuffer`, prefer playing it directly via `AVAudioEngine` + `AVAudioPlayerNode` and skip the temp file.
 
-- [ ] **Step 5.3:** Build and confirm clean compile.
+- [ ] **Step 5.3:** Verify TODOs are fully resolved before commit. `BUILD SUCCEEDED` doesn't catch `fatalError` placeholders — they only fire at runtime.
 
-  Run: `xcodebuild -project Keepur.xcodeproj -scheme Keepur -destination 'platform=iOS Simulator,name=iPhone 16' build`
+  Run:
+  ```bash
+  ! grep -nE 'TODO\[D0\.1\]|fatalError\(' Managers/KokoroEngine.swift
+  ```
+  Expected: exit code 0 (no matches found). If any remain, return to Step 5.2.
+
+  Then build:
+  ```bash
+  xcodebuild -project Keepur.xcodeproj -scheme Keepur -destination 'platform=iOS Simulator,name=iPhone 16' build
+  ```
   Expected: BUILD SUCCEEDED.
 
 - [ ] **Step 5.4:** Commit.
@@ -758,7 +767,7 @@ Output of Task 0: a short note appended to this plan (or a comment in the releva
   - Update the `selectedVoiceId` initial value: if `UserDefaults` has no value, default to `KokoroVoiceCatalog.defaultVoiceId`.
   - Rewrite `speak(_ text: String, agentId: String? = nil)` to:
     1. Resolve the voice ID (per-agent override falls back to global).
-    2. If `KokoroVoiceCatalog.isKokoroId(id)`: try `kokoroEngine.speak(...)`; on throw, log + delegate to `systemEngine.speak(text:voiceId:)` using `bestSystemVoice().identifier`.
+    2. If `KokoroVoiceCatalog.isKokoroId(id)`: try `kokoroEngine.speak(...)`; on throw, log + delegate to `systemEngine.speak(text:voiceId:)` using `SystemTTSEngine.bestEnglishVoice()?.identifier`.
     3. Else: `systemEngine.speak(text:voiceId:)` directly.
   - Rewrite `speak(_ text: String, voice: AVSpeechSynthesisVoice)` to delegate to `systemEngine.speak(text:voiceId: voice.identifier)`. (Used by preview rows for system voices.)
   - Add `speak(_ text: String, kokoroVoiceId: String)` for preview rows in the new picker section.
