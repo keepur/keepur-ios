@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class CapabilityManager: ObservableObject {
     @Published private(set) var hives: [String] = []
+    @Published private(set) var role: String?
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: String?
 
@@ -41,10 +42,15 @@ final class CapabilityManager: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let all = try await APIManager.fetchCapabilities()
+            async let capsTask = APIManager.fetchCapabilities()
+            async let meTask = APIManager.fetchMe()
+            let (all, me) = try await (capsTask, meTask)
+
             print("[Capabilities] raw: \(all)")
             let filtered = all.filter { $0 != "beekeeper" }.sorted()
             hives = filtered
+            role = me.role
+            KeychainManager.deviceName = me.name
             lastError = nil
             reconcileSelectedHive()
         } catch APIManager.APIError.unauthorized {
@@ -69,5 +75,10 @@ final class CapabilityManager: ObservableObject {
     func _setHivesForTesting(_ values: [String]) {
         hives = values.filter { $0 != "beekeeper" }.sorted()
         reconcileSelectedHive()
+    }
+
+    /// Test seam: inject role without hitting the network.
+    func _setRoleForTesting(_ value: String?) {
+        role = value
     }
 }

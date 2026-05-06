@@ -70,9 +70,11 @@ struct ContentView: View {
     @ViewBuilder
     private var tabView: some View {
         TabView {
-            Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
-                NavigationStack {
-                    BeekeeperRootView()
+            if capabilityManager.role == "admin" {
+                Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
+                    NavigationStack {
+                        BeekeeperRootView()
+                    }
                 }
             }
 
@@ -89,8 +91,10 @@ struct ContentView: View {
                 }
             }
 
-            Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
-                SessionListView(viewModel: chatViewModel)
+            if capabilityManager.role == "admin" {
+                Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
+                    SessionListView(viewModel: chatViewModel)
+                }
             }
 
             Tab("Settings", systemImage: KeepurTheme.Symbol.settings) {
@@ -98,16 +102,7 @@ struct ContentView: View {
             }
         }
         .tint(KeepurTheme.Color.honey500)
-        .task {
-            do {
-                _ = try await APIManager.fetchMe()
-            } catch APIManager.APIError.unauthorized {
-                chatViewModel.unpair()
-            } catch BeekeeperConfigError.hostNotConfigured {
-                chatViewModel.unpair()
-            } catch {
-                // Network error — don't log out
-            }
-        }
+        // .task block removed — CapabilityManager.refresh() now performs the
+        // fetchMe call and handles unauthorized via onAuthFailure (KPR-186).
     }
 }

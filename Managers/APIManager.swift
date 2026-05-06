@@ -70,7 +70,15 @@ enum APIManager {
         return caps
     }
 
-    static func fetchMe() async throws -> String? {
+    struct MeResponse {
+        let deviceId: String
+        let label: String
+        let name: String
+        let user: String
+        let role: String
+    }
+
+    static func fetchMe() async throws -> MeResponse {
         guard let token = KeychainManager.token else { throw APIError.unauthorized }
 
         let baseURL = try BeekeeperConfig.httpsURL()
@@ -84,10 +92,14 @@ enum APIManager {
             throw APIError.unauthorized
         }
 
-        let name = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["name"] as? String
-        if let name {
-            KeychainManager.deviceName = name
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw APIError.requestFailed
         }
-        return name
+        let deviceId = json["deviceId"] as? String ?? ""
+        let label = json["label"] as? String ?? ""
+        let name = json["name"] as? String ?? label
+        let user = json["user"] as? String ?? ""
+        let role = json["role"] as? String ?? "member"
+        return MeResponse(deviceId: deviceId, label: label, name: name, user: user, role: role)
     }
 }

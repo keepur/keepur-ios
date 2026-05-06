@@ -66,4 +66,30 @@ final class CapabilityManagerTests: XCTestCase {
         manager._setHivesForTesting(["beekeeper"])
         XCTAssertNil(manager.selectedHive)
     }
+
+    // MARK: - Role state (KPR-186)
+
+    func testRoleStartsNil() {
+        let manager = CapabilityManager()
+        XCTAssertNil(manager.role)
+    }
+
+    func testRoleAdmin() {
+        let manager = CapabilityManager()
+        manager._setRoleForTesting("admin")
+        XCTAssertEqual(manager.role, "admin")
+    }
+
+    func testRoleMember() {
+        let manager = CapabilityManager()
+        manager._setRoleForTesting("member")
+        XCTAssertEqual(manager.role, "member")
+    }
+
+    func testRoleCanBeReset() {
+        let manager = CapabilityManager()
+        manager._setRoleForTesting("admin")
+        manager._setRoleForTesting(nil)
+        XCTAssertNil(manager.role)
+    }
 }
