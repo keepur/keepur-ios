@@ -6,6 +6,7 @@ struct ServerSession {
     let sessionId: String
     let path: String
     let state: String
+    let mode: String
 }
 
 struct BrowseEntry {
@@ -27,6 +28,7 @@ enum WSOutgoing {
     case image(sessionId: String, data: String, filename: String)
     case file(sessionId: String, data: String, filename: String, mimetype: String)
     case newSession(path: String)
+    case newSessionConcierge
     case clearSession(sessionId: String)
     case listSessions
     case browse(path: String? = nil)
@@ -48,6 +50,8 @@ enum WSOutgoing {
             dict = ["type": "file", "sessionId": sessionId, "data": data, "filename": filename, "mimetype": mimetype]
         case .newSession(let path):
             dict = ["type": "new_session", "path": path]
+        case .newSessionConcierge:
+            dict = ["type": "new_session", "mode": "concierge"]
         case .clearSession(let sessionId):
             dict = ["type": "clear_session", "sessionId": sessionId]
         case .listSessions:
@@ -122,7 +126,9 @@ enum WSIncoming {
                 guard let sessionId = dict["sessionId"] as? String,
                       let path = dict["path"] as? String,
                       let state = dict["state"] as? String else { return nil }
-                return ServerSession(sessionId: sessionId, path: path, state: state)
+                // Forward-compat: older daemons omit `mode`; default to "sessions".
+                let mode = (dict["mode"] as? String) ?? "sessions"
+                return ServerSession(sessionId: sessionId, path: path, state: state, mode: mode)
             }
             return .sessionList(sessions: sessions)
         case "session_cleared":
