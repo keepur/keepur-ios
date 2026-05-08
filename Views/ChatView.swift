@@ -36,6 +36,11 @@ struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
     let navigationTitle: String
+    /// When false, the toolbar back chevron is suppressed and `backAction`
+    /// returns nil. Use false when ChatView is the root of a Tab's
+    /// NavigationStack (e.g., the Beekeeper concierge tab) — there is no
+    /// parent destination to dismiss to.
+    let showsBackButton: Bool
     @Environment(\.dismiss) private var dismiss
     // Sort-only @Query + in-memory filter. Predicate-based @Query (capturing sid
     // via #Predicate { $0.sessionId == sid }) infinitely re-fetches on iOS 26 —
@@ -57,10 +62,11 @@ struct ChatView: View {
     // Combined with ChatViewModel publishing on each WS frame, that pinned the
     // main thread and made taps unresponsive (sample showed body re-running
     // ~200×/s). Title updates on next mount if the session is renamed.
-    init(viewModel: ChatViewModel, sessionId: String, navigationTitle: String) {
+    init(viewModel: ChatViewModel, sessionId: String, navigationTitle: String, showsBackButton: Bool = true) {
         self.viewModel = viewModel
         self.sessionId = sessionId
         self.navigationTitle = navigationTitle
+        self.showsBackButton = showsBackButton
     }
 
     var body: some View {
@@ -194,6 +200,7 @@ struct ChatView: View {
     private var headerStatusDate: Date? { messages.last?.timestamp }
 
     private var backAction: (() -> Void)? {
+        guard showsBackButton else { return nil }
         #if os(iOS)
         return { dismiss() }
         #else
