@@ -14,10 +14,13 @@ struct BeekeeperRootView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(KeepurTheme.Color.bgPageDynamic)
             case .ready(let sessionId, _):
+                // showsBackButton: false — concierge ChatView is the root of
+                // the Beekeeper tab's NavigationStack; no parent to pop to.
                 ChatView(
                     viewModel: viewModel,
                     sessionId: sessionId,
-                    navigationTitle: "Concierge"
+                    navigationTitle: "Concierge",
+                    showsBackButton: false
                 )
             case .error(let message):
                 ContentUnavailableView {
