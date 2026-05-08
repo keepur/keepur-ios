@@ -35,31 +35,32 @@ extension URL {
 struct ChatView: View {
     @ObservedObject var viewModel: ChatViewModel
     let sessionId: String
+    let navigationTitle: String
     @Environment(\.dismiss) private var dismiss
-    @Query private var messages: [Message]
-    @Query private var matchingSessions: [Session]
+    // Sort-only @Query + in-memory filter. Predicate-based @Query (capturing sid
+    // via #Predicate { $0.sessionId == sid }) infinitely re-fetches on iOS 26 —
+    // body fired ~500×/s and pinned the main thread, breaking taps and
+    // triggering 0x8BADF00D scene-update watchdogs. Sort-only @Query is stable;
+    // the per-render filter is O(N) over all messages but cheap in practice.
+    @Query(sort: \Message.timestamp) private var allMessages: [Message]
+    private var messages: [Message] {
+        allMessages.filter { $0.sessionId == sessionId }
+    }
     @State private var autoReadAloud: Bool = UserDefaults.standard.bool(forKey: "autoReadAloud") {
         didSet { UserDefaults.standard.set(autoReadAloud, forKey: "autoReadAloud") }
     }
 
-    init(viewModel: ChatViewModel, sessionId: String) {
+    // navigationTitle is supplied by the caller so the chat body never has to
+    // touch SwiftData to render its title. A previous matchingSessions @Query
+    // re-read on every body call (twice per render — .navigationTitle and the
+    // toolbar TitleBlock), and each read drove a synchronous SQLite fetch.
+    // Combined with ChatViewModel publishing on each WS frame, that pinned the
+    // main thread and made taps unresponsive (sample showed body re-running
+    // ~200×/s). Title updates on next mount if the session is renamed.
+    init(viewModel: ChatViewModel, sessionId: String, navigationTitle: String) {
         self.viewModel = viewModel
         self.sessionId = sessionId
-        let sid = sessionId
-        let msgDescriptor = FetchDescriptor<Message>(
-            predicate: #Predicate { $0.sessionId == sid },
-            sortBy: [SortDescriptor(\.timestamp)]
-        )
-        _messages = Query(msgDescriptor)
-        var sessDescriptor = FetchDescriptor<Session>(
-            predicate: #Predicate { $0.id == sid }
-        )
-        sessDescriptor.fetchLimit = 1
-        _matchingSessions = Query(sessDescriptor)
-    }
-
-    private var navigationTitle: String {
-        matchingSessions.first?.displayName ?? "Keepur"
+        self.navigationTitle = navigationTitle
     }
 
     var body: some View {

@@ -155,8 +155,13 @@ struct SessionListView: View {
                 .toolbar { sessionToolbar }
                 .overlay { sessionOverlay }
         } detail: {
-            if let selectedSessionId {
-                ChatView(viewModel: viewModel, sessionId: selectedSessionId)
+            if let selectedSessionId,
+               let session = sessions.first(where: { $0.id == selectedSessionId }) {
+                ChatView(
+                    viewModel: viewModel,
+                    sessionId: selectedSessionId,
+                    navigationTitle: session.displayName
+                )
             } else {
                 ContentUnavailableView {
                     Label("No Session Selected", systemImage: "bubble.left")
@@ -229,8 +234,13 @@ struct SessionListView: View {
                         set: { if !$0 { selectedSessionId = nil } }
                     )
                 ) {
-                    if let sessionId = selectedSessionId {
-                        ChatView(viewModel: viewModel, sessionId: sessionId)
+                    if let sessionId = selectedSessionId,
+                       let session = sessions.first(where: { $0.id == sessionId }) {
+                        ChatView(
+                            viewModel: viewModel,
+                            sessionId: sessionId,
+                            navigationTitle: session.displayName
+                        )
                     }
                 }
         }
