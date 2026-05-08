@@ -19,7 +19,7 @@ struct BeekeeperRootView: View {
                 ChatView(
                     viewModel: viewModel,
                     sessionId: sessionId,
-                    navigationTitle: "Concierge",
+                    navigationTitle: "Beekeeper",
                     showsBackButton: false
                 )
             case .error(let message):

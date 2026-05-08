@@ -93,6 +93,12 @@ struct ChatView: View {
                     .padding(.horizontal, KeepurTheme.Spacing.s4)
                     .padding(.vertical, KeepurTheme.Spacing.s3)
                 }
+                #if os(iOS)
+                // Swipe down on the message list to dismiss the keyboard —
+                // matches Messages/WhatsApp UX. `.interactively` tracks the
+                // gesture; `.immediately` would fire on first scroll touch.
+                .scrollDismissesKeyboard(.interactively)
+                #endif
                 .onAppear {
                     if let lastId = messages.last?.id {
                         proxy.scrollTo(lastId, anchor: .bottom)
