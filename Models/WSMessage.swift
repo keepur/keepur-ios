@@ -83,7 +83,7 @@ enum WSIncoming {
     case message(text: String, sessionId: String, final: Bool)
     case toolApproval(toolUseId: String, tool: String, input: String, sessionId: String?)
     case status(state: String, sessionId: String?, toolName: String?)
-    case sessionInfo(sessionId: String, path: String)
+    case sessionInfo(sessionId: String, path: String, mode: String)
     case sessionList(sessions: [ServerSession])
     case sessionCleared(sessionId: String)
     case browseResult(path: String, entries: [BrowseEntry])
@@ -119,7 +119,9 @@ enum WSIncoming {
         case "session_info":
             guard let sessionId = json["sessionId"] as? String,
                   let path = json["path"] as? String else { return nil }
-            return .sessionInfo(sessionId: sessionId, path: path)
+            // Forward-compat: pre-v1.6.1 daemons omit `mode`; default to "sessions".
+            let mode = (json["mode"] as? String) ?? "sessions"
+            return .sessionInfo(sessionId: sessionId, path: path, mode: mode)
         case "session_list":
             guard let sessionsArray = json["sessions"] as? [[String: Any]] else { return nil }
             let sessions = sessionsArray.compactMap { dict -> ServerSession? in

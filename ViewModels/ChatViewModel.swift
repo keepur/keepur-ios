@@ -215,7 +215,27 @@ final class ChatViewModel: ObservableObject {
                 }
             }
 
-        case .sessionInfo(let sessionId, let path):
+        case .sessionInfo(let sessionId, let path, let mode):
+            // Concierge slots (KPR-204): don't add to the SwiftData Session table
+            // and don't add to workspace history. Concierge is owned by
+            // ConciergeSessionStore + BeekeeperRootView; it has its own dedicated
+            // tab and shouldn't appear in the Sessions list. Detect via either
+            // wire `mode == "concierge"` (correct path for new slots) OR the
+            // locally-cached concierge id (fallback for slots persisted server-
+            // side before KPR-203 — those report `mode: "sessions"` because
+            // restoreSessions defaults missing-mode to "sessions").
+            // We still update currentSessionId/currentPath/sessionStatuses so
+            // ConciergeViewModel can detect arrival via its Combine observation
+            // and ChatView's status indicator works inside the concierge tab.
+            let isConcierge = mode == "concierge"
+                || sessionId == ConciergeSessionStore.cachedSessionId
+            if isConcierge {
+                currentSessionId = sessionId
+                currentPath = path
+                sessionStatuses[sessionId] = "idle"
+                break
+            }
+
             // If a /clear handoff for this path is pending (HIVE-113), perform the
             // atomic swap: insert the new Session *first* so the sidebar @Query
             // always has at least one row for this slot, flip currentSessionId so
@@ -253,8 +273,30 @@ final class ChatViewModel: ObservableObject {
             saveWorkspace(path: path, context: context)
 
         case .sessionList(let sessions):
+            // Keep the full list on serverSessions — ConciergeViewModel filters
+            // by mode == "concierge" against this. For the SwiftData Session
+            // table (which drives the Sessions tab), exclude concierge rows.
+            // Detect via wire mode OR the cached concierge id (fallback for
+            // server-side mode classification bugs, e.g. KPR-203 slots persisted
+            // by v1.6.0 that restored with mode defaulted to "sessions").
             serverSessions = sessions
-            syncSessions(serverSessions: sessions, context: context)
+            var conciergeIds = Set(sessions.filter { $0.mode == "concierge" }.map(\.sessionId))
+            if let cachedConciergeId = ConciergeSessionStore.cachedSessionId {
+                conciergeIds.insert(cachedConciergeId)
+            }
+            if !conciergeIds.isEmpty {
+                let descriptor = FetchDescriptor<Session>()
+                if let localRows = try? context.fetch(descriptor) {
+                    for row in localRows where conciergeIds.contains(row.id) {
+                        context.delete(row)
+                    }
+                    try? context.save()
+                }
+            }
+            let sessionsTabOnly = sessions.filter { row in
+                row.mode == "sessions" && !conciergeIds.contains(row.sessionId)
+            }
+            syncSessions(serverSessions: sessionsTabOnly, context: context)
 
         case .sessionCleared(let sessionId):
             deleteLocalSession(sessionId: sessionId)

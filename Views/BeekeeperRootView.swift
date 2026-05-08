@@ -1,8 +1,10 @@
 import SwiftUI
+import SwiftData
 import Combine
 
 struct BeekeeperRootView: View {
     @ObservedObject var viewModel: ChatViewModel
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var store = ConciergeSessionStore()
     @StateObject private var concierge = ConciergeViewModel()
 
@@ -42,8 +44,26 @@ struct BeekeeperRootView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task {
+            // KPR-204 cleanup: pre-fix iOS builds inserted a SwiftData Session
+            // row for the concierge slot (server didn't emit `mode` on
+            // session_info, so the handler couldn't tell). Clear those vestigial
+            // rows once on the cached id; new concierge sessions skip the
+            // insert at the source. Safe to run every appearance — idempotent
+            // (no-op if the row is already gone).
+            cleanupVestigialConciergeRow()
             concierge.start(viewModel: viewModel, store: store)
         }
+    }
+
+    private func cleanupVestigialConciergeRow() {
+        guard let cached = store.cachedSession else { return }
+        let cachedId = cached.sessionId
+        let descriptor = FetchDescriptor<Session>(
+            predicate: #Predicate { $0.id == cachedId }
+        )
+        guard let row = try? modelContext.fetch(descriptor).first else { return }
+        modelContext.delete(row)
+        try? modelContext.save()
     }
 }
 
