@@ -6,8 +6,18 @@ import Combine
 /// `concierge.path`.
 @MainActor
 final class ConciergeSessionStore: ObservableObject {
-    private static let sessionIdKey = "concierge.sessionId"
-    private static let pathKey = "concierge.path"
+    static let sessionIdKey = "concierge.sessionId"
+    static let pathKey = "concierge.path"
+
+    /// Static read of just the cached sessionId. Lets `ChatViewModel` (which
+    /// doesn't hold a `ConciergeSessionStore` instance) cross-reference
+    /// incoming `session_info` / `session_list` rows against the locally-known
+    /// concierge slot, even when the server reports the row with the wrong
+    /// `mode` (e.g. slots created pre-KPR-203 whose mode persisted as
+    /// "sessions" via the missing-mode → "sessions" default in restoreSessions).
+    static var cachedSessionId: String? {
+        UserDefaults.standard.string(forKey: sessionIdKey)
+    }
 
     private let defaults: UserDefaults
 
