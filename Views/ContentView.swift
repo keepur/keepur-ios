@@ -86,7 +86,7 @@ struct ContentView: View {
         TabView {
             Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
                 NavigationStack {
-                    BeekeeperRootView()
+                    BeekeeperRootView(viewModel: chatViewModel)
                 }
             }
 
