@@ -48,10 +48,16 @@ final class CapabilityManager: ObservableObject {
 
             print("[Capabilities] raw: \(all)")
             let filtered = all.filter { $0 != "beekeeper" }.sorted()
-            hives = filtered
-            role = me.role
-            KeychainManager.deviceName = me.name
-            lastError = nil
+            // Guard each assignment so identical-value writes from a re-fetch
+            // don't republish through the SwiftUI view graph. KPR-186 follow-up:
+            // an unchanged role still triggered Tab-structure invalidation that
+            // contributed to scene-update watchdog kills.
+            if hives != filtered { hives = filtered }
+            if role != me.role { role = me.role }
+            if KeychainManager.deviceName != me.name {
+                KeychainManager.deviceName = me.name
+            }
+            if lastError != nil { lastError = nil }
             reconcileSelectedHive()
         } catch APIManager.APIError.unauthorized {
             lastError = "unauthorized"

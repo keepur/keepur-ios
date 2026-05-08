@@ -69,32 +69,33 @@ struct ContentView: View {
 
     @ViewBuilder
     private var tabView: some View {
+        // Split by role so each branch presents a stable Tab structure.
+        // Wrapping individual `Tab` items in `if` made the TabView's tab list
+        // depend on every CapabilityManager publish, which churned the view
+        // graph during scene transitions and triggered scene-update watchdog
+        // kills (0x8BADF00D). KPR-186 follow-up.
+        if capabilityManager.role == "admin" {
+            adminTabs
+        } else {
+            memberTabs
+        }
+    }
+
+    @ViewBuilder
+    private var adminTabs: some View {
         TabView {
-            if capabilityManager.role == "admin" {
-                Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
-                    NavigationStack {
-                        BeekeeperRootView()
-                    }
+            Tab("Beekeeper", systemImage: KeepurTheme.Symbol.bolt) {
+                NavigationStack {
+                    BeekeeperRootView()
                 }
             }
 
             Tab("Hive", systemImage: "hexagon.fill") {
-                if capabilityManager.hives.count == 1 {
-                    TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
-                } else {
-                    NavigationStack {
-                        HivesGridView(
-                            capabilityManager: capabilityManager,
-                            teamViewModel: teamViewModel
-                        )
-                    }
-                }
+                hiveTabBody
             }
 
-            if capabilityManager.role == "admin" {
-                Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
-                    SessionListView(viewModel: chatViewModel)
-                }
+            Tab("Sessions", systemImage: KeepurTheme.Symbol.chat) {
+                SessionListView(viewModel: chatViewModel)
             }
 
             Tab("Settings", systemImage: KeepurTheme.Symbol.settings) {
@@ -102,7 +103,33 @@ struct ContentView: View {
             }
         }
         .tint(KeepurTheme.Color.honey500)
-        // .task block removed — CapabilityManager.refresh() now performs the
-        // fetchMe call and handles unauthorized via onAuthFailure (KPR-186).
+    }
+
+    @ViewBuilder
+    private var memberTabs: some View {
+        TabView {
+            Tab("Hive", systemImage: "hexagon.fill") {
+                hiveTabBody
+            }
+
+            Tab("Settings", systemImage: KeepurTheme.Symbol.settings) {
+                SettingsView(viewModel: chatViewModel)
+            }
+        }
+        .tint(KeepurTheme.Color.honey500)
+    }
+
+    @ViewBuilder
+    private var hiveTabBody: some View {
+        if capabilityManager.hives.count == 1 {
+            TeamRootView(viewModel: teamViewModel, capabilityManager: capabilityManager)
+        } else {
+            NavigationStack {
+                HivesGridView(
+                    capabilityManager: capabilityManager,
+                    teamViewModel: teamViewModel
+                )
+            }
+        }
     }
 }
