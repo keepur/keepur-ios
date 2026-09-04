@@ -129,7 +129,7 @@ final class WorkspaceBrowsingTests: XCTestCase {
             "path": "/workspace/project"
         ]
         let data = try! JSONSerialization.data(withJSONObject: json)
-        guard case .sessionInfo(let sessionId, let path) = WSIncoming.decode(from: data) else {
+        guard case .sessionInfo(let sessionId, let path, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected sessionInfo"); return
         }
         XCTAssertEqual(sessionId, "sess-789")
