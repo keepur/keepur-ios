@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-04
 **Status**: Approved (user review 2026-09-04; spec-review clean on round 4)
-**Ticket**: TBD (Keepur Linear org, KPR-*; the connected Linear workspace is dodihome, so filing waits on Keepur-org auth)
+**Ticket**: [#88](https://github.com/keepur/keepur-ios/issues/88) (epic) → children #89 (0), #90 (A), #91 (B), #92 (C), #93 (D), #94 (E)
 **Source**: design & code review, 2026-09-03 — https://claude.ai/code/artifact/44153a40-8a5a-49d9-b84b-aa71e406566d
 
 ## TL;DR
@@ -318,4 +318,4 @@ Serial on purpose: B, C, and D all edit `ChatViewModel` and `TeamViewModel`, and
 
 ## Open Questions
 
-1. **Ticket filing.** The connected Linear workspace is dodihome (DOD-*). The epic and five children belong in the Keepur org (KPR-*). File once Keepur-org auth is wired, or file on GitHub Issues as CLAUDE.md still says.
+1. **Ticket filing.** Resolved: filed on GitHub Issues (#88 epic, #89–#94 children) on 2026-09-04 because the connected Linear workspace is dodihome, not the Keepur org.
