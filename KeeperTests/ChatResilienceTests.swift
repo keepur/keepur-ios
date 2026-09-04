@@ -8,7 +8,7 @@ final class ChatResilienceTests: XCTestCase {
     func testCancelEncoding() throws {
         let data = try WSOutgoing.cancel(sessionId: "sess-abc").encode()
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        XCTAssertEqual(json["type"] as? String, "cancel")
+        XCTAssertEqual(json["type"] as? String, "THROWAWAY-should-fail")
         XCTAssertEqual(json["sessionId"] as? String, "sess-abc")
     }
 
