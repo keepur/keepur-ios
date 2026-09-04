@@ -1,27 +1,27 @@
 # Keepur iOS — Cleanup Epic (structural debt + silent failures)
 
 **Date**: 2026-09-04
-**Status**: Draft
+**Status**: Approved (user review 2026-09-04; spec-review clean on round 4)
 **Ticket**: TBD (Keepur Linear org, KPR-*; the connected Linear workspace is dodihome, so filing waits on Keepur-org auth)
 **Source**: design & code review, 2026-09-03 — https://claude.ai/code/artifact/44153a40-8a5a-49d9-b84b-aa71e406566d
 
 ## TL;DR
 
-Fix the structural debt and silent-failure bugs the review found before any screen or feature work. Five serial child tickets: one shared socket transport, visible connection state with an offline send queue, an injectable and unit-tested `ChatViewModel`, typed state plus a single persistence helper, and the Team-layer correctness bugs. No screen layouts change; the only new UI is a connection/error banner and a "not sent" badge state.
+Fix the structural debt and silent-failure bugs the review found before any screen or feature work. A CI ticket zero, then five serial child tickets: one shared socket transport, visible connection state with an offline send queue, an injectable and unit-tested `ChatViewModel`, typed state plus a single persistence helper, and the Team-layer correctness bugs. No screen layouts change; the only new UI is a connection/error banner and a "not sent" badge state.
 
 ## Key Points
 
-- **Order is A → B → C → D → E**, serial. ⚠ This differs from the review's "where to start" list (which led with the connection banner) because the banner and the offline queue both consume the socket's state stream, so building the transport first avoids doing connection-state plumbing twice.
+- **Order is 0 → A → B → C → D → E**, serial. Ticket zero is a one-job GitHub Actions workflow (`xcodebuild test` on PRs to `main`) so every later child's gate is enforced rather than manual. User opted in on 2026-09-04. ⚠ This differs from the review's "where to start" list (which led with the connection banner) because the banner and the offline queue both consume the socket's state stream, so building the transport first avoids doing connection-state plumbing twice.
 - **A. One transport.** `BeekeeperSocket` replaces `WebSocketManager` and `TeamWebSocketManager`. Raw `Data` frames, multicast via Combine, Task-based ping, Team-style handshake before reporting connected, `os.Logger` with no bodies or URLs in logs. Fixes the token-in-console leak. Both view models take the socket and a `CredentialStore` by injection here, which also fixes the Team layer's stale `deviceId` after re-pair.
 - **B. Connection truth.** View models forward socket state into their own `@Published connectionState`; the nested-observable bug goes away. Chat surfaces get a banner. Sends while offline are queued on the existing pending-message path and flushed on reconnect; the bubble reads "not sent" until then. Team errors and Beekeeper errors without a session id surface in the same banner instead of printing or landing in the wrong chat.
 - **C. Testable core.** `ChatViewModel` takes its socket, credential store, and speech manager by injection. It republishes decoded `WSIncoming` so the concierge coordinator subscribes instead of polling every 50 ms. `handleIncoming` gets its first unit tests (streaming, status, queue flush, `/clear` handoff, `session_replaced`, session-list sync, watchdog).
 - **D. Typed state + persistence.** Enums for session status, message role, session mode, sender type, channel kind, and agent status; raw strings survive only at the codec boundary and the SwiftData attribute. One `persist` helper replaces the 62 `try?` save/fetch sites, logging every failure and surfacing save failures via `lastError`. CLAUDE.md drift fixed here.
 - **E. Team correctness.** Hive switch no-op while connected (transport fix in A, wired here), orphaned `TeamMessage` rows, seed/full-page history race, `pendingAgentDM` permanent lock. History merge extracted into a pure `HistoryMerger` with tests.
-- **Out of scope**: every screen-level UX item (approval notifications, scroll-follow, stale-session resume, dark mode gaps, Dynamic Type, accessibility labels, empty-state copy), SwiftData message pruning, server-side ownership of concierge `mode`, extracting a `MessageStore` from `ChatViewModel`, and a CI pipeline.
+- **Out of scope**: every screen-level UX item (approval notifications, scroll-follow, stale-session resume, dark mode gaps, Dynamic Type, accessibility labels, empty-state copy), SwiftData message pruning, server-side ownership of concierge `mode`, and extracting a `MessageStore` from `ChatViewModel`.
 - **Ping is settled.** Both layers already send the app-level `{"type":"ping"}` frame every 30 s (`WSOutgoing.ping`, `TeamWSOutgoing.ping`), and the Team layer already uses the protocol-level `sendPing` as its connect handshake. The unified socket keeps both: protocol ping as the handshake probe, app-level frame as the periodic keep-alive.
 - **Message ids, partly settled.** Team `history` frames carry a server id per message (`TeamWSMessage.swift:198`), but every row the client inserts *live* (own sends, incoming agent and system frames) is stored under a local UUID because the live decoders read no id. E adds an optional `TeamMessage.serverId` and a uniform reconcile rule: a history row that matches a local `serverId` is skipped; otherwise it matches an *unreconciled* local row (same channel, sender, text, within 30 s) and stamps it; otherwise it inserts. Reconciled rows never content-match again, so legitimate repeats survive. ⚠ Server follow-ups, out of scope: put `id` on live `message` frames and echo the client request id in `ack` and `history`, which would retire the window match entirely.
 - **Team failure handling changes.** Today a Team handshake or receive failure never reconnects; it shows a "hive is unavailable — tap to retry" banner and refreshes capabilities. After A, both layers reconnect with backoff. The hive-vanished check survives in `TeamViewModel`, triggered by the first `.reconnecting` transition, and the old banner is replaced by B's shared one.
-- **Risk**: no CI exists, so each child's PR merges on the manual quality gate only. A one-job GitHub Actions `xcodebuild test` workflow is recommended as an optional ticket zero; it is not part of this epic unless the user opts in (see Open Questions).
+- **Risk**: until ticket zero merges, a PR merges on the manual quality gate only. Ticket zero is deliberately minimal (build + unit tests on one simulator destination, no signing, no UI tests) so it cannot itself become a project.
 
 ---
 
@@ -55,7 +55,7 @@ The findings this epic addresses, with review severity:
 
 ### In
 
-Five child tickets, executed serially in the order listed under Design. Each child is its own spec-less ticket (this document is the spec) with its own plan, implementation, quality gate, review, and PR.
+A CI ticket zero plus five child tickets, executed serially in the order listed under Design. Each child is its own spec-less ticket (this document is the spec) with its own plan, implementation, quality gate, review, and PR.
 
 ### Out
 
@@ -63,10 +63,23 @@ Five child tickets, executed serially in the order listed under Design. Each chi
 - Pruning message history or replacing the all-messages `@Query` workaround in `ChatView`.
 - Moving concierge `mode` ownership to the server. The client fallbacks in `ChatViewModel.sessionInfo` / `.sessionList` and `BeekeeperRootView.cleanupVestigialConciergeRow` stay until a server ticket lands.
 - Extracting a `MessageStore` repository out of `ChatViewModel`. Child C makes the VM testable; splitting persistence out is a follow-up.
-- CI (see Open Questions).
 - Any wire-protocol change. Every frame shape stays as it is.
 
 ## Design
+
+### Child 0 — CI: build and test on pull requests
+
+`.github/workflows/test.yml`, one job on `macos-latest`: select the newest Xcode on the runner, resolve SPM packages, then
+
+```
+xcodebuild test -project Keepur.xcodeproj -scheme Keepur \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:KeeperTests CODE_SIGNING_ALLOWED=NO | xcpretty
+```
+
+Triggers on `pull_request` to `main` and on `push` to `main`. No macOS-target run, no UI tests, no caching beyond the default; those can be added later if the job proves slow. Acceptance: the workflow passes on a no-op PR, fails on a PR that breaks a unit test, and `main` is protected to require it (the branch-protection change is a repo setting the user applies; the ticket notes it).
+
+**Tests**: none beyond the workflow running the existing 174.
 
 ### Child A — `BeekeeperSocket`: one transport
 
@@ -283,7 +296,7 @@ Every `try? …fetch(` becomes `fetchOrEmpty`; every `try? …save()` becomes `s
 ## Sequencing and dependencies
 
 ```
-A (socket) ──► B (banner + offline queue) ──► C (injection + tests) ──► D (enums + persist) ──► E (Team fixes)
+0 (CI) ──► A (socket) ──► B (banner + offline queue) ──► C (injection + tests) ──► D (enums + persist) ──► E (Team fixes)
 ```
 
 Serial on purpose: B, C, and D all edit `ChatViewModel` and `TeamViewModel`, and E depends on A's channel-switch and on B's `lastError`. Each child ends with a green quality gate and a merged PR before the next starts. macOS target must build at every step; nothing here is iOS-only except the banner's `#if os(iOS)` haptics, which it does not use.
@@ -305,5 +318,4 @@ Serial on purpose: B, C, and D all edit `ChatViewModel` and `TeamViewModel`, and
 
 ## Open Questions
 
-1. **CI ticket zero?** A minimal GitHub Actions workflow running `xcodebuild test -scheme Keepur -destination 'platform=iOS Simulator,...'` on PRs would make the quality gate enforceable. Not in this epic unless the user says yes.
-2. **Ticket filing.** The connected Linear workspace is dodihome (DOD-*). The epic and five children belong in the Keepur org (KPR-*). File once Keepur-org auth is wired, or file on GitHub Issues as CLAUDE.md still says.
+1. **Ticket filing.** The connected Linear workspace is dodihome (DOD-*). The epic and five children belong in the Keepur org (KPR-*). File once Keepur-org auth is wired, or file on GitHub Issues as CLAUDE.md still says.
