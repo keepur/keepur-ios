@@ -46,14 +46,25 @@ jobs:
         run: |
           set -o pipefail
           command -v xcbeautify >/dev/null || brew install xcbeautify
+          # No CODE_SIGNING_ALLOWED=NO: simulator builds ad-hoc sign without a
+          # certificate, and the Keychain-backed tests need the signed host app.
+          # The scheme runs the suite non-parallel so tests hit the base
+          # simulator, not clones, where Keychain access is unreliable.
           xcodebuild test \
             -project Keepur.xcodeproj \
             -scheme Keepur \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
             -only-testing:KeeperTests \
             -resultBundlePath TestResults.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
+
+      - name: Print failure details
+        if: failure()
+        run: |
+          # xcbeautify prints failing test names but not assertion messages;
+          # the result bundle has them.
+          xcrun xcresulttool get test-results summary --path TestResults.xcresult 2>/dev/null \
+            | jq -r '.testFailures[]? | "\(.testName): \(.failureText)"' || true
 
       - name: Upload test results
         if: failure()
