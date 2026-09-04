@@ -54,7 +54,7 @@ docs/plans/              → Implementation plans for in-progress work
 
 ## Tests
 
-Unit tests live in `KeeperTests/`. No CI/CD pipeline exists yet.
+Unit tests live in `KeeperTests/`. CI runs them on every pull request to `main` via `.github/workflows/test.yml` (iOS Simulator, unit tests only).
 
 ## Development Process
 

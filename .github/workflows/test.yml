@@ -2,13 +2,17 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'epic-*']
   push:
     branches: [main]
 
 concurrency:
   group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches only; every push to main keeps its run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   unit-tests:
@@ -19,8 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
+      - name: Select newest Xcode on the runner
         run: |
+          # The project targets iOS 26.2, so the image default may be too old
+          # after a runner update; always take the newest installed Xcode.
+          newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest"
+          echo "Selected: $newest"
           xcodebuild -version
           sw_vers
 

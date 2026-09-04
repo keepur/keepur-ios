@@ -69,17 +69,19 @@ A CI ticket zero plus five child tickets, executed serially in the order listed 
 
 ### Child 0 — CI: build and test on pull requests
 
-`.github/workflows/test.yml`, one job on `macos-latest`: select the newest Xcode on the runner, resolve SPM packages, then
+`.github/workflows/test.yml`, one job on `macos-latest`: select the newest Xcode on the runner, pick the first available iPhone simulator at run time (names change with each Xcode), resolve SPM packages, then
 
 ```
 xcodebuild test -project Keepur.xcodeproj -scheme Keepur \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  -only-testing:KeeperTests CODE_SIGNING_ALLOWED=NO | xcpretty
+  -destination "platform=iOS Simulator,name=$SIM" \
+  -only-testing:KeeperTests -resultBundlePath TestResults.xcresult | xcbeautify
 ```
 
-Triggers on `pull_request` to `main` and on `push` to `main`. No macOS-target run, no UI tests, no caching beyond the default; those can be added later if the job proves slow. Acceptance: the workflow passes on a no-op PR, fails on a PR that breaks a unit test, and `main` is protected to require it (the branch-protection change is a repo setting the user applies; the ticket notes it).
+Triggers on `pull_request` to `main` or `epic-*` and on `push` to `main`, with `permissions: contents: read` and superseded-run cancellation on PR branches only. No macOS-target run, no UI tests, no caching beyond the default; those can be added later if the job proves slow. On failure, a step prints assertion messages from the result bundle via `xcresulttool` and uploads the bundle. Acceptance: the workflow passes on a no-op PR, fails on a PR that breaks a unit test, and `main` is protected to require it (the branch-protection change is a repo setting the user applies; the ticket notes it).
 
-**Tests**: none beyond the workflow running the existing 174.
+Two things found while landing it (PR #95): the repo had no shared scheme in git, so `Keepur.xcodeproj/xcshareddata/xcschemes/Keepur.xcscheme` is added with the test action non-parallel (Keychain access is unreliable on simulator clones); and the build is *not* run with `CODE_SIGNING_ALLOWED=NO`, because simulator builds ad-hoc sign without a certificate and the Keychain-backed tests need the signed host app. `xcbeautify` replaces `xcpretty`, which is unmaintained.
+
+**Tests**: none beyond the workflow running the existing suite (114 tests compile into the target today; the five orphaned files are #96).
 
 ### Child A — `BeekeeperSocket`: one transport
 
