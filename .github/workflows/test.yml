@@ -1,0 +1,64 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (iOS Simulator)
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          sw_vers
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          # Simulator names change with each Xcode; take the first available iPhone
+          # instead of hard-coding one so the job survives runner image updates.
+          name=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].name')
+          if [ -z "$name" ] || [ "$name" = "null" ]; then
+            echo "No available iPhone simulator found" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project Keepur.xcodeproj -scheme Keepur
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          command -v xcbeautify >/dev/null || brew install xcbeautify
+          xcodebuild test \
+            -project Keepur.xcodeproj \
+            -scheme Keepur \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -only-testing:KeeperTests \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults.xcresult
+          path: TestResults.xcresult
+          if-no-files-found: ignore
