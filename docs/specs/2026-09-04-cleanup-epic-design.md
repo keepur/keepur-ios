@@ -12,14 +12,14 @@ Fix the structural debt and silent-failure bugs the review found before any scre
 ## Key Points
 
 - **Order is A → B → C → D → E**, serial. ⚠ This differs from the review's "where to start" list (which led with the connection banner) because the banner and the offline queue both consume the socket's state stream, so building the transport first avoids doing connection-state plumbing twice.
-- **A. One transport.** `BeekeeperSocket` replaces `WebSocketManager` and `TeamWebSocketManager`. Raw `Data` frames, multicast via Combine, Task-based ping, Team-style handshake before reporting connected, `os.Logger` with no bodies or URLs in logs. Fixes the token-in-console leak.
+- **A. One transport.** `BeekeeperSocket` replaces `WebSocketManager` and `TeamWebSocketManager`. Raw `Data` frames, multicast via Combine, Task-based ping, Team-style handshake before reporting connected, `os.Logger` with no bodies or URLs in logs. Fixes the token-in-console leak. Both view models take the socket and a `CredentialStore` by injection here, which also fixes the Team layer's stale `deviceId` after re-pair.
 - **B. Connection truth.** View models forward socket state into their own `@Published connectionState`; the nested-observable bug goes away. Chat surfaces get a banner. Sends while offline are queued on the existing pending-message path and flushed on reconnect; the bubble reads "not sent" until then. Team errors and Beekeeper errors without a session id surface in the same banner instead of printing or landing in the wrong chat.
 - **C. Testable core.** `ChatViewModel` takes its socket, credential store, and speech manager by injection. It republishes decoded `WSIncoming` so the concierge coordinator subscribes instead of polling every 50 ms. `handleIncoming` gets its first unit tests (streaming, status, queue flush, `/clear` handoff, `session_replaced`, session-list sync, watchdog).
 - **D. Typed state + persistence.** Enums for session status, message role, session mode, sender type, channel kind, and agent status; raw strings survive only at the codec boundary and the SwiftData attribute. One `persist` helper replaces the 62 `try?` save/fetch sites, logging every failure and surfacing save failures via `lastError`. CLAUDE.md drift fixed here.
-- **E. Team correctness.** Stale `deviceId` after re-pair, hive switch no-op while connected, orphaned `TeamMessage` rows, seed/full-page history race, `pendingAgentDM` permanent lock. History merge extracted into a pure `HistoryMerger` with tests.
+- **E. Team correctness.** Hive switch no-op while connected (transport fix in A, wired here), orphaned `TeamMessage` rows, seed/full-page history race, `pendingAgentDM` permanent lock. History merge extracted into a pure `HistoryMerger` with tests.
 - **Out of scope**: every screen-level UX item (approval notifications, scroll-follow, stale-session resume, dark mode gaps, Dynamic Type, accessibility labels, empty-state copy), SwiftData message pruning, server-side ownership of concierge `mode`, extracting a `MessageStore` from `ChatViewModel`, and a CI pipeline.
 - **Ping is settled.** Both layers already send the app-level `{"type":"ping"}` frame every 30 s (`WSOutgoing.ping`, `TeamWSOutgoing.ping`), and the Team layer already uses the protocol-level `sendPing` as its connect handshake. The unified socket keeps both: protocol ping as the handshake probe, app-level frame as the periodic keep-alive.
-- **Message ids, partly settled.** Team `history` frames carry a server id per message (`TeamWSMessage.swift:198`), so E dedups agent and system messages on server id. The wire gives the client no server id for its *own* messages (`ack` carries only the request UUID; `history` rows carry no client id), so own messages keep a sender + text + 30 s window match, and on first match the local row adopts the server id so later reloads match by id. ⚠ A server follow-up to echo the client id in `ack` and `history` would delete that last heuristic; it is out of scope here.
+- **Message ids, partly settled.** Team `history` frames carry a server id per message (`TeamWSMessage.swift:198`), but every row the client inserts *live* (own sends, incoming agent and system frames) is stored under a local UUID because the live decoders read no id. E adds an optional `TeamMessage.serverId` and a uniform reconcile rule: a history row that matches a local `serverId` is skipped; otherwise it matches an *unreconciled* local row (same channel, sender, text, within 30 s) and stamps it; otherwise it inserts. Reconciled rows never content-match again, so legitimate repeats survive. ⚠ Server follow-ups, out of scope: put `id` on live `message` frames and echo the client request id in `ack` and `history`, which would retire the window match entirely.
 - **Team failure handling changes.** Today a Team handshake or receive failure never reconnects; it shows a "hive is unavailable — tap to retry" banner and refreshes capabilities. After A, both layers reconnect with backoff. The hive-vanished check survives in `TeamViewModel`, triggered by the first `.reconnecting` transition, and the old banner is replaced by B's shared one.
 - **Risk**: no CI exists, so each child's PR merges on the manual quality gate only. A one-job GitHub Actions `xcodebuild test` workflow is recommended as an optional ticket zero; it is not part of this epic unless the user opts in (see Open Questions).
 
@@ -40,7 +40,7 @@ The findings this epic addresses, with review severity:
 | High | Nested `ObservableObject` (`viewModel.ws.isConnected`) never invalidates views | B |
 | High | `ChatViewModel.handleIncoming` has zero tests; untestable because of Keychain statics and a concrete socket | C |
 | High | `currentSessionId` hijacked by tool approvals for other sessions (`ChatViewModel.swift:162`) | C |
-| High | Team: stale `deviceId` after unpair/re-pair (`TeamViewModel.swift:53`) | E |
+| High | Team: stale `deviceId` after unpair/re-pair (`TeamViewModel.swift:53`) | A |
 | High | Team: hive switch is a no-op while connected (`TeamWebSocketManager.swift:26`) | A, E |
 | High | 62 `try?` on SwiftData save/fetch (34 in `ChatViewModel`, 24 in `TeamViewModel`, 4 in views) | D |
 | Medium | Concierge coordinator polls VM state every 50 ms because `onMessage` is single-consumer | C |
@@ -87,8 +87,8 @@ final class BeekeeperSocket: ObservableObject {
         var pingInterval: Duration = .seconds(30)
         var maxReconnectDelay: Duration = .seconds(30)
 
-        static let beekeeper = Config(keepAliveFrame: try! WSOutgoing.ping.encode())
-        static let hive      = Config(keepAliveFrame: try! TeamWSOutgoing.ping.encode())
+        /// Both servers expect the same bare frame (WSOutgoing.ping and TeamWSOutgoing.ping encode identically).
+        static let standard = Config(keepAliveFrame: Data(#"{"type":"ping"}"#.utf8))
     }
     // The channel ("beekeeper" or a hive id) is a connect-time argument, not config,
     // because the Team layer switches it at runtime.
@@ -107,8 +107,8 @@ final class BeekeeperSocket: ObservableObject {
          endpoint: @escaping () throws -> URL = BeekeeperConfig.wssURL,
          taskFactory: @escaping (URL) -> WebSocketTasking = URLSessionWebSocketTaskAdapter.make)
 
-    func connect(channel: String)   // if connected/connecting on a different channel: tear down, then connect
-    func reconnect()                // re-uses the last channel; no-op if never connected
+    func connect(channel: String)
+    func reconnect()                // connect(channel: lastChannel); no-op if never connected
     func disconnect()
     @discardableResult func send(_ frame: Data) -> Bool   // false when state != .connected; caller decides what to queue
 }
@@ -121,13 +121,23 @@ final class BeekeeperSocket: ObservableObject {
 - **Reconnect**: unchanged policy (2^N capped at `maxReconnectDelay`, guarded by `credentials.isPaired`), but `state` moves through `.reconnecting(attempt:)` so views can show it.
 - **Auth failure**: close code 4001 or `endpoint()` throwing → `state = .disconnected`, `onAuthFailure`, no reconnect.
 - **Token read retries**: unchanged (3 × 2 s) then fall through to reconnect backoff.
-- **Channel switch**: `connect(channel:)` with a different channel while not `.disconnected` tears down first. Closes the Team hive-switch no-op at the transport level.
+- **`connect(channel:)` semantics by current state**:
+
+  | State | Same channel | Different channel |
+  |---|---|---|
+  | `.disconnected` | connect | connect |
+  | `.connecting` / `.connected` | no-op | tear down, then connect |
+  | `.reconnecting(n)` (in backoff) | cancel the backoff sleep and attempt now, keeping `n` | cancel backoff, tear down, connect with `n = 0` |
+
+  "Attempt now" is what `ContentView.swift:45` relies on when the app foregrounds; without it a foreground during backoff could wait up to 30 s. The different-channel path closes the Team hive-switch no-op at the transport level.
+- **View models gain `reconnect()` and `disconnect()` in this child.** `ChatViewModel.reconnect()` is `socket.connect(channel: "beekeeper")`; `TeamViewModel.reconnect()` is `connectIfPossible()`. The three view sites that call `ws.connect()` today (`ContentView.swift:45`, `WorkspacePickerView.swift:48`, `SettingsView.swift:191`) move to `viewModel.reconnect()` in A because `ws.connect()` no longer compiles. `isConnected` reads in views are left for B.
+- **Injection lands here for both view models.** `ChatViewModel.init(socket: BeekeeperSocket = BeekeeperSocket(config: .standard), credentials: CredentialStore = KeychainCredentialStore())` and `TeamViewModel.init(socket:credentials:)` with the same defaults. `TeamViewModel.deviceId` becomes a computed read of `credentials.deviceId` at the same time (that is the whole fix for the stale-id bug; E only adds its test). C adds the remaining `ChatViewModel` seams.
 - **Failure semantics unify on the Beekeeper policy.** Today's Team manager routes handshake failures (`TeamWebSocketManager.swift:62-65`) and receive failures (`:167-169`) to `onReceiveFailure` and never reconnects; `TeamViewModel.handleReceiveFailure` (`:89-105`) shows a "tap to retry" banner and refreshes capabilities. After A there is no `onReceiveFailure`: every non-auth failure goes to `.reconnecting(attempt:)` with backoff. `TeamViewModel` keeps the hive-vanished check by observing `$state` and, on the transition into `.reconnecting(attempt: 1)`, calling `capabilityManager.refresh()`; if `selectedHive` is no longer in `hives`, it calls `socket.disconnect()`. Until B lands, the existing `disconnectedBanner` string is set on that same transition so the current retry UI keeps working; B replaces it.
 - **Logging**: new `Managers/Log.swift`, `enum Log { static let socket, chat, team, persistence: Logger }` under subsystem `io.keepur`. The socket logs state transitions at `.info` and the frame `type` string at `.debug`. It never logs a URL, a token, or a frame body. All existing `print` calls in Managers/ and ViewModels/ are replaced in this child.
 
-**Adoption**: `ChatViewModel` and `TeamViewModel` each own a `BeekeeperSocket`, subscribe to `frames` in `configure`, decode with their existing enums, and dispatch to their existing `handleIncoming`. Behavior is otherwise unchanged in this child; the `ws.isConnected` reads in views keep working (still stale, fixed in B).
+**Adoption**: `ChatViewModel` and `TeamViewModel` each own a `BeekeeperSocket`, subscribe to `frames` in `configure`, decode with their existing enums, and dispatch to their existing `handleIncoming`. Behavior is otherwise unchanged in this child; the `ws.isConnected` reads in views keep compiling (still stale, fixed in B).
 
-**Tests** (`KeeperTests/BeekeeperSocketTests.swift`, fake task): handshake success reaches `.connected` and fires `onConnected`; handshake failure schedules reconnect with `.reconnecting(attempt: 1)`; receive failure with close code 4001 fires `onAuthFailure` and does not reconnect; `send` returns false while not connected; two subscribers both receive a frame; `connect(channel:)` on a new channel tears down the old task; ping loop stops after `disconnect()`.
+**Tests** (`KeeperTests/BeekeeperSocketTests.swift`, fake task): handshake success reaches `.connected` and fires `onConnected`; handshake failure schedules reconnect with `.reconnecting(attempt: 1)`; receive failure with close code 4001 fires `onAuthFailure` and does not reconnect; `send` returns false while not connected; two subscribers both receive a frame; `connect(channel:)` on a new channel tears down the old task; `connect` with the same channel during backoff attempts immediately; ping loop stops after `disconnect()`. Plus `TeamViewModelTests.testDeviceIdFollowsCredentialStore` (re-pair changes the id used for own messages).
 
 ### Child B — Connection truth and offline send queue
 
@@ -148,12 +158,11 @@ Views stop touching `viewModel.ws`. Every view site migrates in this child:
 | Site | Today | After B |
 |---|---|---|
 | `SessionListView.swift:95` | `ws.isConnected` dot | `connectionState == .connected` |
-| `SettingsView.swift:100`, `:187` | `ws.isConnected`, `ws.disconnect()`, `ws.connect()` | `connectionState`, `viewModel.disconnect()`, `viewModel.reconnect()` |
-| `WorkspacePickerView.swift:40`, `:48` | `ws.isConnected`, `ws.connect()` | `connectionState`, `viewModel.reconnect()` |
-| `ContentView.swift:45` | `chatViewModel.ws.connect()` on scene-active | `chatViewModel.reconnect()` |
+| `SettingsView.swift:100`, `:187` | `ws.isConnected` (the `connect`/`disconnect` calls moved in A) | `connectionState` |
+| `WorkspacePickerView.swift:40` | `ws.isConnected` | `connectionState` |
 | `TeamRootView.swift:11-30`, `:42` | `disconnectedBanner` button, `ws.isConnected` dot | `KeepurConnectionBanner`, `connectionState` |
 
-`ChatViewModel.reconnect()` / `disconnect()` and `TeamViewModel.reconnect()` / `disconnect()` are the only entry points views use. `BeekeeperRootView`'s four `viewModel.ws.send` calls (`:105-128`) stay until C rewrites the concierge coordinator; `ws` therefore becomes `private` in C, not B.
+After B, `viewModel.reconnect()` / `disconnect()` (from A) and `connectionState` are the only connection surface views use. `BeekeeperRootView`'s four `viewModel.ws.send` calls (`:105-128`) stay until C rewrites the concierge coordinator; `ws` therefore becomes `private` in C, not B.
 
 **Team banner replacement**: `TeamViewModel.disconnectedBanner` and `retryConnect()` are deleted. The hive-vanished path from A sets `lastError` ("This hive is no longer available.") and disconnects; ordinary failures show through `connectionState` like the Beekeeper layer.
 
@@ -162,7 +171,7 @@ Views stop touching `viewModel.ws`. Every view site migrates in this child:
 | `connectionState` | Copy | Action |
 |---|---|---|
 | `.connecting` | "Connecting…" | none |
-| `.reconnecting(n)` | "Reconnecting…" (attempt count only in the accessibility label) | none |
+| `.reconnecting(n)` | "Reconnecting…" (attempt count only in the accessibility label) | "Retry now" → `reconnect()`, which cancels the backoff (keeps today's Team tap-to-retry) |
 | `.disconnected` | "Not connected. Messages will send when reconnected." | "Retry" → `reconnect()` |
 | `.connected` with `lastError` | the error text | tap to dismiss |
 | `.connected`, no error | hidden | |
@@ -174,12 +183,12 @@ The banner is the only new UI in the epic. It has an accessibility label and is 
 - `pendingMessageIds: Set<String>` becomes `pendingReasons: [String: PendingReason]`, `enum PendingReason { case busy, offline }`.
 - `sendText`: if `connectionState != .connected` → enqueue with `.offline`; else if session busy → `.busy`; else send.
 - `sendToServer` checks the `Bool` from `socket.send`; a `false` re-enqueues as `.offline` rather than dropping.
-- On `connectionState` transition to `.connected`, after the reconnect `list_sessions` response has reconciled statuses (`syncSessions`), flush every `.offline` entry through the normal gate: idle session → send, busy session → reclassify as `.busy`.
+- On `connectionState` transition to `.connected`, after the reconnect `list_sessions` response has reconciled statuses (`syncSessions`), flush per session through the normal gate: if the session is idle, send the *first* `.offline` entry and reclassify the rest as `.busy` (the existing one-in-flight rule; the next `idle` status flushes the next one); if the session is busy, reclassify all of them as `.busy`.
 - `MessageBubble` badge text: "waiting" for `.busy`, "not sent" for `.offline`. Same capsule, same tokens.
 - `.error` with `sessionId == nil`: set `lastError` instead of inserting a system bubble into `currentSessionId`. With a session id, behavior is unchanged.
 - `sessionId == nil` browse errors keep the existing `browseError` path.
 
-**Offline queue, Team**: `sendMessage` inserts `TeamMessage(pending: true)` under a local UUID and calls `sendWithId`, which returns a request UUID that `pendingMessageIds[requestId] = localId` maps back to the row when the `ack` arrives. Change: when `socket.send` returns false, record the local id in `offlineMessageIds: Set<String>`; on `.connected`, re-send each row's text and register `pendingMessageIds[newRequestId] = localId` so the existing ack path clears `pending`. The bubble's existing "sending" state reads "not sent" while the id is in `offlineMessageIds`. Slash commands while offline set `lastError` ("Not connected. Try again when reconnected.") instead of clearing the input silently. `.error` frames set `lastError` in addition to the existing `pendingAgentDM` reset.
+**Offline queue, Team**: `sendMessage` inserts `TeamMessage(pending: true)` under a local UUID and calls `sendWithId`, which returns a request UUID that `pendingMessageIds[requestId] = localId` maps back to the row when the `ack` arrives. Change: when `socket.send` returns false, record the local id in `offlineMessageIds: Set<String>` and keep any attachment in an in-memory `offlineAttachments: [String: AttachmentData]` (the row does not persist attachment bytes; if the app is killed before reconnect the text still re-sends and the attachment is lost, which matches the Beekeeper layer's `pendingMessages` behavior today). On `.connected`, re-send each row's text plus attachment in the original order and register `pendingMessageIds[newRequestId] = localId` so the existing ack path clears `pending`. On any transition *out of* `.connected`, every id still in `pendingMessageIds` (sent but un-acked) moves to `offlineMessageIds` so it re-sends rather than staying "sending" forever. The bubble's existing "sending" state reads "not sent" while the id is in `offlineMessageIds`. Slash commands and `openAgentDM` while offline set `lastError` ("Not connected. Try again when reconnected.") instead of failing silently. `.error` frames set `lastError` in addition to the existing `pendingAgentDM` reset.
 
 **Tests**: `ChatViewModel` tests for this land with Child C's harness (see C). Child B ships with `KeepurConnectionBannerTests` (state → copy mapping) and a `TeamViewModel` offline re-send test using the fake socket from A.
 
@@ -188,18 +197,19 @@ The banner is the only new UI in the epic. It has an accessibility label and is 
 **Injection**:
 
 ```swift
-init(socket: BeekeeperSocket = BeekeeperSocket(config: .beekeeper),
-     credentials: CredentialStore = KeychainCredentialStore(),
-     speech: SpeechManager? = nil)   // nil → created lazily on first access
+init(socket: BeekeeperSocket = BeekeeperSocket(config: .standard),   // from A
+     credentials: CredentialStore = KeychainCredentialStore(),        // from A
+     speech: SpeechManager? = nil,                                     // nil → created lazily on first access
+     staleBusyTimeout: Duration = .seconds(90))
 ```
 
 `configure(context:)` calls `socket.connect(channel: "beekeeper")`. `unpair()` uses `credentials.clearAll()`. `KeychainManager` static reads in `ContentView.isPaired` are untouched (view-level, not under test).
 
-**Decoded-frame multicast**: `let incoming = PassthroughSubject<WSIncoming, Never>()`, sent *after* `handleIncoming` has updated VM state, so subscribers observe a consistent VM. `ConciergeViewModel` replaces both 50 ms polling loops with `for await` over `incoming.values` filtered for `.sessionInfo` / `.sessionList`, with the same 3 s / 3 s / 5 s timeouts via `withTimeout`. Its four `viewModel.ws.send` calls become `viewModel.resumeSession(sessionId:path:)`, `viewModel.listSessions()`, and a new `viewModel.newConciergeSession()`. With those gone, `ws` becomes `private` on `ChatViewModel` (and on `TeamViewModel`, which has no external senders after B). `BeekeeperRootView`'s view body is otherwise unchanged.
+**Decoded-frame multicast**: `let incoming = PassthroughSubject<WSIncoming, Never>()`, sent *after* `handleIncoming` has updated VM state, so subscribers observe a consistent VM. `ConciergeViewModel` replaces both 50 ms polling loops with `for await` over `incoming.values` filtered for `.sessionInfo` / `.sessionList`, with the same 3 s / 3 s / 5 s timeouts. Each wait subscribes *before* the request is sent so a fast reply cannot be missed. The timeout is a small `Managers/AsyncTimeout.swift` helper, `withTimeout(_ duration: Duration, _ body: () async -> T?) async -> T?`, implemented as a two-task race that cancels the loser; it has its own unit test. Its four `viewModel.ws.send` calls become `viewModel.resumeSession(sessionId:path:)`, `viewModel.listSessions()`, and a new `viewModel.newConciergeSession()`. With those gone, `ws` becomes `private` on `ChatViewModel` (and on `TeamViewModel`, which has no external senders after B). `BeekeeperRootView`'s view body is otherwise unchanged.
 
 **Approval hijack** (`ChatViewModel.swift:162`): stop assigning `currentSessionId` when a `tool_approval` arrives for another session. `pendingApprovals` is already keyed by session; the sheet already binds per `ChatView`. The user sees the approval when they open that session. (Surfacing it elsewhere is UX-epic work.)
 
-**Watchdog** (`ChatViewModel.swift:192`): when the 90 s timer fires, send `list_sessions` instead of forcing idle. `syncSessions` already flips to idle and flushes when the server reports idle. `syncSessions` today only arms a watchdog when the client state is nil or idle (`:569-580`); it gains an explicit branch: client busy and server busy → re-arm the watchdog for that session. Removes the misfire without ever leaving a busy session unwatched.
+**Watchdog** (`ChatViewModel.swift:192`): when the timer fires, send `list_sessions` instead of forcing idle. `syncSessions` already flips to idle and flushes when the server reports idle. Two changes make that sufficient: (1) status reconciliation runs over the *full* `session_list`, including the concierge row, and only the `Session`-table sync excludes concierge (today `:296-299` filters the concierge row before `syncSessions`, so the concierge slot would never be reconciled and could stay busy forever); (2) `syncSessions` today only arms a watchdog when the client state is nil or idle (`:569-580`) and gains an explicit branch: client busy and server busy → re-arm. Removes the misfire without ever leaving a busy session unwatched.
 
 **Test harness**: `KeeperTests/ChatViewModelTests.swift` with an in-memory `ModelContainer` (`isStoredInMemoryOnly: true`), the fake `WebSocketTasking` from A driving a real `BeekeeperSocket`, a `FakeCredentialStore`, and `speech: nil`. Helper `receive(_ json: [String: Any])` pushes a frame. Cases:
 
@@ -212,7 +222,7 @@ init(socket: BeekeeperSocket = BeekeeperSocket(config: .beekeeper),
 7. `session_list`: missing local rows inserted, absent server rows marked stale, concierge rows excluded from the `Session` table, current session cleared if stale.
 8. `error` with nil session id → `lastError`; with a session id → system bubble.
 9. Approval for another session leaves `currentSessionId` alone.
-10. Watchdog: with `staleBusyTimeout` injected as 50 ms, firing sends `list_sessions` and does not flip status by itself.
+10. Watchdog: with `staleBusyTimeout` injected as 50 ms, firing sends `list_sessions` and does not flip status by itself; a busy concierge row in the reply is reconciled to idle; a still-busy reply re-arms.
 
 ### Child D — Typed state and persistence hygiene
 
@@ -250,22 +260,23 @@ Every `try? …fetch(` becomes `fetchOrEmpty`; every `try? …save()` becomes `s
 
 **Also in D**: wire `CapabilityManager.isLoading` so `HivesGridView` distinguishes loading from empty (a state fix, not a layout change); delete the discarded `.typing` / `.commandList` decoding or keep them as documented no-op cases; remove the hardcoded `KeepurUnreadBadge(count: 0)` from `AgentRow.swift:58` (unread counts are a held feature; an always-zero badge is dead code); CLAUDE.md rewritten to match the tree (`ContentView` as the auth gate, `BeekeeperSocket`, configurable TLS host, the ATS exception removed from `Info.plist` along with the `hive.dodihome.com` entry).
 
-**Tests**: enum decode round-trips for every wire value plus the unknown case; `AgentStatus.presentation` covers every status; a `saveReporting` test with a deliberately invalid model change returns an error and does not throw.
+**Tests**: enum decode round-trips for every wire value plus the unknown case; `AgentStatus.presentation` covers every status; a `saveReporting` test that inserts two `Session` rows with the same `@Attribute(.unique)` id returns an error and does not throw. Existing string-status tests (`ChatHeaderMappingTests`, `BusyStateRecoveryTests`) migrate to the enum in this child.
 
 ### Child E — Team-layer correctness
 
-- **Stale `deviceId`**: `TeamViewModel.deviceId` becomes a computed read of `credentials.deviceId` at each use. The `configure` idempotency guard stays.
+- **Stale `deviceId`**: fixed in A (computed read of `credentials.deviceId`); E's `HistoryMerger` takes `ownDeviceId` as a parameter so the test covers the re-pair case end to end.
 - **Hive switch**: `TeamViewModel.connectIfPossible` calls `socket.connect(channel: selectedHive)`; the socket (A) tears down when the channel differs. `disconnect()` before switching is no longer required.
 - **Orphaned rows**: new file `Models/TeamStore.swift`, a thin SwiftData helper, with `deleteChannel(_:)` that deletes the channel's messages first. `syncChannels` and both `handleChannelEvent` delete sites use it. On disconnect, `pendingCommandChannels`, `pendingMessageIds`, `pendingNewCommands` are cleared.
 - **`pendingAgentDM` lock**: a 10 s `Task` clears `pendingAgentDM` / `pendingDMRequestId` and sets `lastError` ("Couldn't open a direct message. Try again.") if no channel arrives.
-- **History merge**: extracted to `Models/HistoryMerger.swift`, a pure function `merge(existing: [TeamMessageSnapshot], incoming: [TeamWSMessage], ownDeviceId: String) -> MergeResult` with no SwiftData dependency. Rules, given what the wire provides (history rows carry a server id but no client id; `ack` carries only the request UUID; own rows are stored under a local UUID):
-  1. Agent and system messages dedup on server id only. The content-key dedup for them is deleted, so legitimate repeats survive.
-  2. Own messages (`senderId == ownDeviceId`) match a history row by sender, exact text, and `createdAt` within the existing 30 s window, whether or not the local row is still `pending`. On match the local row adopts the server id (`TeamMessage.id` is unique but mutable; the merger checks the id is not already present) and `pending` is cleared. Subsequent reloads then match by id and the heuristic never runs again for that message.
-  3. An own history row with no local match is inserted as a normal message (sent from another device).
-  ⚠ Follow-up server ticket, out of scope: echo the client's request UUID in `ack` and `history` so rule 2 becomes an id match. `processHistory` correlates each response with the request id already carried by `.history(…, id:)`, and only the response for the *current* full-page request updates `hasMoreHistory`, `isLoadingHistory`, and `lastServerMessageId`; seed responses update the channel preview only.
+- **History merge**: extracted to `Models/HistoryMerger.swift`, a pure function `merge(existing: [TeamMessageSnapshot], incoming: [TeamHistoryMessage], ownDeviceId: String, now: Date) -> MergeResult` with no SwiftData dependency; `MergeResult` lists rows to insert, rows to stamp (`localId → serverId`), and rows to un-pend. `TeamMessage` gains `var serverId: String?` (additive optional attribute, lightweight migration; `nil` for every existing row). Every row the client inserts live (own sends, `.teamMessage`, `.systemMessage`) keeps a local UUID `id` and `serverId == nil` until reconciled; rows inserted from history get `id == serverId`. Rules:
+  1. A history row whose id equals a local `serverId` is skipped.
+  2. Otherwise it matches at most one *unreconciled* local row (`serverId == nil`, same channel, same `senderId`, same text, `createdAt` within 30 s, the existing constant). On match: stamp `serverId`, clear `pending`. This single rule covers own messages (local UUID, `senderId == ownDeviceId`) and live agent/system rows alike.
+  3. Otherwise insert.
+  Because a reconciled row is never a rule-2 candidate again, two legitimate identical messages from history both insert. The old content-key dedup is deleted.
+  ⚠ Plan-time check: if the live `message` frame already carries an `id`, decode it and set `serverId` at insert time so rule 2 fires only for own sends. Server follow-ups, out of scope: guarantee `id` on live frames and echo the client request id in `ack` and `history`, which would retire rule 2. `processHistory` correlates each response with the request id already carried by `.history(…, id:)`, and only the response for the *current* full-page request updates `hasMoreHistory`, `isLoadingHistory`, and `lastServerMessageId`; seed responses update the channel preview only.
 - **Dead code**: `TeamChannel.displayName` is removed; the VM's `displayName(for:)` survives because DM names need the agent lookup the model cannot do.
 
-**Tests**: `HistoryMergerTests` (agent dedup by id, repeated identical agent text is kept, own pending and own acked rows adopt the server id, own text outside the 30 s window is a new row, id-collision guard, ordering); `TeamViewModelTests` for hive switch triggering `connect(channel:)`, `deleteChannel` removing messages, DM timeout clearing the lock, and the seed-vs-full-page race using two in-flight request ids.
+**Tests**: `HistoryMergerTests` (skip on `serverId` match; live agent row is stamped rather than duplicated; two identical history rows both insert; own pending row is stamped and un-pended; own text outside the 30 s window inserts; a reconciled row is never re-matched; ordering); `TeamViewModelTests` for hive switch triggering `connect(channel:)`, `deleteChannel` removing messages, DM timeout clearing the lock, and the seed-vs-full-page race using two in-flight request ids.
 
 ## Sequencing and dependencies
 
@@ -286,9 +297,9 @@ Serial on purpose: B, C, and D all edit `ChatViewModel` and `TeamViewModel`, and
 
 - **Handshake probe on the Beekeeper channel.** The Beekeeper manager never sent a protocol-level ping; the Team manager does and the same server accepts it. If the Beekeeper channel ever rejects it, A falls back to sending `keepAliveFrame` and treating the first received frame as the handshake.
 - **Reconnect flush ordering**. Flushing offline messages before the post-reconnect `session_list` arrives could send into a busy session. B gates the flush on `syncSessions` having run once after the transition; if `session_list` never arrives within 5 s, flush anyway through the normal busy gate.
-- **SwiftData attribute types**. Keeping `role` / `senderType` as `String` avoids a schema migration. The app already wipes the store on container failure (`KeepurApp.swift`), so a migration would be survivable, but not worth it here.
+- **SwiftData schema**. Keeping `role` / `senderType` as `String` avoids a migration. E's `TeamMessage.serverId` is an additive optional attribute, which SwiftData migrates lightly; the app also wipes the store on container failure (`KeepurApp.swift`), so the worst case is a re-fetch of history.
 - **Behavior change in C's approval handling**. Users who relied on the app jumping to a session with a pending approval will no longer be jumped. Acceptable; the jump was also what broke the current chat.
-- **Scope creep from D**. Replacing 92 call sites touches most files. The plan for D must be mechanical (one helper, one pattern) and reviewed for accidental behavior changes, especially where a fetch failure previously fell through a `guard`.
+- **Scope creep from D**. Replacing 62 call sites touches most files. The plan for D must be mechanical (one helper, one pattern) and reviewed for accidental behavior changes, especially where a fetch failure previously fell through a `guard`.
 
 ## Open Questions
 
