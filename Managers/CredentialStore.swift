@@ -5,9 +5,11 @@ import Foundation
 /// shared between a socket and the view model that owns it.
 ///
 /// Read-only by design: nothing writes through this protocol today — pairing
-/// writes `KeychainManager`'s statics directly. Only the test fake
-/// (`FakeCredentialStore`) is mutable; the concrete production conformer
-/// (`KeychainCredentialStore`) exposes these as read-only computed properties.
+/// writes `KeychainManager`'s statics directly, as does `CapabilityManager
+/// .performRefresh` (it keeps `KeychainManager.deviceName` in sync with the
+/// server's `/me` response). Only the test fake (`FakeCredentialStore`) is
+/// mutable; the concrete production conformer (`KeychainCredentialStore`)
+/// exposes these as read-only computed properties.
 protocol CredentialStore: AnyObject {
     var token: String? { get }
     var deviceId: String? { get }

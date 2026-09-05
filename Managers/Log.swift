@@ -11,9 +11,11 @@ enum Log {
     static let capabilities = Logger(subsystem: subsystem, category: "capabilities")
     static let persistence  = Logger(subsystem: subsystem, category: "persistence")
 
-    /// `Logger` has no `isEnabled` accessor, so this parallel `OSLog` (same
-    /// subsystem/category, sharing the OS's enablement state for that pair) backs the
-    /// gate around debug-only work that isn't cheap enough to run unconditionally
-    /// (e.g. parsing a multi-MB frame just to log its `type`).
-    static let socketRaw = OSLog(subsystem: subsystem, category: "socket")
+    /// Enablement probe only — never used to emit log lines itself. `Logger` (this
+    /// SDK's version) has no `isEnabled` accessor, so this parallel `OSLog` (same
+    /// subsystem/category, sharing the OS's enablement state for that pair) exists
+    /// solely to answer `isEnabled(type:)` and gate debug-only work that isn't cheap
+    /// enough to run unconditionally (e.g. parsing a multi-MB frame just to log its
+    /// `type`).
+    static let socketEnablement = OSLog(subsystem: subsystem, category: "socket")
 }

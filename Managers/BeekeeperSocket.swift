@@ -141,7 +141,7 @@ final class BeekeeperSocket: ObservableObject {
     @discardableResult
     func send(_ frame: Data) -> Bool {
         guard state == .connected, let task else { return false }
-        if Log.socketRaw.isEnabled(type: .debug) {
+        if Log.socketEnablement.isEnabled(type: .debug) {
             let type = Self.frameType(frame)   // computed outside the Logger autoclosure (isolation)
             Log.socket.debug("send type=\(type, privacy: .public)")
         }
@@ -235,7 +235,7 @@ final class BeekeeperSocket: ObservableObject {
                     @unknown default: data = nil
                     }
                     if let data {
-                        if Log.socketRaw.isEnabled(type: .debug) {
+                        if Log.socketEnablement.isEnabled(type: .debug) {
                             let type = Self.frameType(data)
                             Log.socket.debug("recv type=\(type, privacy: .public)")
                         }
