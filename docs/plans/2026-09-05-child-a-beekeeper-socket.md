@@ -113,7 +113,9 @@
 1. The spec says `BeekeeperRootView`'s four `viewModel.ws.send` calls "stay until C". Renaming `ws` → `socket` and changing `send` to take `Data` means they cannot stay verbatim, so they become `viewModel.send(_:)` (a new internal `ChatViewModel` method that encodes and forwards). Child C still replaces them with named methods and makes `socket` private, as the spec says.
 2. `Config.maxReconnectDelay` is a `TimeInterval` (the spec sketch says `Duration`) because it feeds `min(pow(2, n), cap)`; `pingInterval` and `tokenReadRetryDelay` stay `Duration` because they feed `Task.sleep(for:)`.
 
-**Build setting to know about:** the app target enables `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY`, so any file that calls `Log.x.info(...)` must itself `import os`. The plan adds that import to `BeekeeperSocket.swift`, `ChatViewModel.swift`, `TeamViewModel.swift`, and `CapabilityManager.swift`.
+**Build settings to know about (CI is the only compiler, so these matter):**
+- `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` is on: any file that calls `Log.x.info(...)` must itself `import os`. The plan adds that import to `BeekeeperSocket.swift`, `ChatViewModel.swift`, `TeamViewModel.swift`, and `CapabilityManager.swift`.
+- `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` is on: every new type without an explicit isolation (`WebSocketTasking`, `CredentialStore`, `Log`, the adapter) is MainActor-isolated by default. Consequences the plan already accounts for: the socket's default `taskFactory` is written as a closure, not a bare reference to an isolated static; `frameType` is computed into a local before the `Logger` interpolation rather than inside its autoclosure; the test fakes are plain classes satisfying isolated requirements from the main thread; both test classes are `@MainActor`, which is what makes `State: Equatable` usable in `XCTAssertEqual` (with `InferIsolatedConformances`, that conformance is MainActor-isolated).
 
 ---
 
@@ -331,7 +333,7 @@ final class BeekeeperSocket: ObservableObject {
         config: Config = .standard,
         credentials: CredentialStore = KeychainCredentialStore(),
         endpoint: @escaping () throws -> URL = { try BeekeeperConfig.wssURL() },
-        taskFactory: @escaping (URL) -> WebSocketTasking = URLSessionWebSocketTaskAdapter.make
+        taskFactory: @escaping (URL) -> WebSocketTasking = { URLSessionWebSocketTaskAdapter.make(url: $0) }
     ) {
         self.config = config
         self.credentials = credentials
@@ -347,18 +349,21 @@ final class BeekeeperSocket: ObservableObject {
     /// - reconnecting (in backoff), same channel: cancel the sleep and attempt now, keeping the
     ///   attempt count; different channel: cancel backoff, tear down, connect with a fresh count.
     func connect(channel: String) {
-        tokenRetryTask?.cancel()
-        tokenRetryTask = nil
+        // Same-channel no-ops apply only when nothing is pending. A pending token-read
+        // retry (`tokenRetryTask != nil`) means no task is open yet, so a same-channel
+        // connect must fall through and attempt now rather than return.
         switch state {
         case .connecting, .connected:
-            if channel == lastChannel { return }
-            Log.socket.info("switching channel; tearing down current connection")
-            teardown()
+            if channel == lastChannel, tokenRetryTask == nil { return }
+            if channel != lastChannel {
+                Log.socket.info("switching channel; tearing down current connection")
+                teardown()
+            }
         case .reconnecting:
             // `reconnectTask == nil` while in .reconnecting means the backoff sleep already
             // ended and a retry handshake is in flight; a same-channel connect must not open
             // a second task on top of it (the old managers' `isConnecting` guard).
-            if reconnectTask == nil, channel == lastChannel { return }
+            if reconnectTask == nil, tokenRetryTask == nil, channel == lastChannel { return }
             reconnectTask?.cancel()
             reconnectTask = nil
             if channel != lastChannel {
@@ -368,6 +373,8 @@ final class BeekeeperSocket: ObservableObject {
         case .disconnected:
             break
         }
+        tokenRetryTask?.cancel()
+        tokenRetryTask = nil
         lastChannel = channel
         open(channel: channel)
     }
@@ -395,7 +402,8 @@ final class BeekeeperSocket: ObservableObject {
     @discardableResult
     func send(_ frame: Data) -> Bool {
         guard state == .connected, let task else { return false }
-        Log.socket.debug("send type=\(Self.frameType(frame), privacy: .public)")
+        let type = Self.frameType(frame)   // computed outside the Logger autoclosure (isolation)
+        Log.socket.debug("send type=\(type, privacy: .public)")
         let gen = generation
         task.send(.string(String(decoding: frame, as: UTF8.self))) { [weak self] error in
             guard error != nil else { return }
@@ -411,6 +419,9 @@ final class BeekeeperSocket: ObservableObject {
     // MARK: - Private: open + handshake
 
     private func open(channel: String) {
+        // Reflect "an attempt is under way" before the token read, so a transient
+        // Keychain failure never leaves a stale .connected/.disconnected on show.
+        if reconnectAttempts == 0 { setState(.connecting) }
         guard let token = credentials.token else {
             if tokenReadRetries < config.maxTokenReadRetries {
                 tokenReadRetries += 1
@@ -444,7 +455,6 @@ final class BeekeeperSocket: ObservableObject {
         let gen = generation
         let newTask = taskFactory(url)
         task = newTask
-        if reconnectAttempts == 0 { setState(.connecting) }
         Log.socket.info("connecting channel=\(channel, privacy: .public) attempt=\(self.reconnectAttempts, privacy: .public)")
         newTask.resume()
         newTask.sendPing { [weak self] error in
@@ -484,7 +494,8 @@ final class BeekeeperSocket: ObservableObject {
                     @unknown default: data = nil
                     }
                     if let data {
-                        Log.socket.debug("recv type=\(Self.frameType(data), privacy: .public)")
+                        let type = Self.frameType(data)
+                        Log.socket.debug("recv type=\(type, privacy: .public)")
                         self.frames.send(data)
                     }
                     // A subscriber may have called disconnect()/connect(other) synchronously
@@ -893,13 +904,13 @@ final class BeekeeperSocketTests: XCTestCase {
         let socket = makeSocket(pingInterval: .milliseconds(20))
         let task = await connectAndHandshake(socket)
 
-        try await Task.sleep(for: .milliseconds(90))
+        try await Task.sleep(for: .milliseconds(200))
         let sentWhileConnected = task.sentTexts.count
         XCTAssertGreaterThanOrEqual(sentWhileConnected, 3, "handshake keep-alive plus at least two loop pings")
 
         socket.disconnect()
         XCTAssertEqual(socket.state, .disconnected)
-        try await Task.sleep(for: .milliseconds(90))
+        try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(task.sentTexts.count, sentWhileConnected, "no pings after disconnect")
     }
 
@@ -1060,7 +1071,7 @@ Expected: no output.
     }
 ```
 
-- [ ] **Step 4:** In `Views/BeekeeperRootView.swift`, change the four concierge sends:
+- [ ] **Step 4:** In `Views/BeekeeperRootView.swift`, the doc comment above `ConciergeViewModel` (line 73) says "`WebSocketManager.onMessage` is single-consumer and already taken by `ChatViewModel`"; change that sentence to "`BeekeeperSocket.frames` is multicast, but this coordinator still observes `ChatViewModel`'s published state; child C switches it to the decoded-frame stream." Then change the four concierge sends:
 
 ```swift
 // line 105
