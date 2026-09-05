@@ -85,6 +85,17 @@ We follow the `dodi-dev` plugin workflow. All features go through two phases: pl
 
 **Skip step 5** if the change is small enough to implement directly without a plan.
 
+### Multi-Child Epics — Manual Mode Only
+
+**Do not invoke `dodi-dev:drive-epic`** (the automated resident-driver skill) on this repo. It requires `LINEAR_API_KEY` and a Linear-tracked epic/ticket set; this repo has neither — its PM system is GitHub Issues. The scripts it depends on (`driver-claim.sh`, `claim.sh`, `watchdog-scan.sh`, the coherence register) are hard-wired to Linear's GraphQL API and will error or silently target the wrong system.
+
+The fallback — and the actual process for every epic here — is to run the Execution Phase steps above **by hand, one child ticket at a time**:
+
+- The epic is one GitHub Issue with a checklist of child issues (e.g. `[Epic] iOS cleanup`, #88, children #90–#94), each child a separate issue linking back with "Part of #N". Sequencing/blocking is stated in prose in each child's body (e.g. "Blocked by #90").
+- Work children in the stated order. For each: `pickup` → `write-plan` → `implement` → `/quality-gate` → `dodi-dev:review` (manual mode — a capped round loop of `opus` reviewers plus one `fable` final round, run by hand, not the Florist autonomous seats) → `dodi-dev:submit`.
+- **Review findings that are real but out of scope for the current child** (belongs to a later child, is an environment/tooling issue, or is a standalone hygiene item) get demoted to a tracked follow-up, not left buried in a local plan doc: post a comment on the downstream child issue it belongs to, or file a new standalone issue if it doesn't belong to any open child. See #90/#91/#93/#101/#102 (child A of epic #88, 2026-09-05) for the pattern.
+- If a session parks mid-review or mid-implementation, write a session handoff doc under `docs/plans/` (e.g. `YYYY-MM-DD-<child>-handoff.md`) with exact resume steps, current SHAs, and open review-round state — the next session (or human) resumes from that doc.
+
 ### Design Specs and Plans
 
 - Design specs go to `docs/specs/YYYY-MM-DD-<topic>.md`
