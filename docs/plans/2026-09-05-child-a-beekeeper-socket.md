@@ -961,7 +961,7 @@ gh pr create -R keepur/keepur-ios --draft --base main --head issue-90 \
 Run: the `gh run list` / `gh run watch` / `gh run view --log` sequence from "Working constraints".
 Expected: `Executed 184 tests, with 0 failures`. Ten new tests, all in `BeekeeperSocketTests`. The old managers still exist at this point, so nothing else changed.
 
-If a compile error appears in `BeekeeperSocket.swift` or the tests, fix it, amend into the last commit, push, and re-run before continuing. Likely spots: `Task.sleep(for: Duration)` needs iOS 16+ (fine here); `URLSessionWebSocketTask.CloseCode(rawValue: 4001)` is a failable init (the `!` is intentional in the test).
+If a compile error appears in `BeekeeperSocket.swift` or the tests, fix it, amend into the last commit, push, and re-run before continuing. The errors this plan has already been reviewed against are all actor-isolation ones (see "Build settings to know about"); read the `error:` line, apply the smallest isolation fix, and do not remove `@MainActor` from the fakes. `URLSessionWebSocketTask.CloseCode(rawValue: 4001)` is a failable init; the `!` in the test is intentional.
 
 ---
 
@@ -1289,7 +1289,7 @@ grep -n 'ws\.' ViewModels/TeamViewModel.swift
 ```
 Expected: only the comment at line ~237 ("Use fetchHistory (not direct ws.send)…"); change that comment to say `send`.
 
-- [ ] **Step 6:** Line ~137 `senderName: KeychainManager.deviceName ?? "Me"` → `senderName: credentials.deviceName ?? "Me"`. Then:
+- [ ] **Step 6:** Line ~137 `senderName: KeychainManager.deviceName ?? "Me"` → `senderName: credentials.deviceName ?? "Me"`. In `handleAuthFailure` (line ~256) reword the comment to "Don't clear credentials here — ContentView observes `isAuthenticated` and calls `chatViewModel.unpair()`, which owns that." Then:
 
 ```bash
 grep -n 'KeychainManager' ViewModels/TeamViewModel.swift
@@ -1448,5 +1448,5 @@ git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"
 
 ### Task 9: Hand-off
 
-- [ ] **Step 1:** Edit the PR body to list what changed (the file map above), the four green runs by id, and the two behavior changes (Team reconnects with backoff; `deviceId` read at send time). Keep it a draft; `/quality-gate`, `dodi-dev:review`, and `dodi-dev:submit` follow per CLAUDE.md. `/quality-gate`'s test step is the CI run.
+- [ ] **Step 1:** Edit the PR body to list what changed (the file map above), the four green runs by id, and three behavior changes: Team reconnects with backoff instead of stopping at the retry banner; `deviceId` is read at send time; and a known interim in `WorkspacePickerView`, where "Reconnect" now calls `reconnect()` then `browse()` and the browse frame is dropped while the handshake is still in flight (the old manager claimed connected instantly). Child B's offline queue closes that gap; until then the user taps Retry once more. Keep it a draft; `/quality-gate`, `dodi-dev:review`, and `dodi-dev:submit` follow per CLAUDE.md. `/quality-gate`'s test step is the CI run.
 - [ ] **Step 2:** Confirm the spec's Child A acceptance lines hold: `grep -rn 'WebSocketManager' --include='*.swift' .` empty; `grep -rn 'print(' Managers ViewModels` empty; no view reads `viewModel.ws`.
