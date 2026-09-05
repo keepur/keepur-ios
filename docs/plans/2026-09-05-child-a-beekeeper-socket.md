@@ -115,7 +115,7 @@
 
 **Build settings to know about (CI is the only compiler, so these matter):**
 - `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` is on: any file that calls `Log.x.info(...)` must itself `import os`. The plan adds that import to `BeekeeperSocket.swift`, `ChatViewModel.swift`, `TeamViewModel.swift`, and `CapabilityManager.swift`.
-- `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` is on: every new type without an explicit isolation (`WebSocketTasking`, `CredentialStore`, `Log`, the adapter) is MainActor-isolated by default. Consequences the plan already accounts for: the socket's default `taskFactory` is written as a closure, not a bare reference to an isolated static; `frameType` is computed into a local before the `Logger` interpolation rather than inside its autoclosure; the test fakes are plain classes satisfying isolated requirements from the main thread; both test classes are `@MainActor`, which is what makes `State: Equatable` usable in `XCTAssertEqual` (with `InferIsolatedConformances`, that conformance is MainActor-isolated).
+- `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` is on: every new type without an explicit isolation (`WebSocketTasking`, `CredentialStore`, `Log`, the adapter) is MainActor-isolated by default. Consequences the plan already accounts for: the socket's default `taskFactory` is written as a closure, not a bare reference to an isolated static; `frameType` is computed into a local before the `Logger` interpolation rather than inside its autoclosure; the test target has **no** default isolation, so the fakes are explicitly `@MainActor` (a conformer to a MainActor protocol inherits it anyway, but the factory that constructs one does not), and the factory is always passed as a closure literal; both test classes are `@MainActor`, which is what makes `State: Equatable` usable in `XCTAssertEqual` (with `InferIsolatedConformances`, that conformance is MainActor-isolated).
 
 ---
 
@@ -604,10 +604,13 @@ import Foundation
 @testable import Keepur
 
 /// Records what the socket asks of it and lets a test drive the handshake and
-/// the receive loop by hand. Plain class (not @MainActor) so it satisfies the
-/// nonisolated protocol without Swift 6 isolation warnings; tests only touch it
-/// from the main thread.
-final class FakeWebSocketTask: WebSocketTasking, @unchecked Sendable {
+/// the receive loop by hand. `WebSocketTasking` is declared in the app target,
+/// whose default actor isolation is MainActor, so the protocol is @MainActor and
+/// a conformer inherits that; the annotation here is explicit for clarity.
+/// The test target has no default isolation, so anything that constructs a fake
+/// must itself be @MainActor (the factory below, and the test classes).
+@MainActor
+final class FakeWebSocketTask: WebSocketTasking {
     let url: URL
     var closeCode: URLSessionWebSocketTask.CloseCode = .invalid
     private(set) var resumed = false
@@ -665,7 +668,11 @@ final class FakeWebSocketTask: WebSocketTasking, @unchecked Sendable {
 }
 
 /// Creates a fresh fake per `connect` and keeps them all, so tests can inspect
-/// the old one after a channel switch.
+/// the old one after a channel switch. @MainActor because it constructs a
+/// MainActor-isolated fake. Pass it to the socket as a closure literal,
+/// `{ factory.make(url: $0) }`, never as the bare `factory.make` reference
+/// (converting an isolated method reference to the socket's closure type is an error).
+@MainActor
 final class FakeWebSocketTaskFactory {
     private(set) var made: [FakeWebSocketTask] = []
 
@@ -685,6 +692,9 @@ final class FakeWebSocketTaskFactory {
 import Foundation
 @testable import Keepur
 
+/// `CredentialStore` is @MainActor (app-target default isolation); the conformer
+/// inherits it. Only constructed from @MainActor test classes.
+@MainActor
 final class FakeCredentialStore: CredentialStore {
     var token: String?
     var deviceId: String?
@@ -760,11 +770,12 @@ final class BeekeeperSocketTests: XCTestCase {
         config.pingInterval = pingInterval
         config.tokenReadRetryDelay = tokenReadRetryDelay
         config.maxTokenReadRetries = maxTokenReadRetries
+        let factory = self.factory!
         return BeekeeperSocket(
             config: config,
             credentials: credentials,
             endpoint: { URL(string: "wss://unit.test")! },
-            taskFactory: factory.make
+            taskFactory: { factory.make(url: $0) }   // closure literal, not `factory.make`
         )
     }
 
@@ -1383,11 +1394,12 @@ final class TeamViewModelTests: XCTestCase {
         credentials = FakeCredentialStore(deviceId: "device-old")
         factory = FakeWebSocketTaskFactory()
         capability = CapabilityManager()
+        let factory = self.factory!
         let socket = BeekeeperSocket(
             config: .standard,
             credentials: credentials,
             endpoint: { URL(string: "wss://unit.test")! },
-            taskFactory: factory.make
+            taskFactory: { factory.make(url: $0) }   // closure literal, not `factory.make`
         )
         vm = TeamViewModel(socket: socket, credentials: credentials)
         vm.configure(context: context, capabilityManager: capability)
@@ -1401,8 +1413,9 @@ final class TeamViewModelTests: XCTestCase {
         container = nil
     }
 
-    private func ownMessages() throws -> [TeamMessage] {
-        try context.fetch(FetchDescriptor<TeamMessage>(sortBy: [SortDescriptor(\.createdAt)]))
+    private func senderIdsByText() throws -> [String: String] {
+        let rows = try context.fetch(FetchDescriptor<TeamMessage>())
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0.text, $0.senderId) })
     }
 
     func testDeviceIdFollowsCredentialStore() throws {
@@ -1410,10 +1423,11 @@ final class TeamViewModelTests: XCTestCase {
         credentials.deviceId = "device-new"     // what a re-pair does
         vm.sendMessage(text: "second")
 
-        let rows = try ownMessages()
-        XCTAssertEqual(rows.map(\.text), ["first", "second"])
-        XCTAssertEqual(rows.map(\.senderId), ["device-old", "device-new"],
+        let senders = try senderIdsByText()
+        XCTAssertEqual(senders, ["first": "device-old", "second": "device-new"],
                        "sender id must be read at send time, not captured in configure")
+        let rows = try context.fetch(FetchDescriptor<TeamMessage>())
+        XCTAssertEqual(rows.count, 2)
         XCTAssertTrue(rows.allSatisfy(\.pending), "socket never connected, so nothing was acked")
     }
 }
