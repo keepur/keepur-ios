@@ -42,7 +42,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) {
             if scenePhase == .active && isPaired {
-                chatViewModel.ws.connect()
+                chatViewModel.reconnect()
                 Task {
                     await capabilityManager.refresh()
                     teamViewModel.connectIfPossible()
