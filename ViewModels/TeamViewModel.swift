@@ -56,7 +56,7 @@ final class TeamViewModel: ObservableObject {
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore()
     ) {
-        self.socket = socket ?? BeekeeperSocket(config: .standard)
+        self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
     }
 
@@ -456,7 +456,7 @@ final class TeamViewModel: ObservableObject {
         case .error(let message):
             pendingAgentDM = nil
             pendingDMRequestId = nil
-            Log.team.error("server error: \(message, privacy: .public)")
+            Log.team.error("server error: \(message, privacy: .private)")
 
         case .pong:
             break
