@@ -39,7 +39,7 @@ struct TeamRootView: View {
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Circle()
-                                .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                                .fill(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                                 .frame(width: 8, height: 8)
                         }
                     }

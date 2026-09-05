@@ -97,10 +97,10 @@ struct SettingsView: View {
                         Spacer()
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                                .fill(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                                 .frame(width: 8, height: 8)
-                            Text(viewModel.ws.isConnected ? "Connected" : "Disconnected")
-                                .foregroundStyle(viewModel.ws.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                            Text(viewModel.socket.isConnected ? "Connected" : "Disconnected")
+                                .foregroundStyle(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                         }
                     }
                     .padding(.vertical, KeepurTheme.Spacing.s3)
@@ -184,11 +184,11 @@ struct SettingsView: View {
     private var footerSection: some View {
         KeepurCard(bordered: true) {
             VStack(spacing: 0) {
-                Button(viewModel.ws.isConnected ? "Disconnect" : "Reconnect") {
-                    if viewModel.ws.isConnected {
-                        viewModel.ws.disconnect()
+                Button(viewModel.socket.isConnected ? "Disconnect" : "Reconnect") {
+                    if viewModel.socket.isConnected {
+                        viewModel.disconnect()
                     } else {
-                        viewModel.ws.connect()
+                        viewModel.reconnect()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import os
 
 @MainActor
 final class CapabilityManager: ObservableObject {
@@ -46,7 +47,7 @@ final class CapabilityManager: ObservableObject {
             async let meTask = APIManager.fetchMe()
             let (all, me) = try await (capsTask, meTask)
 
-            print("[Capabilities] raw: \(all)")
+            Log.capabilities.debug("capabilities: \(all.count, privacy: .public) entries")
             let filtered = all.filter { $0 != "beekeeper" }.sorted()
             // Guard each assignment so identical-value writes from a re-fetch
             // don't republish through the SwiftUI view graph. KPR-186 follow-up:

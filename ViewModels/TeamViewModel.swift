@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import SwiftData
 import SwiftUI
+import os
 
 @MainActor
 final class TeamViewModel: ObservableObject {
@@ -38,68 +39,115 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Internal State
 
-    let ws = TeamWebSocketManager()
+    let socket: BeekeeperSocket
+    private let credentials: CredentialStore
+    private var subscriptions = Set<AnyCancellable>()
+    private var previousSocketState: BeekeeperSocket.State = .disconnected
     private var modelContext: ModelContext?
-    private var deviceId: String = ""
+    /// Read on every use so a re-pair (new device id) is picked up immediately.
+    private var deviceId: String { credentials.deviceId ?? "" }
     private var pendingCommandChannels: [String: String] = [:]  // requestId -> channelId
     private var pendingMessageIds: [String: String] = [:]       // requestId -> local message id
     private var pendingNewCommands: Set<String> = []             // requestIds for /new commands
     private var pendingAgentDM: String?       // agent ID to auto-select after channel refresh
     private var pendingDMRequestId: String?   // request UUID of the /dm command
 
+    init(
+        socket: BeekeeperSocket? = nil,
+        credentials: CredentialStore = KeychainCredentialStore()
+    ) {
+        self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
+        self.credentials = credentials
+    }
+
     // MARK: - Setup
 
     func configure(context: ModelContext, capabilityManager: CapabilityManager) {
         guard modelContext == nil else { return }  // Idempotency guard
         self.modelContext = context
-        self.deviceId = KeychainManager.deviceId ?? ""
         self.capabilityManager = capabilityManager
 
-        ws.onMessage = { [weak self] incoming in
-            self?.handleIncoming(incoming)
-        }
-        ws.onAuthFailure = { [weak self] in
+        socket.frames
+            .sink { [weak self] data in self?.handleFrame(data) }
+            .store(in: &subscriptions)
+        socket.$state
+            .dropFirst()
+            .sink { [weak self] state in self?.handleSocketState(state) }
+            .store(in: &subscriptions)
+        socket.onAuthFailure = { [weak self] in
             self?.handleAuthFailure()
         }
-        ws.onConnect = { [weak self] in
+        socket.onConnected = { [weak self] in
             self?.onConnected()
         }
-        ws.onReceiveFailure = { [weak self] in
-            self?.handleReceiveFailure()
+    }
+
+    private func handleFrame(_ data: Data) {
+        guard let incoming = TeamWSIncoming.decode(from: data) else {
+            Log.team.debug("dropping undecodable frame")
+            return
         }
+        handleIncoming(incoming)
     }
 
     func connectIfPossible() {
         guard let manager = capabilityManager,
               let channel = manager.selectedHive,
               manager.hives.contains(channel) else {
-            print("[TeamVM] connectIfPossible: no valid selectedHive, skipping")
-            ws.disconnect()
+            Log.team.info("connectIfPossible: no valid selectedHive; disconnecting")
+            socket.disconnect()
             return
         }
-        print("[TeamVM] connectIfPossible: connecting to \(channel)")
-        ws.connect(channel: channel)
+        Log.team.info("connectIfPossible: channel=\(channel, privacy: .public)")
+        socket.connect(channel: channel)
+    }
+
+    /// Foregrounding and the Settings button call this; during backoff it attempts immediately.
+    func reconnect() {
+        connectIfPossible()
     }
 
     func retryConnect() {
         disconnectedBanner = nil
-        connectIfPossible()
+        reconnect()
     }
 
-    private func handleReceiveFailure() {
+    /// Replaces the old `onReceiveFailure` hook. The socket now backs off on its own;
+    /// the banner is (re-)shown on every distinct transition into `.reconnecting` — a
+    /// manual `retryConnect()` clears it, and the next backoff failure (whatever attempt
+    /// number it lands on) must bring it back. The hive-vanished check only needs to run
+    /// once per connection loss, so it stays gated on `attempt == 1`.
+    private func handleSocketState(_ state: BeekeeperSocket.State) {
+        defer { previousSocketState = state }
+        switch state {
+        case .reconnecting(let attempt) where previousSocketState != state:
+            handleConnectionLost()
+            if attempt == 1 {
+                refreshCapabilitiesAfterConnectionLost()
+            }
+        case .connected:
+            disconnectedBanner = nil
+        default:
+            break
+        }
+    }
+
+    private func handleConnectionLost() {
         guard let manager = capabilityManager else { return }
         let label = manager.selectedHive ?? "hive"
         disconnectedBanner = "\(label) is unavailable — tap to retry."
+    }
+
+    private func refreshCapabilitiesAfterConnectionLost() {
+        guard let manager = capabilityManager else { return }
         Task { [weak self] in
             await manager.refresh()
-            await MainActor.run {
-                guard let self else { return }
-                if let current = manager.selectedHive, manager.hives.contains(current) {
-                    // still available — keep banner, user can tap retry
-                } else {
-                    self.disconnectedBanner = nil
-                    self.ws.disconnect()
-                }
+            guard let self else { return }
+            if let current = manager.selectedHive, manager.hives.contains(current) {
+                // Hive still exists; the socket keeps backing off and the banner offers retry-now.
+            } else {
+                self.disconnectedBanner = nil
+                self.socket.disconnect()
             }
         }
     }
@@ -107,7 +155,25 @@ final class TeamViewModel: ObservableObject {
     func disconnect() {
         pendingAgentDM = nil
         pendingDMRequestId = nil
-        ws.disconnect()
+        socket.disconnect()
+    }
+
+    // MARK: - Sending
+
+    @discardableResult
+    private func send(_ outgoing: TeamWSOutgoing) -> Bool {
+        guard let data = try? outgoing.encode() else {
+            Log.team.error("failed to encode outgoing frame")
+            return false
+        }
+        return socket.send(data)
+    }
+
+    /// Send and return the request UUID for correlation; nil when not connected.
+    private func sendWithId(_ outgoing: TeamWSOutgoing) -> String? {
+        guard socket.isConnected, let result = try? outgoing.encodeWithId() else { return nil }
+        guard socket.send(result.data) else { return nil }
+        return result.id
     }
 
     // MARK: - Public Actions
@@ -134,22 +200,22 @@ final class TeamViewModel: ObservableObject {
             channelId: channelId,
             senderId: deviceId,
             senderType: "person",
-            senderName: KeychainManager.deviceName ?? "Me",
+            senderName: credentials.deviceName ?? "Me",
             text: effectiveText,
             pending: true
         )
         context.insert(message)
         try? context.save()
 
-        if let requestId = ws.sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
+        if let requestId = sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
             pendingMessageIds[requestId] = localId
         }
         if let attachment {
             let base64 = attachment.data.base64EncodedString()
             if attachment.mimeType.hasPrefix("image/") {
-                _ = ws.sendWithId(.teamImage(channelId: channelId, data: base64, filename: attachment.name))
+                _ = sendWithId(.teamImage(channelId: channelId, data: base64, filename: attachment.name))
             } else {
-                _ = ws.sendWithId(.teamFile(channelId: channelId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+                _ = sendWithId(.teamFile(channelId: channelId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
             }
         }
 
@@ -202,11 +268,11 @@ final class TeamViewModel: ObservableObject {
             }
         }
 
-        ws.send(.history(channelId: channelId, before: before, limit: 50))
+        send(.history(channelId: channelId, before: before, limit: 50))
     }
 
     func fetchChannels() {
-        ws.send(.channelList)
+        send(.channelList)
     }
 
     func joinChannel(channelId: String) {
@@ -217,11 +283,11 @@ final class TeamViewModel: ObservableObject {
             predicate: #Predicate { $0.id == cid }
         )
         if (try? context.fetch(descriptor).first) != nil { return }
-        ws.send(.join(channelId: channelId))
+        send(.join(channelId: channelId))
     }
 
     func leaveChannel(channelId: String) {
-        ws.send(.leave(channelId: channelId))
+        send(.leave(channelId: channelId))
     }
 
     // MARK: - Private: Connection
@@ -231,10 +297,10 @@ final class TeamViewModel: ObservableObject {
         pendingAgentDM = nil
         pendingDMRequestId = nil
         fetchChannels()
-        ws.send(.agentList)
-        ws.send(.commandList)
+        send(.agentList)
+        send(.commandList)
         // Reconnect gap-fill: fetch latest messages for the active channel.
-        // Use fetchHistory (not direct ws.send) so cursor and loading state
+        // Use fetchHistory (not direct send) so cursor and loading state
         // are managed correctly and we don't race with seeding fetches.
         if let channelId = activeChannelId {
             // Reset cursor so we get the latest page, not stale pagination
@@ -252,9 +318,9 @@ final class TeamViewModel: ObservableObject {
     }
 
     private func handleAuthFailure() {
-        ws.disconnect()
-        // Don't call KeychainManager.clearAll() here — ContentView observes
-        // isAuthenticated and calls chatViewModel.unpair() which handles Keychain cleanup.
+        socket.disconnect()
+        // Don't clear credentials here — ContentView observes `isAuthenticated`
+        // and calls `chatViewModel.unpair()`, which owns that.
         isAuthenticated = false
     }
 
@@ -270,7 +336,7 @@ final class TeamViewModel: ObservableObject {
             name: String(commandName),
             args: args
         )
-        if let requestId = ws.sendWithId(command) {
+        if let requestId = sendWithId(command) {
             pendingCommandChannels[requestId] = channelId
             // Track /new commands for auto-refresh
             if commandName == "new" || commandName == "dm" {
@@ -293,7 +359,7 @@ final class TeamViewModel: ObservableObject {
         // 3. Not found — create via /dm command. Send agent id so the server's
         // AgentResolver doesn't have to do a display-name lookup (KPR-11).
         let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.id])
-        guard let requestId = ws.sendWithId(command) else { return }  // offline — no-op
+        guard let requestId = sendWithId(command) else { return }  // offline — no-op
 
         pendingNewCommands.insert(requestId)
         pendingAgentDM = agent.id
@@ -371,7 +437,7 @@ final class TeamViewModel: ObservableObject {
             // prematurely clear isLoadingHistory and corrupt the cursor.
             for info in channelInfos {
                 guard info.id != activeChannelId else { continue }
-                ws.send(.history(channelId: info.id, before: nil, limit: 1))
+                send(.history(channelId: info.id, before: nil, limit: 1))
             }
 
         case .history(let channelId, let messages, let hasMore, _):
@@ -400,7 +466,7 @@ final class TeamViewModel: ObservableObject {
         case .error(let message):
             pendingAgentDM = nil
             pendingDMRequestId = nil
-            print("[Team WS error] \(message)")
+            Log.team.error("server error: \(message, privacy: .private)")
 
         case .pong:
             break

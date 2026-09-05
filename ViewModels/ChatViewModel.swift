@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 import Combine
+import os
 
 @MainActor
 final class ChatViewModel: ObservableObject {
@@ -29,8 +30,12 @@ final class ChatViewModel: ObservableObject {
     @Published var pendingMessageIds: Set<String> = []
     @Published var pendingAttachment: AttachmentData?
 
-    let ws = WebSocketManager()
+    static let channel = "beekeeper"
+
+    let socket: BeekeeperSocket
     let speechManager = SpeechManager()
+    private let credentials: CredentialStore
+    private var frameSubscription: AnyCancellable?
     var autoReadAloud = false
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
@@ -54,18 +59,53 @@ final class ChatViewModel: ObservableObject {
         let sessionId: String?
     }
 
+    init(
+        socket: BeekeeperSocket? = nil,
+        credentials: CredentialStore = KeychainCredentialStore()
+    ) {
+        self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
+        self.credentials = credentials
+    }
+
     func configure(context: ModelContext) {
         self.modelContext = context
-        ws.onMessage = { [weak self] incoming in
-            self?.handleIncoming(incoming)
+        frameSubscription = socket.frames.sink { [weak self] data in
+            self?.handleFrame(data)
         }
-        ws.onAuthFailure = { [weak self] in
+        socket.onAuthFailure = { [weak self] in
             self?.unpair()
         }
-        ws.onConnect = { [weak self] in
+        socket.onConnected = { [weak self] in
             self?.listSessions()
         }
-        ws.connect()
+        socket.connect(channel: Self.channel)
+    }
+
+    // MARK: - Connection
+
+    func reconnect() {
+        socket.connect(channel: Self.channel)
+    }
+
+    func disconnect() {
+        socket.disconnect()
+    }
+
+    /// Encodes and forwards. Returns `false` when the socket is not connected;
+    /// child B queues on that signal.
+    @discardableResult
+    func send(_ outgoing: WSOutgoing) -> Bool {
+        guard let data = try? outgoing.encode() else {
+            Log.chat.error("failed to encode outgoing frame")
+            return false
+        }
+        return socket.send(data)
+    }
+
+    private func handleFrame(_ data: Data) {
+        let incoming = WSIncoming.decode(from: data)
+            ?? .unknown(raw: String(decoding: data, as: UTF8.self))
+        handleIncoming(incoming)
     }
 
     func sendText() {
@@ -97,51 +137,54 @@ final class ChatViewModel: ObservableObject {
     }
 
     func cancelCurrentOperation(for sessionId: String) {
-        ws.send(.cancel(sessionId: sessionId))
+        send(.cancel(sessionId: sessionId))
         clearPendingMessages(for: sessionId)
     }
 
     func newSession(path: String) {
-        ws.send(.newSession(path: path))
+        send(.newSession(path: path))
     }
 
     func clearSession(sessionId: String) {
-        ws.send(.clearSession(sessionId: sessionId))
+        send(.clearSession(sessionId: sessionId))
         deleteLocalSession(sessionId: sessionId)
     }
 
     func listSessions() {
-        ws.send(.listSessions)
+        send(.listSessions)
     }
 
     func listWorkspaceSessions(path: String) {
         workspaceSessions = []
-        ws.send(.listWorkspaceSessions(path: path))
+        send(.listWorkspaceSessions(path: path))
     }
 
     func resumeSession(sessionId: String, path: String) {
-        ws.send(.resumeSession(sessionId: sessionId, path: path))
+        send(.resumeSession(sessionId: sessionId, path: path))
     }
 
     func browse(path: String? = nil) {
         browseError = nil
-        isBrowsePending = true
-        ws.send(.browse(path: path))
+        // Only arm the pending flag when the frame actually went out — a dropped
+        // send (socket not connected) must not leave `isBrowsePending` stuck true,
+        // or a later unrelated `error` frame with a nil sessionId gets misattributed
+        // to this browse (see the `.error` case in `handleIncoming`).
+        isBrowsePending = send(.browse(path: path))
     }
 
     func approve(toolUseId: String, sessionId: String) {
-        ws.send(.approve(toolUseId: toolUseId))
+        send(.approve(toolUseId: toolUseId))
         pendingApprovals[sessionId] = nil
     }
 
     func deny(toolUseId: String, sessionId: String) {
-        ws.send(.deny(toolUseId: toolUseId))
+        send(.deny(toolUseId: toolUseId))
         pendingApprovals[sessionId] = nil
     }
 
     func unpair() {
-        ws.disconnect()
-        KeychainManager.clearAll()
+        socket.disconnect()
+        credentials.clearAll()
         isAuthenticated = false
     }
 
@@ -156,7 +199,7 @@ final class ChatViewModel: ObservableObject {
 
         case .toolApproval(let toolUseId, let tool, let input, let sessionId):
             guard let effectiveSessionId = sessionId ?? currentSessionId else {
-                ws.send(.deny(toolUseId: toolUseId))
+                send(.deny(toolUseId: toolUseId))
                 return
             }
             if let sessionId, sessionId != currentSessionId {
@@ -462,14 +505,14 @@ final class ChatViewModel: ObservableObject {
 
     private func sendToServer(text: String, attachment: AttachmentData?, sessionId: String) {
         if !text.isEmpty {
-            ws.send(.message(text: text, sessionId: sessionId))
+            send(.message(text: text, sessionId: sessionId))
         }
         if let attachment {
             let base64 = attachment.data.base64EncodedString()
             if attachment.mimeType.hasPrefix("image/") {
-                ws.send(.image(sessionId: sessionId, data: base64, filename: attachment.name))
+                send(.image(sessionId: sessionId, data: base64, filename: attachment.name))
             } else {
-                ws.send(.file(sessionId: sessionId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+                send(.file(sessionId: sessionId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
             }
         }
     }

@@ -37,7 +37,7 @@ struct WorkspacePickerView: View {
                 }
 
                 Section {
-                    if !viewModel.ws.isConnected {
+                    if !viewModel.socket.isConnected {
                         ContentUnavailableView {
                             Label("Disconnected", systemImage: "wifi.slash")
                         } description: {
@@ -45,7 +45,7 @@ struct WorkspacePickerView: View {
                         } actions: {
                             Button("Reconnect") {
                                 viewModel.browseError = nil
-                                viewModel.ws.connect()
+                                viewModel.reconnect()
                                 viewModel.browse()
                             }
                             .buttonStyle(KeepurPrimaryButtonStyle())
