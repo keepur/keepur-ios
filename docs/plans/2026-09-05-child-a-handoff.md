@@ -96,7 +96,7 @@ Deviation: both view models take `socket: BeekeeperSocket? = nil` (default-argum
 |---|---|---|
 | 1 — socket, seams, fakes, tests | 33949644848 | 184 ✅ |
 | 2 — both view models on the socket | 33950802012 | 184 ✅ |
-| 3+4 — managers deleted, `TeamViewModelTests`, handoff doc | RUN34 | 185 |
+| 3+4 — managers deleted, `TeamViewModelTests`, handoff doc | latest run on `issue-90` (`gh run list -R keepur/keepur-ios --branch issue-90 --limit 1`) — pending at park time | 185 |
 
 Acceptance greps empty: `WebSocketManager` in `*.swift`; `print(` in `Managers`/`ViewModels`; `viewModel.ws` in `Views`.
 
