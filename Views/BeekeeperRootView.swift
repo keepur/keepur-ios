@@ -102,6 +102,18 @@ final class ConciergeViewModel: ObservableObject {
     }
 
     private func runFlow(viewModel: ChatViewModel, store: ConciergeSessionStore) async {
+        // Cold start races this task against the socket handshake: the tab's `.task`
+        // fires `start()` → `runFlow` as soon as the view appears, but `configure()`
+        // only just called `connect()`, so the socket is still `.connecting`. Sending
+        // into that state is a silent no-op (`BeekeeperSocket.send` returns `false`
+        // and drops the frame), which meant the cache-hit `resume_session` below was
+        // routinely lost on a cold launch — the flow then burned the 3s
+        // `waitForSessionInfo` timeout, fell through to `list_sessions` discovery, and
+        // could spawn a duplicate concierge session. Wait briefly for the connection
+        // before the first send; if it doesn't land in time, proceed anyway — steps
+        // 1-3 below already tolerate a dropped/timed-out send via their own fallbacks.
+        await waitForSocketConnected(viewModel: viewModel, timeoutSeconds: 5)
+
         // 1) Cache hit → resume_session.
         if let cached = store.cachedSession {
             viewModel.send(.resumeSession(sessionId: cached.sessionId, path: cached.path))
@@ -159,6 +171,19 @@ final class ConciergeViewModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return nil
+    }
+
+    /// Polls `viewModel.socket.isConnected` until the handshake completes or the
+    /// timeout elapses. Same polling style as `waitForSessionInfo` /
+    /// `waitForConciergeInList` below. Times out silently (returns either way) —
+    /// callers proceed regardless, since the send-gated fallbacks handle a
+    /// still-dropped frame.
+    private func waitForSocketConnected(viewModel: ChatViewModel, timeoutSeconds: Double) async {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if viewModel.socket.isConnected { return }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     /// Polls `viewModel.serverSessions` for the concierge slot until one shows
