@@ -5,9 +5,9 @@ import Foundation
 /// shared between a socket and the view model that owns it.
 ///
 /// Read-only by design: nothing writes through this protocol today — pairing
-/// writes `KeychainManager`'s statics directly, and tests mutate the concrete
-/// `FakeCredentialStore`. The concrete conformers (`KeychainCredentialStore`,
-/// `FakeCredentialStore`) keep settable properties for those call sites.
+/// writes `KeychainManager`'s statics directly. Only the test fake
+/// (`FakeCredentialStore`) is mutable; the concrete production conformer
+/// (`KeychainCredentialStore`) exposes these as read-only computed properties.
 protocol CredentialStore: AnyObject {
     var token: String? { get }
     var deviceId: String? { get }
@@ -20,20 +20,11 @@ protocol CredentialStore: AnyObject {
 final class KeychainCredentialStore: CredentialStore {
     init() {}
 
-    var token: String? {
-        get { KeychainManager.token }
-        set { KeychainManager.token = newValue }
-    }
+    var token: String? { KeychainManager.token }
 
-    var deviceId: String? {
-        get { KeychainManager.deviceId }
-        set { KeychainManager.deviceId = newValue }
-    }
+    var deviceId: String? { KeychainManager.deviceId }
 
-    var deviceName: String? {
-        get { KeychainManager.deviceName }
-        set { KeychainManager.deviceName = newValue }
-    }
+    var deviceName: String? { KeychainManager.deviceName }
 
     var isPaired: Bool { KeychainManager.isPaired }
 
