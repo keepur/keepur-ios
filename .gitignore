@@ -15,3 +15,6 @@ Pods/
 
 # Claude worktrees + agent state
 .claude/
+
+# Xcode test result bundles (produced by the CI command when run locally)
+*.xcresult

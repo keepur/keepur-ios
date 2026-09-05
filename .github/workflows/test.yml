@@ -1,0 +1,85 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main, 'epic-*']
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  # Cancel superseded runs on PR branches only; every push to main keeps its run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit tests (iOS Simulator)
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode on the runner
+        run: |
+          # The project targets iOS 26.2, so the image default may be too old
+          # after a runner update; always take the newest installed Xcode.
+          # GA releases only: a beta would otherwise sort above the newest GA.
+          newest=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$newest"
+          echo "Selected: $newest"
+          xcodebuild -version
+          sw_vers
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          # Simulator names change with each Xcode; take the first available iPhone
+          # instead of hard-coding one so the job survives runner image updates.
+          name=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].name')
+          if [ -z "$name" ] || [ "$name" = "null" ]; then
+            echo "No available iPhone simulator found" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project Keepur.xcodeproj -scheme Keepur
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          command -v xcbeautify >/dev/null || brew install xcbeautify
+          # No CODE_SIGNING_ALLOWED=NO: simulator builds ad-hoc sign without a
+          # certificate, and the Keychain-backed tests need the signed host app.
+          # The scheme runs the suite non-parallel so tests hit the base
+          # simulator, not clones, where Keychain access is unreliable.
+          xcodebuild test \
+            -project Keepur.xcodeproj \
+            -scheme Keepur \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -only-testing:KeeperTests \
+            -resultBundlePath TestResults.xcresult \
+            | xcbeautify --renderer github-actions
+
+      - name: Print failure details
+        if: failure()
+        run: |
+          # xcbeautify prints failing test names but not assertion messages;
+          # the result bundle has them.
+          xcrun xcresulttool get test-results summary --path TestResults.xcresult 2>/dev/null \
+            | jq -r '.testFailures[]? | "\(.testName): \(.failureText)"' || true
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults.xcresult
+          path: TestResults.xcresult
+          if-no-files-found: ignore

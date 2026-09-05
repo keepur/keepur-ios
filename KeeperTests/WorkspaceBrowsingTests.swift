@@ -129,11 +129,13 @@ final class WorkspaceBrowsingTests: XCTestCase {
             "path": "/workspace/project"
         ]
         let data = try! JSONSerialization.data(withJSONObject: json)
-        guard case .sessionInfo(let sessionId, let path) = WSIncoming.decode(from: data) else {
+        guard case .sessionInfo(let sessionId, let path, let mode) = WSIncoming.decode(from: data) else {
             XCTFail("Expected sessionInfo"); return
         }
         XCTAssertEqual(sessionId, "sess-789")
         XCTAssertEqual(path, "/workspace/project")
+        // Fixture omits `mode`; decoder defaults it for pre-v1.6.1 daemons.
+        XCTAssertEqual(mode, "sessions")
     }
 
     func testSessionListDecoding() {
