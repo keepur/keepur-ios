@@ -3,10 +3,15 @@ import Foundation
 /// Abstracts `KeychainManager`'s statics so the socket and the view models can be
 /// tested with an in-memory store. Reference type on purpose: one instance is
 /// shared between a socket and the view model that owns it.
+///
+/// Read-only by design: nothing writes through this protocol today — pairing
+/// writes `KeychainManager`'s statics directly, and tests mutate the concrete
+/// `FakeCredentialStore`. The concrete conformers (`KeychainCredentialStore`,
+/// `FakeCredentialStore`) keep settable properties for those call sites.
 protocol CredentialStore: AnyObject {
-    var token: String? { get set }
-    var deviceId: String? { get set }
-    var deviceName: String? { get set }
+    var token: String? { get }
+    var deviceId: String? { get }
+    var deviceName: String? { get }
     var isPaired: Bool { get }
     func clearAll()
 }
