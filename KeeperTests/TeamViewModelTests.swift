@@ -12,6 +12,7 @@ final class TeamViewModelTests: XCTestCase {
     private var vm: TeamViewModel!
 
     override func setUp() async throws {
+        UserDefaults.standard.removeObject(forKey: "selectedHive")
         let schema = Schema([TeamChannel.self, TeamMessage.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: [config])
@@ -36,6 +37,7 @@ final class TeamViewModelTests: XCTestCase {
         capability = nil
         context = nil
         container = nil
+        UserDefaults.standard.removeObject(forKey: "selectedHive")
     }
 
     private func senderIdsByText() throws -> [String: String] {
@@ -66,21 +68,34 @@ final class TeamViewModelTests: XCTestCase {
     /// used to land on `.reconnecting(attempt: 2)` — which the old `handleSocketState`
     /// only banner'd on `attempt == 1` — and the banner never came back.
     func testBannerReturnsAfterFailedManualRetry() async throws {
-        // `capability.hives`/`selectedHive` have no test seam (private(set), backed by
-        // UserDefaults with a live network refresh), so drive the socket directly —
-        // exactly what `connectIfPossible()` does for a valid channel.
-        vm.socket.connect(channel: "hive-1")
+        // The seam is `_setHivesForTesting` (CapabilityManager.swift ~82): it sets
+        // `hives` and, via `reconcileSelectedHive`, `selectedHive`. Seeding a single
+        // hive here is required, not incidental — `connectIfPossible()` needs a valid
+        // `selectedHive` to connect at all, and on the first `.reconnecting` transition
+        // `refreshCapabilitiesAfterConnectionLost()` fires a real `manager.refresh()`
+        // that fails in tests (no token, so `APIManager.fetchCapabilities`/`fetchMe`
+        // throw immediately). A failed refresh leaves `hives`/`selectedHive` untouched,
+        // so with a hive already seeded, `performRefresh`'s `catch` branch takes the
+        // harmless "hive still exists" path instead of tearing the banner/socket down
+        // via the hive-vanished branch.
+        capability._setHivesForTesting(["hive-1"])
+        XCTAssertEqual(capability.selectedHive, "hive-1")
+
+        vm.connectIfPossible()
         let firstTask = try XCTUnwrap(factory.latest)
+        XCTAssertTrue(firstTask.url.absoluteString.hasSuffix("&channel=hive-1"))
         firstTask.completeHandshake(error: URLError(.networkConnectionLost))
         await settle()
 
         XCTAssertEqual(vm.socket.state, .reconnecting(attempt: 1))
-        XCTAssertNotNil(vm.disconnectedBanner, "first failure must show the banner")
+        let firstBanner = try XCTUnwrap(vm.disconnectedBanner, "first failure must show the banner")
+        XCTAssertTrue(firstBanner.contains("hive-1"))
 
-        // Simulate the manual retry (`retryConnect()`'s effect): clear the banner, then
-        // reattempt now instead of waiting out the backoff.
-        vm.disconnectedBanner = nil
-        vm.socket.connect(channel: "hive-1")
+        // `retryConnect()` clears the banner, then reattempts immediately (during
+        // backoff) instead of waiting out the timer.
+        vm.retryConnect()
+        XCTAssertNil(vm.disconnectedBanner, "retryConnect must clear the banner right away")
+        XCTAssertEqual(factory.made.count, 2, "retry must open a fresh task immediately")
         let secondTask = try XCTUnwrap(factory.latest)
         XCTAssertFalse(secondTask === firstTask, "retry must open a fresh task immediately")
         secondTask.completeHandshake(error: URLError(.networkConnectionLost))
