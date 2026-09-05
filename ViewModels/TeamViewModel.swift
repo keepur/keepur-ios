@@ -113,12 +113,18 @@ final class TeamViewModel: ObservableObject {
     }
 
     /// Replaces the old `onReceiveFailure` hook. The socket now backs off on its own;
-    /// this only keeps the hive-vanished check and the banner (child B replaces the banner).
+    /// the banner is (re-)shown on every distinct transition into `.reconnecting` — a
+    /// manual `retryConnect()` clears it, and the next backoff failure (whatever attempt
+    /// number it lands on) must bring it back. The hive-vanished check only needs to run
+    /// once per connection loss, so it stays gated on `attempt == 1`.
     private func handleSocketState(_ state: BeekeeperSocket.State) {
         defer { previousSocketState = state }
         switch state {
-        case .reconnecting(let attempt) where attempt == 1 && previousSocketState != state:
+        case .reconnecting(let attempt) where previousSocketState != state:
             handleConnectionLost()
+            if attempt == 1 {
+                refreshCapabilitiesAfterConnectionLost()
+            }
         case .connected:
             disconnectedBanner = nil
         default:
@@ -130,6 +136,10 @@ final class TeamViewModel: ObservableObject {
         guard let manager = capabilityManager else { return }
         let label = manager.selectedHive ?? "hive"
         disconnectedBanner = "\(label) is unavailable — tap to retry."
+    }
+
+    private func refreshCapabilitiesAfterConnectionLost() {
+        guard let manager = capabilityManager else { return }
         Task { [weak self] in
             await manager.refresh()
             guard let self else { return }
