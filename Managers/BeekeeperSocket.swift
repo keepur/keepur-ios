@@ -200,7 +200,7 @@ final class BeekeeperSocket: ObservableObject {
             Task { @MainActor in
                 guard let self, gen == self.generation else { return }
                 if let error {
-                    Log.socket.error("handshake failed: \(error.localizedDescription, privacy: .public)")
+                    Log.socket.error("handshake failed: \(error.localizedDescription, privacy: .private)")
                     self.handleDisconnect()
                     return
                 }
