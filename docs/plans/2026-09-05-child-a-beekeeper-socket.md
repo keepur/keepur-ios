@@ -126,7 +126,7 @@
 - Create: `Managers/CredentialStore.swift`
 - Create: `Managers/WebSocketTasking.swift`
 
-- [ ] **Step 1:** Create `Managers/Log.swift`
+- [x] **Step 1:** Create `Managers/Log.swift`
 
 ```swift
 import os
@@ -144,7 +144,7 @@ enum Log {
 }
 ```
 
-- [ ] **Step 2:** Create `Managers/CredentialStore.swift`
+- [x] **Step 2:** Create `Managers/CredentialStore.swift`
 
 ```swift
 import Foundation
@@ -185,7 +185,7 @@ final class KeychainCredentialStore: CredentialStore {
 }
 ```
 
-- [ ] **Step 3:** Create `Managers/WebSocketTasking.swift`
+- [x] **Step 3:** Create `Managers/WebSocketTasking.swift`
 
 ```swift
 import Foundation
@@ -242,7 +242,7 @@ final class URLSessionWebSocketTaskAdapter: WebSocketTasking {
 }
 ```
 
-- [ ] **Step 4:** Commit (no push yet)
+- [x] **Step 4:** Commit (no push yet)
 
 ```bash
 git add Managers/Log.swift Managers/CredentialStore.swift Managers/WebSocketTasking.swift
@@ -256,7 +256,7 @@ git commit -m "feat(#90): Log, CredentialStore, WebSocketTasking seams for the u
 **Files:**
 - Create: `Managers/BeekeeperSocket.swift`
 
-- [ ] **Step 1:** Create the file with this exact content
+- [x] **Step 1:** Create the file with this exact content
 
 ```swift
 import Foundation
@@ -582,7 +582,7 @@ final class BeekeeperSocket: ObservableObject {
 }
 ```
 
-- [ ] **Step 2:** Commit (no push yet)
+- [x] **Step 2:** Commit (no push yet)
 
 ```bash
 git add Managers/BeekeeperSocket.swift
@@ -597,7 +597,7 @@ git commit -m "feat(#90): BeekeeperSocket — unified transport with handshake, 
 - Create: `KeeperTests/FakeWebSocketTask.swift`
 - Create: `KeeperTests/FakeCredentialStore.swift`
 
-- [ ] **Step 1:** Create `KeeperTests/FakeWebSocketTask.swift`
+- [x] **Step 1:** Create `KeeperTests/FakeWebSocketTask.swift`
 
 ```swift
 import Foundation
@@ -686,7 +686,7 @@ final class FakeWebSocketTaskFactory {
 }
 ```
 
-- [ ] **Step 2:** Create `KeeperTests/FakeCredentialStore.swift`
+- [x] **Step 2:** Create `KeeperTests/FakeCredentialStore.swift`
 
 ```swift
 import Foundation
@@ -718,7 +718,7 @@ final class FakeCredentialStore: CredentialStore {
 }
 ```
 
-- [ ] **Step 3:** Commit (no push yet)
+- [x] **Step 3:** Commit (no push yet)
 
 ```bash
 git add KeeperTests/FakeWebSocketTask.swift KeeperTests/FakeCredentialStore.swift
@@ -734,7 +734,7 @@ git commit -m "test(#90): fakes for WebSocketTasking and CredentialStore"
 
 The socket's callbacks hop to the main actor through `Task { @MainActor in … }`, so after driving a fake the test must let those tasks run. `settle()` below yields a few times; every assertion after a fake action is preceded by it.
 
-- [ ] **Step 1:** Create the file
+- [x] **Step 1:** Create the file
 
 ```swift
 import XCTest
@@ -938,7 +938,7 @@ final class BeekeeperSocketTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2:** Commit and **PUSH 1**
+- [x] **Step 2:** Commit and **PUSH 1**
 
 ```bash
 git add KeeperTests/BeekeeperSocketTests.swift
@@ -947,7 +947,7 @@ export GH_TOKEN="$(gh auth token --user may-keepur)"
 git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"; echo "password=$GH_TOKEN"; }; f' push -u origin issue-90
 ```
 
-- [ ] **Step 3:** Open a draft PR so the workflow runs on `pull_request` (shell state does not persist between blocks; export again)
+- [x] **Step 3:** Open a draft PR so the workflow runs on `pull_request` (shell state does not persist between blocks; export again)
 
 ```bash
 export GH_TOKEN="$(gh auth token --user may-keepur)"
@@ -956,7 +956,7 @@ gh pr create -R keepur/keepur-ios --draft --base main --head issue-90 \
   --body "Closes #90. Child A of epic #88. Spec: docs/specs/2026-09-04-cleanup-epic-design.md § Child A. Plan: docs/plans/2026-09-05-child-a-beekeeper-socket.md. Draft until all four push points are green."
 ```
 
-- [ ] **Step 4:** Verify
+- [x] **Step 4:** Verify
 
 Run: the `gh run list` / `gh run watch` / `gh run view --log` sequence from "Working constraints".
 Expected: `Executed 184 tests, with 0 failures`. Ten new tests, all in `BeekeeperSocketTests`. The old managers still exist at this point, so nothing else changed.
@@ -975,13 +975,13 @@ If a compile error appears in `BeekeeperSocket.swift` or the tests, fix it, amen
 - Modify: `Views/WorkspacePickerView.swift:40,48`
 - Modify: `Views/SessionListView.swift:95`
 
-- [ ] **Step 0:** At the top of `ViewModels/ChatViewModel.swift`, after `import Combine`, add:
+- [x] **Step 0:** At the top of `ViewModels/ChatViewModel.swift`, after `import Combine`, add:
 
 ```swift
 import os
 ```
 
-- [ ] **Step 1:** In `ViewModels/ChatViewModel.swift`, replace the property block and `configure` (lines 32–69 today) with:
+- [x] **Step 1:** In `ViewModels/ChatViewModel.swift`, replace the property block and `configure` (lines 32–69 today) with:
 
 ```swift
     static let channel = "beekeeper"
@@ -1065,14 +1065,14 @@ import os
 
 Keep everything above line 32 (the `@Published` properties and `statusFor` / `toolNameFor`) as is. Delete the old `let ws = WebSocketManager()` and the old `configure`.
 
-- [ ] **Step 2:** Replace every remaining `ws.send(` in the file with `send(` (lines 100, 105, 109, 114, 119, 123, 129, 133, 138, 159, 465, 470, 472 today). Sanity check afterwards:
+- [x] **Step 2:** Replace every remaining `ws.send(` in the file with `send(` (lines 100, 105, 109, 114, 119, 123, 129, 133, 138, 159, 465, 470, 472 today). Sanity check afterwards:
 
 ```bash
 grep -n 'ws\.' ViewModels/ChatViewModel.swift
 ```
 Expected: no output.
 
-- [ ] **Step 3:** Rewrite `unpair()`:
+- [x] **Step 3:** Rewrite `unpair()`:
 
 ```swift
     func unpair() {
@@ -1082,7 +1082,7 @@ Expected: no output.
     }
 ```
 
-- [ ] **Step 4:** In `Views/BeekeeperRootView.swift`, the doc comment above `ConciergeViewModel` (line 73) says "`WebSocketManager.onMessage` is single-consumer and already taken by `ChatViewModel`"; change that sentence to "`BeekeeperSocket.frames` is multicast, but this coordinator still observes `ChatViewModel`'s published state; child C switches it to the decoded-frame stream." Then change the four concierge sends:
+- [x] **Step 4:** In `Views/BeekeeperRootView.swift`, the doc comment above `ConciergeViewModel` (line 73) says "`WebSocketManager.onMessage` is single-consumer and already taken by `ChatViewModel`"; change that sentence to "`BeekeeperSocket.frames` is multicast, but this coordinator still observes `ChatViewModel`'s published state; child C switches it to the decoded-frame stream." Then change the four concierge sends:
 
 ```swift
 // line 105
@@ -1095,13 +1095,13 @@ Expected: no output.
         viewModel.send(.newSessionConcierge)
 ```
 
-- [ ] **Step 5:** In `Views/ContentView.swift:45` replace `chatViewModel.ws.connect()` with:
+- [x] **Step 5:** In `Views/ContentView.swift:45` replace `chatViewModel.ws.connect()` with:
 
 ```swift
                 chatViewModel.reconnect()
 ```
 
-- [ ] **Step 6:** In `Views/SettingsView.swift` replace the three `viewModel.ws.isConnected` reads at lines 100–103 with `viewModel.socket.isConnected`, and the footer button (lines 187–191) with:
+- [x] **Step 6:** In `Views/SettingsView.swift` replace the three `viewModel.ws.isConnected` reads at lines 100–103 with `viewModel.socket.isConnected`, and the footer button (lines 187–191) with:
 
 ```swift
                 Button(viewModel.socket.isConnected ? "Disconnect" : "Reconnect") {
@@ -1113,18 +1113,18 @@ Expected: no output.
                 }
 ```
 
-- [ ] **Step 7:** In `Views/WorkspacePickerView.swift` line 40 `!viewModel.ws.isConnected` → `!viewModel.socket.isConnected`; line 48 `viewModel.ws.connect()` → `viewModel.reconnect()`.
+- [x] **Step 7:** In `Views/WorkspacePickerView.swift` line 40 `!viewModel.ws.isConnected` → `!viewModel.socket.isConnected`; line 48 `viewModel.ws.connect()` → `viewModel.reconnect()`.
 
-- [ ] **Step 8:** In `Views/SessionListView.swift:95` `viewModel.ws.isConnected` → `viewModel.socket.isConnected`.
+- [x] **Step 8:** In `Views/SessionListView.swift:95` `viewModel.ws.isConnected` → `viewModel.socket.isConnected`.
 
-- [ ] **Step 9:** Check nothing in the Beekeeper layer references the old manager:
+- [x] **Step 9:** Check nothing in the Beekeeper layer references the old manager:
 
 ```bash
 grep -rn 'viewModel\.ws\b\|chatViewModel\.ws\b' Views ViewModels
 ```
 Expected: only `Views/Team/TeamRootView.swift:42` (Task 6).
 
-- [ ] **Step 10:** Commit (no push yet)
+- [x] **Step 10:** Commit (no push yet)
 
 ```bash
 git add ViewModels/ChatViewModel.swift Views/BeekeeperRootView.swift Views/ContentView.swift Views/SettingsView.swift Views/WorkspacePickerView.swift Views/SessionListView.swift
@@ -1139,13 +1139,13 @@ git commit -m "refactor(#90): ChatViewModel consumes BeekeeperSocket by injectio
 - Modify: `ViewModels/TeamViewModel.swift`
 - Modify: `Views/Team/TeamRootView.swift:42`
 
-- [ ] **Step 0:** At the top of `ViewModels/TeamViewModel.swift`, after `import SwiftUI`, add:
+- [x] **Step 0:** At the top of `ViewModels/TeamViewModel.swift`, after `import SwiftUI`, add:
 
 ```swift
 import os
 ```
 
-- [ ] **Step 1:** Replace the "Internal State" block and `configure` (lines 41–71 today) with:
+- [x] **Step 1:** Replace the "Internal State" block and `configure` (lines 41–71 today) with:
 
 ```swift
     let socket: BeekeeperSocket
@@ -1202,7 +1202,7 @@ import os
 
 Note the old `self.deviceId = KeychainManager.deviceId ?? ""` line is gone; `deviceId` is computed now. The `ws.onMessage` / `ws.onAuthFailure` / `ws.onConnect` / `ws.onReceiveFailure` assignments are gone.
 
-- [ ] **Step 2:** Replace `connectIfPossible`, `retryConnect`, `handleReceiveFailure` (lines 72–105 today) with:
+- [x] **Step 2:** Replace `connectIfPossible`, `retryConnect`, `handleReceiveFailure` (lines 72–105 today) with:
 
 ```swift
     func connectIfPossible() {
@@ -1258,9 +1258,9 @@ Note the old `self.deviceId = KeychainManager.deviceId ?? ""` line is gone; `dev
     }
 ```
 
-- [ ] **Step 3:** `disconnect()` (line ~107) and `handleAuthFailure()` (line ~254): replace `ws.disconnect()` with `socket.disconnect()`.
+- [x] **Step 3:** `disconnect()` (line ~107) and `handleAuthFailure()` (line ~254): replace `ws.disconnect()` with `socket.disconnect()`.
 
-- [ ] **Step 4:** Add the send helpers right after `disconnect()`:
+- [x] **Step 4:** Add the send helpers right after `disconnect()`:
 
 ```swift
     // MARK: - Sending
@@ -1282,36 +1282,36 @@ Note the old `self.deviceId = KeychainManager.deviceId ?? ""` line is gone; `dev
     }
 ```
 
-- [ ] **Step 5:** Replace every `ws.send(` with `send(` and every `ws.sendWithId(` with `sendWithId(` (lines 144, 150, 152, 205, 209, 220, 224, 234, 235, 273, 296, 374 today). Then:
+- [x] **Step 5:** Replace every `ws.send(` with `send(` and every `ws.sendWithId(` with `sendWithId(` (lines 144, 150, 152, 205, 209, 220, 224, 234, 235, 273, 296, 374 today). Then:
 
 ```bash
 grep -n 'ws\.' ViewModels/TeamViewModel.swift
 ```
 Expected: only the comment at line ~237 ("Use fetchHistory (not direct ws.send)…"); change that comment to say `send`.
 
-- [ ] **Step 6:** Line ~137 `senderName: KeychainManager.deviceName ?? "Me"` → `senderName: credentials.deviceName ?? "Me"`. In `handleAuthFailure` (line ~256) reword the comment to "Don't clear credentials here — ContentView observes `isAuthenticated` and calls `chatViewModel.unpair()`, which owns that." Then:
+- [x] **Step 6:** Line ~137 `senderName: KeychainManager.deviceName ?? "Me"` → `senderName: credentials.deviceName ?? "Me"`. In `handleAuthFailure` (line ~256) reword the comment to "Don't clear credentials here — ContentView observes `isAuthenticated` and calls `chatViewModel.unpair()`, which owns that." Then:
 
 ```bash
 grep -n 'KeychainManager' ViewModels/TeamViewModel.swift
 ```
 Expected: no output.
 
-- [ ] **Step 7:** Replace the three `print` calls (lines 76, 80 are gone with Step 2; line ~403 `print("[Team WS error] \(message)")`) with:
+- [x] **Step 7:** Replace the three `print` calls (lines 76, 80 are gone with Step 2; line ~403 `print("[Team WS error] \(message)")`) with:
 
 ```swift
             Log.team.error("server error: \(message, privacy: .public)")
 ```
 
-- [ ] **Step 8:** `Views/Team/TeamRootView.swift:42` `viewModel.ws.isConnected` → `viewModel.socket.isConnected`.
+- [x] **Step 8:** `Views/Team/TeamRootView.swift:42` `viewModel.ws.isConnected` → `viewModel.socket.isConnected`.
 
-- [ ] **Step 9:** Check:
+- [x] **Step 9:** Check:
 
 ```bash
 grep -rn '\bws\.' ViewModels Views | grep -v 'ws\.active\|ws\.sessionId\|ws\.preview\|ws\.lastActiveAt'
 ```
 Expected: no output (the excluded matches are `WorkspaceSession` locals in `WorkspacePickerView`).
 
-- [ ] **Step 10:** Commit and **PUSH 2**
+- [x] **Step 10:** Commit and **PUSH 2**
 
 ```bash
 git add ViewModels/TeamViewModel.swift Views/Team/TeamRootView.swift
@@ -1320,7 +1320,7 @@ export GH_TOKEN="$(gh auth token --user may-keepur)"
 git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"; echo "password=$GH_TOKEN"; }; f' push origin issue-90
 ```
 
-- [ ] **Step 11:** Verify
+- [x] **Step 11:** Verify
 
 Expected: `Executed 184 tests, with 0 failures`. Both view models now run on the new socket; the old managers still compile but are unreferenced.
 
@@ -1333,26 +1333,26 @@ Expected: `Executed 184 tests, with 0 failures`. Both view models now run on the
 - Delete: `Managers/TeamWebSocketManager.swift`
 - Modify: `Managers/CapabilityManager.swift:49`
 
-- [ ] **Step 1:**
+- [x] **Step 1:**
 
 ```bash
 git rm -q Managers/WebSocketManager.swift Managers/TeamWebSocketManager.swift
 ```
 
-- [ ] **Step 2:** In `Managers/CapabilityManager.swift` add `import os` after `import SwiftUI`, and replace line 49 `print("[Capabilities] raw: \(all)")` with:
+- [x] **Step 2:** In `Managers/CapabilityManager.swift` add `import os` after `import SwiftUI`, and replace line 49 `print("[Capabilities] raw: \(all)")` with:
 
 ```swift
             Log.capabilities.debug("capabilities: \(all.count, privacy: .public) entries")
 ```
 
-- [ ] **Step 3:** Checks:
+- [x] **Step 3:** Checks:
 
 ```bash
 grep -rn 'WebSocketManager' --include='*.swift' . ; echo "---"; grep -rn 'print(' Managers ViewModels
 ```
 Expected: both empty.
 
-- [ ] **Step 4:** Commit and **PUSH 3**
+- [x] **Step 4:** Commit and **PUSH 3**
 
 ```bash
 git add -A Managers
@@ -1370,7 +1370,7 @@ git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"
 **Files:**
 - Create: `KeeperTests/TeamViewModelTests.swift`
 
-- [ ] **Step 1:** Create the file
+- [x] **Step 1:** Create the file
 
 ```swift
 import XCTest
@@ -1433,7 +1433,7 @@ final class TeamViewModelTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2:** Commit and **PUSH 4**
+- [x] **Step 2:** Commit and **PUSH 4**
 
 ```bash
 git add KeeperTests/TeamViewModelTests.swift
