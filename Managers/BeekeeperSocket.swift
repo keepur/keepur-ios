@@ -141,8 +141,10 @@ final class BeekeeperSocket: ObservableObject {
     @discardableResult
     func send(_ frame: Data) -> Bool {
         guard state == .connected, let task else { return false }
-        let type = Self.frameType(frame)   // computed outside the Logger autoclosure (isolation)
-        Log.socket.debug("send type=\(type, privacy: .public)")
+        if Log.socketRaw.isEnabled(type: .debug) {
+            let type = Self.frameType(frame)   // computed outside the Logger autoclosure (isolation)
+            Log.socket.debug("send type=\(type, privacy: .public)")
+        }
         let gen = generation
         task.send(.string(String(decoding: frame, as: UTF8.self))) { [weak self] error in
             guard error != nil else { return }
@@ -233,8 +235,10 @@ final class BeekeeperSocket: ObservableObject {
                     @unknown default: data = nil
                     }
                     if let data {
-                        let type = Self.frameType(data)
-                        Log.socket.debug("recv type=\(type, privacy: .public)")
+                        if Log.socketRaw.isEnabled(type: .debug) {
+                            let type = Self.frameType(data)
+                            Log.socket.debug("recv type=\(type, privacy: .public)")
+                        }
                         self.frames.send(data)
                     }
                     // A subscriber may have called disconnect()/connect(other) synchronously
