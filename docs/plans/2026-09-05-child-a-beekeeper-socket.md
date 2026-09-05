@@ -1361,7 +1361,7 @@ export GH_TOKEN="$(gh auth token --user may-keepur)"
 git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"; echo "password=$GH_TOKEN"; }; f' push origin issue-90
 ```
 
-- [ ] **Step 5:** Verify. Expected: `Executed 184 tests, with 0 failures`.
+- [x] **Step 5:** Verify. Expected: `Executed 184 tests, with 0 failures`.
 
 ---
 
@@ -1442,11 +1442,11 @@ export GH_TOKEN="$(gh auth token --user may-keepur)"
 git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"; echo "password=$GH_TOKEN"; }; f' push origin issue-90
 ```
 
-- [ ] **Step 3:** Verify. Expected: `Executed 185 tests, with 0 failures`.
+- [x] **Step 3:** Verify. Expected: `Executed 185 tests, with 0 failures`.
 
 ---
 
 ### Task 9: Hand-off
 
-- [ ] **Step 1:** Edit the PR body to list what changed (the file map above), the four green runs by id, and three behavior changes: Team reconnects with backoff instead of stopping at the retry banner; `deviceId` is read at send time; and a known interim in `WorkspacePickerView`, where "Reconnect" now calls `reconnect()` then `browse()` and the browse frame is dropped while the handshake is still in flight (the old manager claimed connected instantly). Child B's offline queue closes that gap; until then the user taps Retry once more. Keep it a draft; `/quality-gate`, `dodi-dev:review`, and `dodi-dev:submit` follow per CLAUDE.md. `/quality-gate`'s test step is the CI run.
-- [ ] **Step 2:** Confirm the spec's Child A acceptance lines hold: `grep -rn 'WebSocketManager' --include='*.swift' .` empty; `grep -rn 'print(' Managers ViewModels` empty; no view reads `viewModel.ws`.
+- [x] **Step 1:** Edit the PR body to list what changed (the file map above), the four green runs by id, and three behavior changes: Team reconnects with backoff instead of stopping at the retry banner; `deviceId` is read at send time; and a known interim in `WorkspacePickerView`, where "Reconnect" now calls `reconnect()` then `browse()` and the browse frame is dropped while the handshake is still in flight (the old manager claimed connected instantly). Child B's offline queue closes that gap; until then the user taps Retry once more. Keep it a draft; `/quality-gate`, `dodi-dev:review`, and `dodi-dev:submit` follow per CLAUDE.md. `/quality-gate`'s test step is the CI run.
+- [x] **Step 2:** Confirm the spec's Child A acceptance lines hold: `grep -rn 'WebSocketManager' --include='*.swift' .` empty; `grep -rn 'print(' Managers ViewModels` empty; no view reads `viewModel.ws`.
