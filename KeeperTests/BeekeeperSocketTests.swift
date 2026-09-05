@@ -196,4 +196,14 @@ final class BeekeeperSocketTests: XCTestCase {
         XCTAssertEqual(factory.made.count, 0, "never opened a task without a token")
         XCTAssertEqual(socket.state, .disconnected, "not paired, so no backoff either")
     }
+
+    /// `Config.standard.keepAliveFrame` is a hardcoded bare `{"type":"ping"}` because
+    /// both wire protocols happen to encode their `.ping` case identically. Pin that
+    /// coupling so a future change to either encoder's ping shape fails loudly here
+    /// instead of silently breaking keep-alive on one channel.
+    func testStandardKeepAliveFrameMatchesBothPingEncoders() throws {
+        let keepAliveFrame = BeekeeperSocket.Config.standard.keepAliveFrame
+        XCTAssertEqual(keepAliveFrame, try WSOutgoing.ping.encode())
+        XCTAssertEqual(keepAliveFrame, try TeamWSOutgoing.ping.encode())
+    }
 }
