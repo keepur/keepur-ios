@@ -33,7 +33,7 @@
 - Unit: `required`
   - Scope: `BeekeeperSocket` state machine (handshake, reconnect backoff, auth-failure close code, send gating, multicast, channel switch, backoff short-circuit, ping loop cancellation, token-read retry); `TeamViewModel.deviceId` following the credential store.
   - Reason: the transport is the foundation for children B–E; its behaviors are otherwise only observable on a live server.
-  - Minimum assertions: the nine `BeekeeperSocketTests` cases and one `TeamViewModelTests` case listed in Tasks 4 and 8.
+  - Minimum assertions: the ten `BeekeeperSocketTests` cases and one `TeamViewModelTests` case listed in Tasks 4 and 8.
 
 - Integration: `not-required`
   - Scope: n/a
@@ -104,12 +104,16 @@
 | Modify | `Views/ContentView.swift:45`, `Views/SettingsView.swift:100-103,187-191`, `Views/WorkspacePickerView.swift:40,48`, `Views/SessionListView.swift:95`, `Views/Team/TeamRootView.swift:42`, `Views/BeekeeperRootView.swift:105,117,119,128` | call the new view-model surface |
 | Create | `KeeperTests/FakeWebSocketTask.swift` | test double for `WebSocketTasking` + factory |
 | Create | `KeeperTests/FakeCredentialStore.swift` | in-memory `CredentialStore` |
-| Create | `KeeperTests/BeekeeperSocketTests.swift` | 9 tests |
+| Create | `KeeperTests/BeekeeperSocketTests.swift` | 10 tests |
 | Create | `KeeperTests/TeamViewModelTests.swift` | 1 test (more land in child E) |
 
 `KeeperTests/` is a synchronized group (#98): new test files need no project-file edit. `Managers/` is a synchronized group too, so the new and deleted manager files need no project-file edit either.
 
-**One deliberate deviation from the spec text:** the spec says `BeekeeperRootView`'s four `viewModel.ws.send` calls "stay until C". Renaming `ws` → `socket` and changing `send` to take `Data` means they cannot stay verbatim, so they become `viewModel.send(_:)` (a new internal `ChatViewModel` method that encodes and forwards). Child C still replaces them with named methods and makes `socket` private, as the spec says.
+**Two deliberate deviations from the spec text:**
+1. The spec says `BeekeeperRootView`'s four `viewModel.ws.send` calls "stay until C". Renaming `ws` → `socket` and changing `send` to take `Data` means they cannot stay verbatim, so they become `viewModel.send(_:)` (a new internal `ChatViewModel` method that encodes and forwards). Child C still replaces them with named methods and makes `socket` private, as the spec says.
+2. `Config.maxReconnectDelay` is a `TimeInterval` (the spec sketch says `Duration`) because it feeds `min(pow(2, n), cap)`; `pingInterval` and `tokenReadRetryDelay` stay `Duration` because they feed `Task.sleep(for:)`.
+
+**Build setting to know about:** the app target enables `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY`, so any file that calls `Log.x.info(...)` must itself `import os`. The plan adds that import to `BeekeeperSocket.swift`, `ChatViewModel.swift`, `TeamViewModel.swift`, and `CapabilityManager.swift`.
 
 ---
 
@@ -255,6 +259,7 @@ git commit -m "feat(#90): Log, CredentialStore, WebSocketTasking seams for the u
 ```swift
 import Foundation
 import Combine
+import os   // required: the app target enables MemberImportVisibility, so every file that calls Logger methods must import os itself
 
 /// One WebSocket transport for both the Beekeeper and Team ("Hive") layers.
 ///
@@ -342,12 +347,18 @@ final class BeekeeperSocket: ObservableObject {
     /// - reconnecting (in backoff), same channel: cancel the sleep and attempt now, keeping the
     ///   attempt count; different channel: cancel backoff, tear down, connect with a fresh count.
     func connect(channel: String) {
+        tokenRetryTask?.cancel()
+        tokenRetryTask = nil
         switch state {
         case .connecting, .connected:
             if channel == lastChannel { return }
             Log.socket.info("switching channel; tearing down current connection")
             teardown()
         case .reconnecting:
+            // `reconnectTask == nil` while in .reconnecting means the backoff sleep already
+            // ended and a retry handshake is in flight; a same-channel connect must not open
+            // a second task on top of it (the old managers' `isConnecting` guard).
+            if reconnectTask == nil, channel == lastChannel { return }
             reconnectTask?.cancel()
             reconnectTask = nil
             if channel != lastChannel {
@@ -423,6 +434,7 @@ final class BeekeeperSocket: ObservableObject {
         guard let base = try? endpoint(),
               let url = URL(string: "\(base.absoluteString)?token=\(token)&channel=\(channel)") else {
             Log.socket.error("host not configured; routing to auth gate")
+            reconnectAttempts = 0
             setState(.disconnected)
             onAuthFailure?()
             return
@@ -448,8 +460,9 @@ final class BeekeeperSocket: ObservableObject {
                 self.setState(.connected)
                 self.startPing()
                 self.receive()
-                self.onConnected?()
+                // Spec order: keep-alive once, then the layer's onConnected work (e.g. list_sessions).
                 self.send(self.config.keepAliveFrame)
+                self.onConnected?()
             }
         }
     }
@@ -474,11 +487,15 @@ final class BeekeeperSocket: ObservableObject {
                         Log.socket.debug("recv type=\(Self.frameType(data), privacy: .public)")
                         self.frames.send(data)
                     }
+                    // A subscriber may have called disconnect()/connect(other) synchronously
+                    // while handling that frame; only re-arm receive on the same generation.
+                    guard gen == self.generation else { return }
                     self.receive()
                 case .failure:
                     if task.closeCode.rawValue == 4001 {
                         Log.socket.notice("close code 4001; auth failure")
                         self.teardown()
+                        self.reconnectAttempts = 0
                         self.setState(.disconnected)
                         self.onAuthFailure?()
                     } else {
@@ -908,9 +925,10 @@ export GH_TOKEN="$(gh auth token --user may-keepur)"
 git -c credential.helper= -c credential.helper='!f(){ echo "username=may-keepur"; echo "password=$GH_TOKEN"; }; f' push -u origin issue-90
 ```
 
-- [ ] **Step 3:** Open a draft PR so the workflow runs on `pull_request`
+- [ ] **Step 3:** Open a draft PR so the workflow runs on `pull_request` (shell state does not persist between blocks; export again)
 
 ```bash
+export GH_TOKEN="$(gh auth token --user may-keepur)"
 gh pr create -R keepur/keepur-ios --draft --base main --head issue-90 \
   --title "feat: BeekeeperSocket — one transport for both layers (#90)" \
   --body "Closes #90. Child A of epic #88. Spec: docs/specs/2026-09-04-cleanup-epic-design.md § Child A. Plan: docs/plans/2026-09-05-child-a-beekeeper-socket.md. Draft until all four push points are green."
@@ -934,6 +952,12 @@ If a compile error appears in `BeekeeperSocket.swift` or the tests, fix it, amen
 - Modify: `Views/SettingsView.swift:100-103,187-191`
 - Modify: `Views/WorkspacePickerView.swift:40,48`
 - Modify: `Views/SessionListView.swift:95`
+
+- [ ] **Step 0:** At the top of `ViewModels/ChatViewModel.swift`, after `import Combine`, add:
+
+```swift
+import os
+```
 
 - [ ] **Step 1:** In `ViewModels/ChatViewModel.swift`, replace the property block and `configure` (lines 32–69 today) with:
 
@@ -1092,6 +1116,12 @@ git commit -m "refactor(#90): ChatViewModel consumes BeekeeperSocket by injectio
 **Files:**
 - Modify: `ViewModels/TeamViewModel.swift`
 - Modify: `Views/Team/TeamRootView.swift:42`
+
+- [ ] **Step 0:** At the top of `ViewModels/TeamViewModel.swift`, after `import SwiftUI`, add:
+
+```swift
+import os
+```
 
 - [ ] **Step 1:** Replace the "Internal State" block and `configure` (lines 41–71 today) with:
 
@@ -1287,7 +1317,7 @@ Expected: `Executed 184 tests, with 0 failures`. Both view models now run on the
 git rm -q Managers/WebSocketManager.swift Managers/TeamWebSocketManager.swift
 ```
 
-- [ ] **Step 2:** In `Managers/CapabilityManager.swift` replace line 49 `print("[Capabilities] raw: \(all)")` with:
+- [ ] **Step 2:** In `Managers/CapabilityManager.swift` add `import os` after `import SwiftUI`, and replace line 49 `print("[Capabilities] raw: \(all)")` with:
 
 ```swift
             Log.capabilities.debug("capabilities: \(all.count, privacy: .public) entries")
@@ -1331,6 +1361,7 @@ final class TeamViewModelTests: XCTestCase {
     private var context: ModelContext!
     private var credentials: FakeCredentialStore!
     private var factory: FakeWebSocketTaskFactory!
+    private var capability: CapabilityManager!   // held here: TeamViewModel keeps it weak
     private var vm: TeamViewModel!
 
     override func setUp() async throws {
@@ -1340,6 +1371,7 @@ final class TeamViewModelTests: XCTestCase {
         context = ModelContext(container)
         credentials = FakeCredentialStore(deviceId: "device-old")
         factory = FakeWebSocketTaskFactory()
+        capability = CapabilityManager()
         let socket = BeekeeperSocket(
             config: .standard,
             credentials: credentials,
@@ -1347,12 +1379,13 @@ final class TeamViewModelTests: XCTestCase {
             taskFactory: factory.make
         )
         vm = TeamViewModel(socket: socket, credentials: credentials)
-        vm.configure(context: context, capabilityManager: CapabilityManager())
+        vm.configure(context: context, capabilityManager: capability)
         vm.activeChannelId = "channel-1"
     }
 
     override func tearDown() async throws {
         vm = nil
+        capability = nil
         context = nil
         container = nil
     }
