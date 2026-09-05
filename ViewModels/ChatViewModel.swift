@@ -63,7 +63,7 @@ final class ChatViewModel: ObservableObject {
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore()
     ) {
-        self.socket = socket ?? BeekeeperSocket(config: .standard)
+        self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
     }
 
@@ -165,8 +165,11 @@ final class ChatViewModel: ObservableObject {
 
     func browse(path: String? = nil) {
         browseError = nil
-        isBrowsePending = true
-        send(.browse(path: path))
+        // Only arm the pending flag when the frame actually went out — a dropped
+        // send (socket not connected) must not leave `isBrowsePending` stuck true,
+        // or a later unrelated `error` frame with a nil sessionId gets misattributed
+        // to this browse (see the `.error` case in `handleIncoming`).
+        isBrowsePending = send(.browse(path: path))
     }
 
     func approve(toolUseId: String, sessionId: String) {
