@@ -85,6 +85,23 @@ We follow the `dodi-dev` plugin workflow. All features go through two phases: pl
 
 **Skip step 5** if the change is small enough to implement directly without a plan.
 
+### Project Tracker and Multi-Child Epics
+
+**The tracker is Linear, team `KPR`** (not GitHub Issues). The API key lives in `~/.linear.env` as `LINEAR_KPR_API_KEY`; the `dodi-dev` scripts read `LINEAR_API_KEY`, so load it first in any session that touches tickets:
+
+```bash
+set -a; source ~/.linear.env; set +a; export LINEAR_API_KEY="$LINEAR_KPR_API_KEY"
+```
+
+Epics run on the `dodi-dev` epic path: a Linear epic (`epic`, `repo:keepur-ios`, `epic-signed-off` after Gate 1, `mode-sprint`/`mode-waterfall`) with children as sub-issues linked by native blocked-by relations; an epic branch named `epic-kpr-<id>` (the CI workflow triggers on PRs to `epic-*`) in a sibling worktree `../keepur-ios-epic-kpr-<id>`; child PRs merge into the epic branch; one epic PR to `main` is merged by a human (Gate 2). Day-to-day: load the key and run `/dodi-dev:drive-epic` — it boots from Linear + git state, so no session needs to reconstruct history by hand. Rulings go through `/dodi-dev:drive-epic rule-coherence <sha> approve|reject|redirect`.
+
+**Current epic: [KPR-441](https://linear.app/keepur/issue/KPR-441)** (iOS cleanup; GitHub #88 is a read-only mirror). Children 0 and A shipped to `main` before the mirror on the single-ticket path; B–E (KPR-442…445) run on `epic-kpr-441`.
+
+Either path:
+
+- **Review findings that are real but out of scope for the current child** (belong to a later child, an environment/tooling issue, or a standalone hygiene item) get demoted to a tracked follow-up, not left in a local plan doc: a comment on the downstream child ticket, or a new standalone ticket (`repo:keepur-ios`). See KPR-446/447/448 for the pattern.
+- If a session parks mid-lane, the durable record is the ticket (lane checkpoints, continuation brief), not a local file; a handoff doc under `docs/plans/` is a supplement, never the only copy.
+
 ### Design Specs and Plans
 
 - Design specs go to `docs/specs/YYYY-MM-DD-<topic>.md`
