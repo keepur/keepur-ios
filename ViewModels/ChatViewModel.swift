@@ -29,6 +29,25 @@ final class ChatViewModel: ObservableObject {
     @Published var workspaceSessions: [WorkspaceSession] = []
     @Published var pendingMessageIds: Set<String> = []
     @Published var pendingAttachment: AttachmentData?
+    /// Mirrors `socket.$state`; views observe this, never `socket` directly.
+    @Published private(set) var connectionState: BeekeeperSocket.State = .disconnected
+    /// Banner-consumed. Auto-clears after `lastErrorAutoClear` or on tap (set to nil).
+    @Published var lastError: UserFacingError? {
+        didSet {
+            lastErrorTimer?.cancel()
+            lastErrorTimer = nil
+            guard let id = lastError?.id else { return }
+            let delay = lastErrorAutoClear
+            lastErrorTimer = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, self.lastError?.id == id else { return }
+                self.lastError = nil
+            }
+        }
+    }
+    /// True once `configure()` or `reconnect()` has asked the socket to connect. Lets
+    /// the concierge coordinator tell the cold initial `.disconnected` from a failed one.
+    private(set) var hasRequestedConnection = false
 
     static let channel = "beekeeper"
 
@@ -36,6 +55,9 @@ final class ChatViewModel: ObservableObject {
     let speechManager = SpeechManager()
     private let credentials: CredentialStore
     private var frameSubscription: AnyCancellable?
+    private var stateSubscription: AnyCancellable?     // sibling of frameSubscription; no Set here
+    private var lastErrorTimer: Task<Void, Never>?
+    private let lastErrorAutoClear: Duration
     var autoReadAloud = false
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
@@ -61,10 +83,17 @@ final class ChatViewModel: ObservableObject {
 
     init(
         socket: BeekeeperSocket? = nil,
-        credentials: CredentialStore = KeychainCredentialStore()
+        credentials: CredentialStore = KeychainCredentialStore(),
+        lastErrorAutoClear: Duration = .seconds(6)
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
+        self.lastErrorAutoClear = lastErrorAutoClear
+        // Subscribed in init, not configure, so Settings and the list views observe
+        // truth before configure runs and independently of it.
+        stateSubscription = self.socket.$state.sink { [weak self] state in
+            self?.handleSocketState(state)
+        }
     }
 
     func configure(context: ModelContext) {
@@ -78,17 +107,25 @@ final class ChatViewModel: ObservableObject {
         socket.onConnected = { [weak self] in
             self?.listSessions()
         }
+        hasRequestedConnection = true
         socket.connect(channel: Self.channel)
     }
 
     // MARK: - Connection
 
     func reconnect() {
+        hasRequestedConnection = true
         socket.connect(channel: Self.channel)
     }
 
     func disconnect() {
         socket.disconnect()
+    }
+
+    // MARK: - Connection state
+
+    private func handleSocketState(_ state: BeekeeperSocket.State) {
+        connectionState = state
     }
 
     /// Encodes and forwards. Returns `false` when the socket is not connected;
@@ -476,15 +513,15 @@ final class ChatViewModel: ObservableObject {
             saveWorkspace(path: path, context: context)
 
         case .error(let message, let sessionId):
-            if sessionId == nil && isBrowsePending {
-                isBrowsePending = false
-                browseError = message
-            }
-            let targetSessionId = sessionId ?? currentSessionId
-            if let targetSessionId {
-                let msg = Message(sessionId: targetSessionId, text: "Error: \(message)", role: "system")
+            if let sessionId {
+                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: "system")
                 context.insert(msg)
                 try? context.save()
+            } else if isBrowsePending {
+                isBrowsePending = false
+                browseError = message                    // the picker shows it inline; no banner
+            } else {
+                lastError = UserFacingError(message)     // no more bubble in whichever session is current
             }
 
         case .pong:
