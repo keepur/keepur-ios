@@ -165,6 +165,97 @@ final class ChatViewModelSocketTests: XCTestCase {
         XCTAssertTrue(vm.pendingReasons.isEmpty)
     }
 
+    func testReconnectFallbackFlushesOneHeadPerIdleSessionAndLateListDoesNotFlushAgain() async throws {
+        vm.configure(context: context)
+        let task = try XCTUnwrap(factory.latest)
+        for (sessionId, texts) in [("s1", ["s1-first", "s1-second"]), ("s2", ["s2-first", "s2-second"])] {
+            vm.currentSessionId = sessionId
+            vm.sessionStatuses[sessionId] = "idle"
+            for text in texts {
+                vm.messageText = text
+                vm.sendText()
+            }
+        }
+        let queuedRows = try rows(role: "user")
+        XCTAssertEqual(queuedRows.count, 4)
+        XCTAssertEqual(vm.pendingReasons, Dictionary(uniqueKeysWithValues: queuedRows.map { ($0.id, .offline) }))
+        XCTAssertTrue(task.sentTexts.isEmpty)
+
+        task.completeHandshake()
+        await settle()
+        XCTAssertEqual(vm.connectionState, .connected)
+        XCTAssertEqual(try messageTexts(task), [], "the handshake alone does not flush")
+
+        // Exercise the real five-second fallback; polling gives a loaded simulator
+        // time to run it without adding a production timer seam.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(7))
+        while try messageTexts(task).count < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(try messageTexts(task), ["s1-first", "s2-first"])
+        let remainingRows = queuedRows.filter { $0.text.hasSuffix("-second") }
+        let remainingReasons = Dictionary(uniqueKeysWithValues: remainingRows.map { ($0.id, ChatViewModel.PendingReason.busy) })
+        XCTAssertEqual(vm.pendingReasons, remainingReasons, "only one head per idle session is sent")
+
+        task.deliver(#"{"type":"session_list","sessions":[{"sessionId":"s1","path":"/tmp/p1","state":"idle","mode":"sessions"},{"sessionId":"s2","path":"/tmp/p2","state":"idle","mode":"sessions"}]}"#)
+        await settle()
+        XCTAssertEqual(try messageTexts(task), ["s1-first", "s2-first"], "the late list must not run a second reconnect flush")
+        XCTAssertEqual(vm.pendingReasons, remainingReasons)
+
+        task.deliver(#"{"type":"status","state":"idle","sessionId":"s1"}"#)
+        await settle()
+        XCTAssertEqual(try messageTexts(task), ["s1-first", "s2-first", "s1-second"])
+        task.deliver(#"{"type":"status","state":"idle","sessionId":"s2"}"#)
+        await settle()
+        XCTAssertEqual(try messageTexts(task), ["s1-first", "s2-first", "s1-second", "s2-second"])
+        XCTAssertTrue(vm.pendingReasons.isEmpty, "later idle statuses drain the preserved queue")
+    }
+
+    func testConnectionLossCancelsReconnectFallbackAndPreservesOfflineQueue() async throws {
+        let (first, firstRowId) = try queueOfflineHi()
+        vm.messageText = "later"
+        vm.sendText()
+        let secondRowId = try XCTUnwrap(rows(role: "user").first { $0.text == "later" }?.id)
+        let offlineReasons: [String: ChatViewModel.PendingReason] = [firstRowId: .offline, secondRowId: .offline]
+        XCTAssertEqual(vm.pendingReasons, offlineReasons)
+
+        first.completeHandshake()
+        await settle()
+        XCTAssertEqual(vm.connectionState, .connected)
+        XCTAssertTrue(try messageTexts(first).isEmpty)
+        first.failReceive(closeCode: .abnormalClosure)
+        await settle()
+        XCTAssertEqual(vm.connectionState, .reconnecting(attempt: 1))
+
+        vm.reconnect()
+        let second = try XCTUnwrap(factory.latest)
+        XCTAssertFalse(second === first)
+        XCTAssertEqual(factory.made.count, 2)
+        // Leave the retry handshake pending past the old fallback's deadline. Two
+        // rows expose an uncancelled pass even if its head is requeued as offline.
+        try await Task.sleep(for: .milliseconds(5200))
+        XCTAssertEqual(vm.connectionState, .reconnecting(attempt: 1))
+        XCTAssertEqual(vm.pendingReasons, offlineReasons, "loss must cancel reclassification as well as sends")
+        XCTAssertTrue(try messageTexts(first).isEmpty)
+        XCTAssertTrue(second.sentTexts.isEmpty, "nothing goes out while the retry is handshaking")
+
+        second.completeHandshake()
+        await settle()
+        XCTAssertEqual(vm.connectionState, .connected)
+        XCTAssertEqual(vm.pendingReasons, offlineReasons)
+        XCTAssertTrue(try messageTexts(second).isEmpty, "the new connection waits for its own session list")
+        second.deliver(Self.s1Idle)
+        await settle()
+        XCTAssertEqual(try messageTexts(second), ["hi"])
+        XCTAssertEqual(vm.pendingReasons, [secondRowId: .busy])
+
+        second.deliver(#"{"type":"status","state":"idle","sessionId":"s1"}"#)
+        await settle()
+        XCTAssertEqual(try messageTexts(second), ["hi", "later"])
+        XCTAssertTrue(vm.pendingReasons.isEmpty)
+        XCTAssertTrue(try messageTexts(first).isEmpty)
+    }
+
     func testOfflineEntryReclassifiedBusyWhenServerBusy() async throws {
         let (task, rowId) = try queueOfflineHi()
         task.completeHandshake()
@@ -206,6 +297,7 @@ final class ChatViewModelSocketTests: XCTestCase {
 
     func testErrorWithNilSessionIdSetsLastErrorNotBubble() async throws {
         vm.configure(context: context)
+        vm.currentSessionId = "s1"
         let task = try XCTUnwrap(factory.latest)
         task.completeHandshake()
         await settle()
@@ -213,7 +305,23 @@ final class ChatViewModelSocketTests: XCTestCase {
         task.deliver(#"{"type":"error","message":"bad"}"#)
         await settle()
         XCTAssertEqual(vm.lastError?.text, "bad")
+        XCTAssertNil(vm.browseError)
         XCTAssertEqual(try rows(role: "system").count, 0, "no bubble in whichever session is current")
+
+        vm.lastError = nil
+        vm.browse(path: "/tmp/denied")
+        XCTAssertEqual(try sentTypes(task).last, "browse", "the browse request must be pending")
+        task.deliver(#"{"type":"error","message":"browse denied"}"#)
+        await settle()
+        XCTAssertEqual(vm.browseError, "browse denied")
+        XCTAssertNil(vm.lastError, "a pending browse error belongs only in the picker")
+        XCTAssertEqual(try rows(role: "system").count, 0)
+
+        task.deliver(#"{"type":"error","message":"unrelated"}"#)
+        await settle()
+        XCTAssertEqual(vm.lastError?.text, "unrelated", "the browse error must clear the pending request")
+        XCTAssertEqual(vm.browseError, "browse denied", "a later error must not replace the browse error")
+        XCTAssertEqual(try rows(role: "system").count, 0)
 
         vm.lastError = nil
         task.deliver(#"{"type":"error","message":"scoped","sessionId":"s1"}"#)

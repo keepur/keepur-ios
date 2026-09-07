@@ -261,14 +261,45 @@ final class TeamViewModelTests: XCTestCase {
         XCTAssertEqual(vm.offlineMessageIds, [row.id])
         XCTAssertTrue(try XCTUnwrap(rows().first).pending)
 
+        vm.sendMessage(text: "b")                    // sent to hive-2, never acked
+        let otherRow = try XCTUnwrap(rows().first { $0.text == "b" })
+        let secondFrames = try messageFrames(second)
+        XCTAssertEqual(secondFrames.map(\.text), ["b"])
+        XCTAssertTrue(otherRow.pending)
+        XCTAssertEqual(vm.offlineMessageIds, [row.id])
+        XCTAssertEqual(vm.connectionState, .connected)
+
         capability.selectedHive = "hive-1"
-        vm.connectIfPossible()                       // connected→connected channel switch
+        vm.connectIfPossible()                       // direct switch: no preceding disconnect
         let third = try XCTUnwrap(factory.latest)
         XCTAssertEqual(factory.made.count, 3)
+        XCTAssertTrue(third.url.absoluteString.hasSuffix("&channel=hive-1"))
+        XCTAssertEqual(vm.connectionState, .connecting)
+        XCTAssertEqual(vm.offlineMessageIds, [row.id, otherRow.id], "the switch captures unacked sends from the departing hive")
         third.completeHandshake()
         await settle()
-        XCTAssertEqual(try messageFrames(third).map(\.text), ["a"])
+        let thirdFrames = try messageFrames(third)
+        XCTAssertEqual(thirdFrames.map(\.text), ["a"], "hive-2's unacked send must not reach hive-1")
+        XCTAssertEqual(vm.offlineMessageIds, [otherRow.id])
+        XCTAssertTrue(otherRow.pending)
+        third.deliver(#"{"type":"ack","id":"\#(thirdFrames[0].id)"}"#)
+        await settle()
+        XCTAssertFalse(row.pending)
+
+        capability.selectedHive = "hive-2"
+        vm.connectIfPossible()
+        let fourth = try XCTUnwrap(factory.latest)
+        XCTAssertEqual(factory.made.count, 4)
+        XCTAssertTrue(fourth.url.absoluteString.hasSuffix("&channel=hive-2"))
+        fourth.completeHandshake()
+        await settle()
+        let resent = try messageFrames(fourth)
+        XCTAssertEqual(resent.map(\.text), ["b"], "returning to hive-2 delivers its queued send")
+        XCTAssertNotEqual(resent[0].id, secondFrames[0].id, "the resend uses a fresh request id")
         XCTAssertTrue(vm.offlineMessageIds.isEmpty)
+        fourth.deliver(#"{"type":"ack","id":"\#(resent[0].id)"}"#)
+        await settle()
+        XCTAssertFalse(otherRow.pending)
     }
 
     /// 11a (⚠6): auth failure clears both the offline queue and the un-acked map.
