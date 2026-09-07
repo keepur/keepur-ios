@@ -166,6 +166,7 @@ struct TeamChatView: View {
                         TeamMessageBubble(
                             message: message,
                             isOwnMessage: message.senderId == deviceId,
+                            isOffline: viewModel.offlineMessageIds.contains(message.id),
                             onSpeak: message.senderType == "agent" && message.senderId != "system" ? { text in
                                 viewModel.speechManager?.speak(text, agentId: message.senderId)
                             } : nil
