@@ -27,7 +27,10 @@ final class ChatViewModel: ObservableObject {
     private var isBrowsePending = false
     @Published var serverSessions: [ServerSession] = []
     @Published var workspaceSessions: [WorkspaceSession] = []
-    @Published var pendingMessageIds: Set<String> = []
+    enum PendingReason: Equatable { case busy, offline }
+    /// Message id → why it has not gone out yet. Replaces the old id set; the
+    /// bubble badge reads "waiting" for `.busy` and "not sent" for `.offline`.
+    @Published private(set) var pendingReasons: [String: PendingReason] = [:]
     @Published var pendingAttachment: AttachmentData?
     /// Mirrors `socket.$state`; views observe this, never `socket` directly.
     @Published private(set) var connectionState: BeekeeperSocket.State = .disconnected
@@ -62,7 +65,22 @@ final class ChatViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
     private var lastCompletedMessageIds: [String: String] = [:]
-    private var pendingMessages: [(text: String, messageId: String, sessionId: String, attachment: AttachmentData?)] = []
+    private struct PendingMessage {
+        /// The trimmed input text — empty for an attachment-only send. Not
+        /// `effectiveText` (the attachment name), which the `Message` row keeps for
+        /// display; sending it would emit a text frame the direct path never did.
+        let text: String
+        let messageId: String
+        var sessionId: String
+        let attachment: AttachmentData?
+    }
+    /// Ordered queue for both `.busy` and `.offline` entries; `pendingReasons` mirrors it.
+    private var pendingMessages: [PendingMessage] = []
+    /// Armed on the transition into `.connected`; whichever of the next `syncSessions`
+    /// and the fallback fires first clears it — exactly one reclassify + flush per reconnect.
+    private var awaitingPostReconnectSync = false
+    private var postReconnectFlushFallback: Task<Void, Never>?
+    private static let postReconnectFlushTimeout: Duration = .seconds(5)
     private static let staleBusyTimeout: TimeInterval = 90
     private var busyTimers: [String: Task<Void, Never>] = [:]
     /// Pending `/clear` handoffs, keyed by workspace path. Populated when
@@ -125,7 +143,29 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Connection state
 
     private func handleSocketState(_ state: BeekeeperSocket.State) {
+        let previous = connectionState
         connectionState = state
+        // NEVER call socket.send from here: @Published emits on willSet, so the socket's
+        // own send gate still reads the previous state during this call. Beekeeper
+        // flushes on the post-reconnect session_list (or the fallback below).
+        if state == .connected, previous != .connected {
+            awaitingPostReconnectSync = true
+            postReconnectFlushFallback?.cancel()
+            postReconnectFlushFallback = Task { [weak self] in
+                try? await Task.sleep(for: Self.postReconnectFlushTimeout)
+                guard !Task.isCancelled, let self else { return }
+                // Clear the flag and the handle FIRST so a session_list that lands later is an
+                // ordinary sync and a fired task is never cancelled or mistaken for pending.
+                self.awaitingPostReconnectSync = false
+                self.postReconnectFlushFallback = nil
+                self.flushOfflineQueue(skipping: [])
+            }
+        } else if state != .connected, previous == .connected {
+            postReconnectFlushFallback?.cancel()
+            postReconnectFlushFallback = nil
+            awaitingPostReconnectSync = false
+            // Queued entries stay; nothing else.
+        }
     }
 
     /// Encodes and forwards. Returns `false` when the socket is not connected;
@@ -162,11 +202,13 @@ final class ChatViewModel: ObservableObject {
         context.insert(message)
         try? context.save()
 
-        if statusFor(sessionId) != "idle" {
-            pendingMessages.append((text: effectiveText, messageId: message.id, sessionId: sessionId, attachment: attachment))
-            pendingMessageIds.insert(message.id)
+        let entry = PendingMessage(text: text, messageId: message.id, sessionId: sessionId, attachment: attachment)
+        if connectionState != .connected {
+            enqueue(entry, reason: .offline)
+        } else if statusFor(sessionId) != "idle" {
+            enqueue(entry, reason: .busy)
         } else {
-            sendToServer(text: text, attachment: attachment, sessionId: sessionId)
+            sendToServer(entry)   // a `false` re-enqueues at the head as .offline
         }
         messageText = ""
         speechManager.liveText = ""
@@ -223,6 +265,10 @@ final class ChatViewModel: ObservableObject {
         socket.disconnect()
         credentials.clearAll()
         isAuthenticated = false
+        // Both VMs are @StateObjects on ContentView and outlive a re-pair; nothing
+        // queued here may flush into the next pairing's sessions (spec ⚠6).
+        pendingMessages.removeAll()
+        pendingReasons.removeAll()
     }
 
     // MARK: - Private
@@ -287,11 +333,7 @@ final class ChatViewModel: ObservableObject {
                 }
 
                 if state == "session_ended" {
-                    streamingMessageIds.removeValue(forKey: effectiveId)
-                    pendingApprovals.removeValue(forKey: effectiveId)
-                    sessionStatuses.removeValue(forKey: effectiveId)
-                    sessionToolNames.removeValue(forKey: effectiveId)
-                    clearPendingMessages(for: effectiveId)
+                    endSession(effectiveId)
                 }
             }
 
@@ -376,7 +418,11 @@ final class ChatViewModel: ObservableObject {
             let sessionsTabOnly = sessions.filter { row in
                 row.mode == "sessions" && !conciergeIds.contains(row.sessionId)
             }
-            syncSessions(serverSessions: sessionsTabOnly, context: context)
+            // The absent-id check needs the FULL reply, not the Sessions-tab filter,
+            // or the concierge slot (never in the Session table) is reaped every list.
+            syncSessions(serverSessions: sessionsTabOnly,
+                         allServerIds: Set(sessions.map(\.sessionId)),
+                         context: context)
 
         case .sessionCleared(let sessionId):
             deleteLocalSession(sessionId: sessionId)
@@ -496,12 +542,7 @@ final class ChatViewModel: ObservableObject {
 
             // Migrate queued pending messages.
             for i in pendingMessages.indices where pendingMessages[i].sessionId == oldSessionId {
-                pendingMessages[i] = (
-                    text: pendingMessages[i].text,
-                    messageId: pendingMessages[i].messageId,
-                    sessionId: newSessionId,
-                    attachment: pendingMessages[i].attachment
-                )
+                pendingMessages[i].sessionId = newSessionId
             }
 
             // 5. Delete the old Session row.
@@ -540,31 +581,88 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func sendToServer(text: String, attachment: AttachmentData?, sessionId: String) {
-        if !text.isEmpty {
-            send(.message(text: text, sessionId: sessionId))
+    // MARK: - Private: busy / offline queue
+
+    private func enqueue(_ entry: PendingMessage, reason: PendingReason, atFront: Bool = false) {
+        if atFront {
+            pendingMessages.insert(entry, at: 0)
+        } else {
+            pendingMessages.append(entry)
         }
-        if let attachment {
+        pendingReasons[entry.messageId] = reason
+    }
+
+    /// Sends the entry's frames in order (text if non-empty, then image/file). The
+    /// first `false` from the socket re-enqueues the whole entry at the head of the
+    /// queue as `.offline` and returns `false`. The socket's gate is read synchronously
+    /// on the main actor, so a later frame cannot fail after an earlier one succeeded;
+    /// partial re-sends do not occur.
+    @discardableResult
+    private func sendToServer(_ entry: PendingMessage) -> Bool {
+        var frames: [WSOutgoing] = []
+        if !entry.text.isEmpty {
+            frames.append(.message(text: entry.text, sessionId: entry.sessionId))
+        }
+        if let attachment = entry.attachment {
             let base64 = attachment.data.base64EncodedString()
             if attachment.mimeType.hasPrefix("image/") {
-                send(.image(sessionId: sessionId, data: base64, filename: attachment.name))
+                frames.append(.image(sessionId: entry.sessionId, data: base64, filename: attachment.name))
             } else {
-                send(.file(sessionId: sessionId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+                frames.append(.file(sessionId: entry.sessionId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
             }
         }
+        for frame in frames {
+            guard send(frame) else {
+                enqueue(entry, reason: .offline, atFront: true)
+                return false
+            }
+        }
+        return true
     }
 
     private func flushNextPendingMessage(for sessionId: String) {
         guard let index = pendingMessages.firstIndex(where: { $0.sessionId == sessionId }) else { return }
-        let pending = pendingMessages.remove(at: index)
-        pendingMessageIds.remove(pending.messageId)
-        sendToServer(text: pending.text, attachment: pending.attachment, sessionId: pending.sessionId)
+        let entry = pendingMessages.remove(at: index)
+        pendingReasons.removeValue(forKey: entry.messageId)
+        sendToServer(entry)   // on `false` the entry is back at the head with reason .offline
     }
 
     private func clearPendingMessages(for sessionId: String) {
-        let removedIds = Set(pendingMessages.filter { $0.sessionId == sessionId }.map { $0.messageId })
+        let removed = pendingMessages.filter { $0.sessionId == sessionId }
+        guard !removed.isEmpty else { return }
         pendingMessages.removeAll { $0.sessionId == sessionId }
-        pendingMessageIds.subtract(removedIds)
+        for entry in removed {
+            pendingReasons.removeValue(forKey: entry.messageId)
+        }
+    }
+
+    private func reclassifyOfflineAsBusy() {
+        guard pendingReasons.values.contains(.offline) else { return }
+        pendingReasons = pendingReasons.mapValues { $0 == .offline ? .busy : $0 }
+    }
+
+    /// Post-reconnect flush: one head per idle session that `syncSessions` did not
+    /// already flush, in first-appearance order. The existing one-in-flight rule
+    /// (`.status("idle")` flushes the next) drains the rest.
+    private func flushOfflineQueue(skipping flushed: Set<String>) {
+        reclassifyOfflineAsBusy()   // no-op on the sync path; real work on the fallback path
+        var seen = Set<String>()
+        for sessionId in pendingMessages.map(\.sessionId) where seen.insert(sessionId).inserted {
+            guard statusFor(sessionId) == "idle", !flushed.contains(sessionId) else { continue }
+            flushNextPendingMessage(for: sessionId)
+        }
+    }
+
+    /// The `session_ended` cleanup, shared by the status frame and the absent-id check
+    /// in `syncSessions` (child C's watchdog relies on the latter).
+    private func endSession(_ sessionId: String) {
+        streamingMessageIds.removeValue(forKey: sessionId)
+        pendingApprovals.removeValue(forKey: sessionId)
+        sessionStatuses.removeValue(forKey: sessionId)
+        sessionToolNames.removeValue(forKey: sessionId)
+        busyTimers[sessionId]?.cancel()
+        busyTimers.removeValue(forKey: sessionId)
+        clearPendingMessages(for: sessionId)
     }
 
     private func handleStreamingMessage(text: String, sessionId: String, final: Bool, context: ModelContext) {
@@ -613,11 +711,23 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func syncSessions(serverSessions: [ServerSession], context: ModelContext) {
+    private func syncSessions(serverSessions: [ServerSession], allServerIds: Set<String>, context: ModelContext) {
         let serverIds = Set(serverSessions.map(\.sessionId))
 
         let descriptor = FetchDescriptor<Session>()
         guard let localSessions = try? context.fetch(descriptor) else { return }
+
+        // B insertion 1 of 3 — post-reconnect reclassify (§4). Exactly one pass per
+        // reconnect: whichever of this sync and the 5 s fallback fires first clears the flag.
+        // Below the fetch guard on purpose: a failed fetch returns early and leaves the flag
+        // armed, so the fallback still gets its single flush pass instead of consuming it here.
+        let isPostReconnectSync = awaitingPostReconnectSync
+        if isPostReconnectSync {
+            awaitingPostReconnectSync = false
+            postReconnectFlushFallback?.cancel()
+            postReconnectFlushFallback = nil
+            reclassifyOfflineAsBusy()
+        }
 
         for local in localSessions {
             let wasStale = local.isStale
@@ -631,6 +741,18 @@ final class ChatViewModel: ObservableObject {
             }
         }
 
+        // B insertion 2 of 3 — absent-id cleanup (§5), against the FULL reply so the
+        // concierge slot is never reaped. Queued messages for any absent session are
+        // dropped; a non-idle absent session gets the full session_ended cleanup.
+        let knownIds = Set(sessionStatuses.keys).union(pendingMessages.map(\.sessionId))
+        for id in knownIds where !allServerIds.contains(id) {
+            if statusFor(id) != "idle" {
+                endSession(id)
+            } else {
+                clearPendingMessages(for: id)
+            }
+        }
+
         let localIds = Set(localSessions.map(\.id))
         for server in serverSessions where !localIds.contains(server.sessionId) {
             let session = Session(id: server.sessionId, path: server.path)
@@ -638,6 +760,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         // Reconcile session statuses from server state
+        var flushed = Set<String>()
         for server in serverSessions {
             let serverState = server.state  // "idle" or "busy"
             let clientState = sessionStatuses[server.sessionId]
@@ -646,6 +769,7 @@ final class ChatViewModel: ObservableObject {
                 busyTimers[server.sessionId]?.cancel()
                 busyTimers.removeValue(forKey: server.sessionId)
                 flushNextPendingMessage(for: server.sessionId)
+                flushed.insert(server.sessionId)
             } else if clientState == nil || clientState == "idle" {
                 sessionStatuses[server.sessionId] = serverState
                 // Start watchdog if adopting a non-idle state from the server
@@ -665,6 +789,11 @@ final class ChatViewModel: ObservableObject {
 
         if let currentSessionId, localSessions.first(where: { $0.id == currentSessionId })?.isStale == true {
             self.currentSessionId = nil
+        }
+
+        // B insertion 3 of 3 — post-loop flush (§4), only on the sync that cleared the flag.
+        if isPostReconnectSync {
+            flushOfflineQueue(skipping: flushed)
         }
     }
 

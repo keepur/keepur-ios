@@ -77,7 +77,7 @@ struct ChatView: View {
                         ForEach(messages, id: \.id) { message in
                             MessageBubble(
                                 message: message,
-                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id),
+                                pendingReason: viewModel.pendingReasons[message.id],
                                 onSpeak: message.role == "assistant" ? { text in
                                     viewModel.speechManager.speak(text)
                                 } : nil
