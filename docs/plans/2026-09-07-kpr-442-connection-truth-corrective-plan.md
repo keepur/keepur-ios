@@ -1108,23 +1108,33 @@ extension ChatViewModelSocketTests {
 
     func testRejectedDirectSendKeepsAttachmentAheadOfLaterSubmission() async throws {
         let h = try QueueReleaseHarness()
-        defer { h.vm.disconnect() }
-        var a: String?, b: String?
-        // Synthetic test-only willSet gate mismatch: VM sees connected while the
-        // socket still reads connecting. Production never sends from a state sink.
-        let subscription = h.vm.socket.$state.sink { [weak h] state in
-            guard state == .connected, let h else { return }
-            do {
-                a = try h.send("A", attachment: h.attachment())
-                b = try h.send("B")
-            } catch { XCTFail("fixture send failed: \(error)") }
-        }
-        defer { subscription.cancel() }
+        // State forwarding is deliberately frozen below, so unpair also cancels
+        // the VM's fallback directly rather than relying on its state subscriber.
+        defer { h.vm.unpair() }
         await h.handshake()
-        let aID = try XCTUnwrap(a), bID = try XCTUnwrap(b)
+        XCTAssertEqual(h.vm.connectionState, .connected)
+        XCTAssertEqual(h.vm.socket.state, .connected)
+        // Test-only fault injection: detach the existing state subscription, then
+        // disconnect the real socket. Reflection avoids a production test seam;
+        // unwrap both the reflected optional and its value so renames fail loudly.
+        // This does not depend on Combine subscriber order or willSet timing.
+        let stateSubscription = try XCTUnwrap(
+            Mirror(reflecting: h.vm).descendant("stateSubscription") as? Optional<AnyCancellable>
+        )
+        try XCTUnwrap(stateSubscription).cancel()
+        h.vm.socket.disconnect()
+        XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+        XCTAssertEqual(h.vm.statusFor("s1"), "idle")
+        XCTAssertEqual(h.vm.connectionState, .connected)
+        XCTAssertEqual(h.vm.socket.state, .disconnected)
+        let aID = try h.send("A", attachment: h.attachment())
+        let bID = try h.send("B")
         XCTAssertEqual(h.vm.pendingReasons, [aID: .offline, bID: .offline])
         XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
         XCTAssertTrue(try h.payloads().isEmpty)
+        // The first handshake's initial-sync flag is still armed in the frozen VM.
+        // Reconnect the transport before delivering that sync to release rejected A.
+        try await h.reconnectHandshake()
         try await h.list()
         XCTAssertEqual(try h.payloads().compactMap { $0["type"] as? String }, ["message", "file"])
         XCTAssertEqual(try h.payloads().last?["data"] as? String, h.bytes.base64EncodedString())
