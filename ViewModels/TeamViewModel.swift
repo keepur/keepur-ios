@@ -34,7 +34,35 @@ final class TeamViewModel: ObservableObject {
     weak var speechManager: SpeechManager?
 
     weak var capabilityManager: CapabilityManager?
-    @Published var disconnectedBanner: String?
+
+    /// Mirrors `socket.$state`; views observe this, never `socket` directly.
+    @Published private(set) var connectionState: BeekeeperSocket.State = .disconnected
+    /// Banner-consumed. Auto-clears after `lastErrorAutoClear` or on tap (set to nil).
+    @Published var lastError: UserFacingError? {
+        didSet {
+            lastErrorTimer?.cancel()
+            lastErrorTimer = nil
+            guard let id = lastError?.id else { return }
+            let delay = lastErrorAutoClear
+            lastErrorTimer = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, self.lastError?.id == id else { return }
+                self.lastError = nil
+            }
+        }
+    }
+
+    struct OfflineEntry: Equatable {
+        let localId: String
+        let hive: String   // the socket channel the message was written for
+    }
+    /// Never-sent and un-acked messages in send order (⚠2). Hive-scoped: an entry is
+    /// re-sent only by an `onConnected` for the hive it was written for; it is never
+    /// delivered into another hive (§7 *Hive switch*). Whole-queue clears happen only
+    /// on auth failure (⚠6); a single entry is dropped only if its row is gone at re-send.
+    @Published private(set) var offlineEntries: [OfflineEntry] = []
+    /// Projection for views (bubble badge) and tests.
+    var offlineMessageIds: [String] { offlineEntries.map(\.localId) }
 
 
     // MARK: - Internal State
@@ -42,7 +70,6 @@ final class TeamViewModel: ObservableObject {
     let socket: BeekeeperSocket
     private let credentials: CredentialStore
     private var subscriptions = Set<AnyCancellable>()
-    private var previousSocketState: BeekeeperSocket.State = .disconnected
     private var modelContext: ModelContext?
     /// Read on every use so a re-pair (new device id) is picked up immediately.
     private var deviceId: String { credentials.deviceId ?? "" }
@@ -51,13 +78,32 @@ final class TeamViewModel: ObservableObject {
     private var pendingNewCommands: Set<String> = []             // requestIds for /new commands
     private var pendingAgentDM: String?       // agent ID to auto-select after channel refresh
     private var pendingDMRequestId: String?   // request UUID of the /dm command
+    private var offlineAttachments: [String: AttachmentData] = [:]   // localId → attachment, in-memory only
+    /// Channel of the last `socket.connect(channel:)`, assigned AFTER that call returns:
+    /// a connected→connected hive switch emits `.connecting` synchronously inside
+    /// `connect`, and that transition must stamp un-acked entries with the hive they
+    /// were *sent to*, not the one being connected. Never cleared by `disconnect()` or
+    /// the hive-vanished path — an entry queued while `.disconnected` still belongs to
+    /// the hive the user is looking at. The `?? ""` fallbacks below never match a hive
+    /// and so can only leave an entry queued, never misroute it.
+    private var activeHive: String?
+    private var lastErrorTimer: Task<Void, Never>?
+    private let lastErrorAutoClear: Duration
+    private static let notConnectedText = "Not connected. Try again when reconnected."
 
     init(
         socket: BeekeeperSocket? = nil,
-        credentials: CredentialStore = KeychainCredentialStore()
+        credentials: CredentialStore = KeychainCredentialStore(),
+        lastErrorAutoClear: Duration = .seconds(6)
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
+        self.lastErrorAutoClear = lastErrorAutoClear
+        // In init, not configure: Settings observes truth before configure runs. The
+        // `capabilityManager` uses in the handler are `guard let`-safe before configure.
+        self.socket.$state
+            .sink { [weak self] state in self?.handleSocketState(state) }
+            .store(in: &subscriptions)
     }
 
     // MARK: - Setup
@@ -69,10 +115,6 @@ final class TeamViewModel: ObservableObject {
 
         socket.frames
             .sink { [weak self] data in self?.handleFrame(data) }
-            .store(in: &subscriptions)
-        socket.$state
-            .dropFirst()
-            .sink { [weak self] state in self?.handleSocketState(state) }
             .store(in: &subscriptions)
         socket.onAuthFailure = { [weak self] in
             self?.handleAuthFailure()
@@ -100,42 +142,29 @@ final class TeamViewModel: ObservableObject {
         }
         Log.team.info("connectIfPossible: channel=\(channel, privacy: .public)")
         socket.connect(channel: channel)
+        activeHive = channel   // after connect returns — see the activeHive doc comment
     }
 
-    /// Foregrounding and the Settings button call this; during backoff it attempts immediately.
+    /// Foregrounding, the Settings button and the banner's Retry call this; during
+    /// backoff it attempts immediately, keeping the attempt count.
     func reconnect() {
         connectIfPossible()
     }
 
-    func retryConnect() {
-        disconnectedBanner = nil
-        reconnect()
-    }
-
-    /// Replaces the old `onReceiveFailure` hook. The socket now backs off on its own;
-    /// the banner is (re-)shown on every distinct transition into `.reconnecting` — a
-    /// manual `retryConnect()` clears it, and the next backoff failure (whatever attempt
-    /// number it lands on) must bring it back. The hive-vanished check only needs to run
-    /// once per connection loss, so it stays gated on `attempt == 1`.
+    /// The banner is state-driven (`connectionState`), so nothing is re-set here. Two
+    /// hooks: leaving `.connected` moves sent-but-un-acked messages into the offline
+    /// queue; the first `.reconnecting` of a loss runs the hive-vanished check (once
+    /// per loss — child A's documented deviation). NEVER call `socket.send` from here:
+    /// @Published emits on willSet, so the socket's gate still reads the old state.
     private func handleSocketState(_ state: BeekeeperSocket.State) {
-        defer { previousSocketState = state }
-        switch state {
-        case .reconnecting(let attempt) where previousSocketState != state:
-            handleConnectionLost()
-            if attempt == 1 {
-                refreshCapabilitiesAfterConnectionLost()
-            }
-        case .connected:
-            disconnectedBanner = nil
-        default:
-            break
+        let previous = connectionState
+        connectionState = state
+        if previous == .connected, state != .connected {
+            moveUnackedToOffline()
         }
-    }
-
-    private func handleConnectionLost() {
-        guard let manager = capabilityManager else { return }
-        let label = manager.selectedHive ?? "hive"
-        disconnectedBanner = "\(label) is unavailable — tap to retry."
+        if case .reconnecting(let attempt) = state, state != previous, attempt == 1 {
+            refreshCapabilitiesAfterConnectionLost()
+        }
     }
 
     private func refreshCapabilitiesAfterConnectionLost() {
@@ -146,12 +175,16 @@ final class TeamViewModel: ObservableObject {
             if let current = manager.selectedHive, manager.hives.contains(current) {
                 // Hive still exists; the socket keeps backing off and the banner offers retry-now.
             } else {
-                self.disconnectedBanner = nil
+                // After the 6 s auto-clear the banner falls back to "Not connected… Retry";
+                // Retry → connectIfPossible() → no valid hive → disconnect(). Accepted (§7).
+                self.lastError = UserFacingError("This hive is no longer available.")
                 self.socket.disconnect()
             }
         }
     }
 
+    /// Clears no queue state on purpose: entries keep their hive stamp and go out on
+    /// the next connect to that hive (§7 *Hive switch*).
     func disconnect() {
         pendingAgentDM = nil
         pendingDMRequestId = nil
@@ -174,6 +207,15 @@ final class TeamViewModel: ObservableObject {
         guard socket.isConnected, let result = try? outgoing.encodeWithId() else { return nil }
         guard socket.send(result.data) else { return nil }
         return result.id
+    }
+
+    private func sendAttachment(_ attachment: AttachmentData, channelId: String) {
+        let base64 = attachment.data.base64EncodedString()
+        if attachment.mimeType.hasPrefix("image/") {
+            _ = sendWithId(.teamImage(channelId: channelId, data: base64, filename: attachment.name))
+        } else {
+            _ = sendWithId(.teamFile(channelId: channelId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+        }
     }
 
     // MARK: - Public Actions
@@ -207,15 +249,16 @@ final class TeamViewModel: ObservableObject {
         context.insert(message)
         try? context.save()
 
-        if let requestId = sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
+        if connectionState == .connected,
+           let requestId = sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
             pendingMessageIds[requestId] = localId
-        }
-        if let attachment {
-            let base64 = attachment.data.base64EncodedString()
-            if attachment.mimeType.hasPrefix("image/") {
-                _ = sendWithId(.teamImage(channelId: channelId, data: base64, filename: attachment.name))
-            } else {
-                _ = sendWithId(.teamFile(channelId: channelId, data: base64, filename: attachment.name, mimetype: attachment.mimeType))
+            if let attachment {
+                sendAttachment(attachment, channelId: channelId)   // untracked, as today
+            }
+        } else {
+            offlineEntries.append(OfflineEntry(localId: localId, hive: activeHive ?? ""))
+            if let attachment {
+                offlineAttachments[localId] = attachment
             }
         }
 
@@ -293,7 +336,6 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Private: Connection
 
     private func onConnected() {
-        disconnectedBanner = nil
         pendingAgentDM = nil
         pendingDMRequestId = nil
         fetchChannels()
@@ -315,6 +357,8 @@ final class TeamViewModel: ObservableObject {
             }
             fetchHistory(channelId: channelId)
         }
+        // Bookkeeping frames first, then the offline queue for this hive (§7).
+        resendOfflineEntries()
     }
 
     private func handleAuthFailure() {
@@ -322,6 +366,66 @@ final class TeamViewModel: ObservableObject {
         // Don't clear credentials here — ContentView observes `isAuthenticated`
         // and calls `chatViewModel.unpair()`, which owns that.
         isAuthenticated = false
+        // ⚠6: the VM outlives a re-pair; nothing queued may flush into the new pairing.
+        // The transition-out move has already run (the socket set .disconnected before
+        // calling onAuthFailure), so this also drains what was un-acked.
+        offlineEntries.removeAll()
+        offlineAttachments.removeAll()
+        pendingMessageIds.removeAll()
+    }
+
+    // MARK: - Private: Offline queue
+
+    /// Leaving `.connected`: every sent-but-un-acked message re-sends on the next
+    /// connect to this hive rather than staying "sending" forever. Ordered by the row's
+    /// `createdAt`; ids whose row is already gone are appended and dropped at re-send.
+    private func moveUnackedToOffline() {
+        guard !pendingMessageIds.isEmpty else { return }
+        let localIds = Array(pendingMessageIds.values)
+        pendingMessageIds.removeAll()
+        let hive = activeHive ?? ""
+
+        var ordered: [String] = []
+        if let context = modelContext {
+            let ids = localIds
+            let descriptor = FetchDescriptor<TeamMessage>(
+                predicate: #Predicate { ids.contains($0.id) },
+                sortBy: [SortDescriptor(\TeamMessage.createdAt)]
+            )
+            ordered = ((try? context.fetch(descriptor)) ?? []).map(\.id)
+        }
+        for id in localIds where !ordered.contains(id) {
+            ordered.append(id)
+        }
+        for id in ordered where !offlineEntries.contains(where: { $0.localId == id }) {
+            offlineEntries.append(OfflineEntry(localId: id, hive: hive))
+        }
+    }
+
+    /// End of `onConnected()`: re-send, in order, only the entries stamped with the hive
+    /// just connected. A missing row (channel archived/left meanwhile) drops the entry;
+    /// a `sendWithId` nil stops the pass and leaves the rest queued.
+    private func resendOfflineEntries() {
+        guard let context = modelContext, let hive = activeHive else { return }
+        for entry in offlineEntries where entry.hive == hive {
+            let lid = entry.localId
+            let descriptor = FetchDescriptor<TeamMessage>(
+                predicate: #Predicate { $0.id == lid }
+            )
+            guard let row = try? context.fetch(descriptor).first else {
+                offlineEntries.removeAll { $0.localId == lid }
+                offlineAttachments.removeValue(forKey: lid)
+                continue
+            }
+            guard let requestId = sendWithId(.teamMessage(channelId: row.channelId, text: row.text, threadId: row.threadId)) else {
+                break
+            }
+            pendingMessageIds[requestId] = lid
+            if let attachment = offlineAttachments.removeValue(forKey: lid) {
+                sendAttachment(attachment, channelId: row.channelId)
+            }
+            offlineEntries.removeAll { $0.localId == lid }
+        }
     }
 
     // MARK: - Private: Slash Commands
@@ -336,12 +440,14 @@ final class TeamViewModel: ObservableObject {
             name: String(commandName),
             args: args
         )
-        if let requestId = sendWithId(command) {
-            pendingCommandChannels[requestId] = channelId
-            // Track /new commands for auto-refresh
-            if commandName == "new" || commandName == "dm" {
-                pendingNewCommands.insert(requestId)
-            }
+        guard connectionState == .connected, let requestId = sendWithId(command) else {
+            lastError = UserFacingError(Self.notConnectedText)   // no pending* state touched
+            return
+        }
+        pendingCommandChannels[requestId] = channelId
+        // Track /new commands for auto-refresh
+        if commandName == "new" || commandName == "dm" {
+            pendingNewCommands.insert(requestId)
         }
     }
 
@@ -359,7 +465,10 @@ final class TeamViewModel: ObservableObject {
         // 3. Not found — create via /dm command. Send agent id so the server's
         // AgentResolver doesn't have to do a display-name lookup (KPR-11).
         let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.id])
-        guard let requestId = sendWithId(command) else { return }  // offline — no-op
+        guard connectionState == .connected, let requestId = sendWithId(command) else {
+            lastError = UserFacingError(Self.notConnectedText)
+            return
+        }
 
         pendingNewCommands.insert(requestId)
         pendingAgentDM = agent.id
@@ -467,6 +576,7 @@ final class TeamViewModel: ObservableObject {
             pendingAgentDM = nil
             pendingDMRequestId = nil
             Log.team.error("server error: \(message, privacy: .private)")
+            lastError = UserFacingError(message)
 
         case .pong:
             break
