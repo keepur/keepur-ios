@@ -13,6 +13,9 @@ final class FakeWebSocketTask: WebSocketTasking {
     var closeCode: URLSessionWebSocketTask.CloseCode = .invalid
     private(set) var resumed = false
     private(set) var cancelled = false
+    /// The code the socket cancelled this task with (`disconnect()` → `.normalClosure`,
+    /// failure/channel-switch teardown → `.goingAway`).
+    private(set) var lastCloseCode: URLSessionWebSocketTask.CloseCode?
     private(set) var sentTexts: [String] = []
     private var pingHandler: (@Sendable (Error?) -> Void)?
     private var receiveHandler: (@Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void)?
@@ -25,6 +28,7 @@ final class FakeWebSocketTask: WebSocketTasking {
 
     func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         cancelled = true
+        lastCloseCode = closeCode
     }
 
     func send(_ message: URLSessionWebSocketTask.Message,
