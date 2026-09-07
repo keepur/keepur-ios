@@ -53,6 +53,14 @@ struct BeekeeperRootView: View {
             cleanupVestigialConciergeRow()
             concierge.start(viewModel: viewModel, store: store)
         }
+        .onChange(of: viewModel.connectionState) { _, newState in
+            // ⚠9: a slow-but-eventually-successful connect after an offline bail re-runs
+            // the flow once, so the tab does not sit on "Not connected…" while the banner
+            // already says nothing.
+            if newState == .connected {
+                concierge.retryIfBailedOffline(viewModel: viewModel, store: store)
+            }
+        }
     }
 
     private func cleanupVestigialConciergeRow() {
@@ -85,13 +93,21 @@ final class ConciergeViewModel: ObservableObject {
 
     @Published private(set) var state: State = .loading
 
+    /// True after `runFlow` gave up because the socket was down (nothing sent, cache
+    /// kept). Reset by `start`/`retry`; `BeekeeperRootView` re-runs the flow on the
+    /// next `.connected` transition (spec ⚠9). No self-heal loop: a flapping link
+    /// re-runs at most once per bail.
+    private(set) var bailedOffline = false
+
     private var hasStarted = false
+    private static let offlineBailMessage = "Not connected. Retry when reconnected."
 
     func start(viewModel: ChatViewModel, store: ConciergeSessionStore) {
         // Idempotent: tab `.task` fires on every appear; only run the dance once
         // unless the caller explicitly retries.
         guard !hasStarted else { return }
         hasStarted = true
+        bailedOffline = false
         state = .loading
         Task { await runFlow(viewModel: viewModel, store: store) }
     }
@@ -101,18 +117,31 @@ final class ConciergeViewModel: ObservableObject {
         start(viewModel: viewModel, store: store)
     }
 
+    /// What `BeekeeperRootView`'s `.onChange(of: connectionState)` calls: re-run only
+    /// after an offline bail and only once actually connected. Unit-reachable so the
+    /// predicate is tested without the view.
+    func retryIfBailedOffline(viewModel: ChatViewModel, store: ConciergeSessionStore) {
+        guard bailedOffline, viewModel.connectionState == .connected else { return }
+        retry(viewModel: viewModel, store: store)
+    }
+
     private func runFlow(viewModel: ChatViewModel, store: ConciergeSessionStore) async {
         // Cold start races this task against the socket handshake: the tab's `.task`
-        // fires `start()` → `runFlow` as soon as the view appears, but `configure()`
-        // only just called `connect()`, so the socket is still `.connecting`. Sending
-        // into that state is a silent no-op (`BeekeeperSocket.send` returns `false`
-        // and drops the frame), which meant the cache-hit `resume_session` below was
-        // routinely lost on a cold launch — the flow then burned the 3s
-        // `waitForSessionInfo` timeout, fell through to `list_sessions` discovery, and
-        // could spawn a duplicate concierge session. Wait briefly for the connection
-        // before the first send; if it doesn't land in time, proceed anyway — steps
-        // 1-3 below already tolerate a dropped/timed-out send via their own fallbacks.
-        await waitForSocketConnected(viewModel: viewModel, timeoutSeconds: 5)
+        // fires `start()` → `runFlow` as soon as the view appears, while `configure()`
+        // has only just called `connect()`. Sending into `.connecting` is a silent
+        // no-op (`BeekeeperSocket.send` returns `false`), which used to lose the
+        // cache-hit `resume_session` and spawn duplicates. Wait for the connection.
+        // If the socket is definitively down (`.disconnected` after a connect request:
+        // not paired, host unconfigured, token retries exhausted) bail right away —
+        // without sending and WITHOUT `store.clear()`; the old flow would burn
+        // 3 s + 3 s + 5 s of dead timeouts and wipe the cached concierge id.
+        let connected = await waitForSocketConnected(viewModel: viewModel, timeoutSeconds: 5)
+        // The transition may have landed in the timeout's own turn; re-read before bailing.
+        if !connected, viewModel.connectionState != .connected {
+            bailedOffline = true
+            state = .error(Self.offlineBailMessage)
+            return
+        }
 
         // 1) Cache hit → resume_session.
         if let cached = store.cachedSession {
@@ -173,16 +202,42 @@ final class ConciergeViewModel: ObservableObject {
         return nil
     }
 
-    /// Polls `viewModel.socket.isConnected` until the handshake completes or the
-    /// timeout elapses. Same polling style as `waitForSessionInfo` /
-    /// `waitForConciergeInList` below. Times out silently (returns either way) —
-    /// callers proceed regardless, since the send-gated fallbacks handle a
-    /// still-dropped frame.
-    private func waitForSocketConnected(viewModel: ChatViewModel, timeoutSeconds: Double) async {
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if viewModel.socket.isConnected { return }
-            try? await Task.sleep(for: .milliseconds(50))
+    /// Consumes `viewModel.$connectionState` (no polling, no `socket` read). Returns
+    /// `true` on `.connected`; `false` immediately on `.disconnected` once the VM has
+    /// asked the socket to connect (nothing is in flight), or when the timeout elapses
+    /// while still `.connecting`/`.reconnecting` — waiting through `.reconnecting` is
+    /// deliberate: on a flaky cold start the first 2 s backoff often lands inside the
+    /// budget. A `.disconnected` seen before any connect request is the cold initial
+    /// value, not a failure, so the result does not depend on `configure()` having run
+    /// before the tab's `.task` (ordering-proof). The `.disconnected` case also re-reads
+    /// `viewModel.connectionState` live rather than trusting the buffered value alone:
+    /// `AsyncPublisher` can hand this loop a stale `.disconnected` on a main-actor turn
+    /// after `configure()`/`reconnect()` has already flipped the socket to `.connecting`
+    /// (that emission just has not been consumed yet); without the re-read the flow
+    /// would bail "Not connected…" while a connect is in flight. The buffered
+    /// `.connecting`, if any, arrives on the next iteration and the wait continues.
+    private func waitForSocketConnected(viewModel: ChatViewModel, timeoutSeconds: Double) async -> Bool {
+        await withTaskGroup(of: Bool?.self) { group in
+            group.addTask { @MainActor in
+                for await state in viewModel.$connectionState.values {
+                    switch state {
+                    case .connected:
+                        return true
+                    case .disconnected where viewModel.hasRequestedConnection && viewModel.connectionState == .disconnected:
+                        return false
+                    case .disconnected, .connecting, .reconnecting:
+                        continue
+                    }
+                }
+                return nil
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()   // AsyncPublisher honours cancellation; the loser finishes
+            return first ?? false
         }
     }
 
