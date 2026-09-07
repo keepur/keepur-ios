@@ -16,6 +16,7 @@ final class TeamViewModel: ObservableObject {
     @Published var messageText: String = ""
     @Published var pendingAttachment: AttachmentData?
     @Published var isAuthenticated = true
+    var onAuthFailure: (() -> Void)?
     @Published var lastLiveMessageId: String?  // Set on live messages only, drives scroll-to-bottom
     @Published var agents: [TeamAgentInfo] = []
 
@@ -59,10 +60,12 @@ final class TeamViewModel: ObservableObject {
     /// Never-sent and un-acked messages in send order (⚠2). Hive-scoped: an entry is
     /// re-sent only by an `onConnected` for the hive it was written for; it is never
     /// delivered into another hive (§7 *Hive switch*). Whole-queue clears happen only
-    /// on auth failure (⚠6); a single entry is dropped only if its row is gone at re-send.
+    /// on pairing teardown (⚠6); a single entry is dropped only if its row is gone at re-send.
     @Published private(set) var offlineEntries: [OfflineEntry] = []
     /// Projection for views (bubble badge) and tests.
     var offlineMessageIds: [String] { offlineEntries.map(\.localId) }
+    var queuedAttachmentCountForTesting: Int { offlineAttachments.count }
+    var pendingMessageRequestCountForTesting: Int { pendingMessageIds.count }
 
 
     // MARK: - Internal State
@@ -361,17 +364,19 @@ final class TeamViewModel: ObservableObject {
         resendOfflineEntries()
     }
 
-    private func handleAuthFailure() {
-        socket.disconnect()
-        // Don't clear credentials here — ContentView observes `isAuthenticated`
-        // and calls `chatViewModel.unpair()`, which owns that.
-        isAuthenticated = false
-        // ⚠6: the VM outlives a re-pair; nothing queued may flush into the new pairing.
-        // The transition-out move has already run (the socket set .disconnected before
-        // calling onAuthFailure), so this also drains what was un-acked.
+    func resetForPairingTeardown() {
+        disconnect()
+        // The synchronous transition-out collection has now finished.
         offlineEntries.removeAll()
         offlineAttachments.removeAll()
         pendingMessageIds.removeAll()
+        activeHive = nil
+        isAuthenticated = false
+    }
+
+    private func handleAuthFailure() {
+        resetForPairingTeardown()
+        onAuthFailure?()
     }
 
     // MARK: - Private: Offline queue

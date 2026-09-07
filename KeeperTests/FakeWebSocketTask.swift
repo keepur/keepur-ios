@@ -67,6 +67,16 @@ final class FakeWebSocketTask: WebSocketTasking {
         receiveHandler = nil
         handler?(.failure(URLError(.networkConnectionLost)))
     }
+
+    func savedHandshakeCompletion() -> () -> Void {
+        let handler = pingHandler
+        return { handler?(nil) }
+    }
+
+    func savedDelivery(_ text: String) -> () -> Void {
+        let handler = receiveHandler
+        return { handler?(.success(.string(text))) }
+    }
 }
 
 /// Creates a fresh fake per `connect` and keeps them all, so tests can inspect

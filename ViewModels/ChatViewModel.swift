@@ -21,6 +21,7 @@ final class ChatViewModel: ObservableObject {
     @Published var currentSessionId: String?
     @Published var pendingApprovals: [String: ToolApproval] = [:]
     @Published var isAuthenticated = true
+    var onUnpair: (() -> Void)?
     @Published var browseEntries: [BrowseEntry] = []
     @Published var browsePath: String = ""
     @Published var browseError: String?
@@ -76,6 +77,11 @@ final class ChatViewModel: ObservableObject {
     }
     /// Ordered queue for both `.busy` and `.offline` entries; `pendingReasons` mirrors it.
     private var pendingMessages: [PendingMessage] = []
+    private var queueReleasePendingIdle: Set<String> = []
+    private var releasedBeforeReconnectSync: Set<String> = []
+    var queuedAttachmentCountForTesting: Int {
+        pendingMessages.filter { $0.attachment != nil }.count
+    }
     /// Armed on the transition into `.connected`; whichever of the next `syncSessions`
     /// and the fallback fires first clears it — exactly one reclassify + flush per reconnect.
     private var awaitingPostReconnectSync = false
@@ -263,12 +269,16 @@ final class ChatViewModel: ObservableObject {
 
     func unpair() {
         socket.disconnect()
-        credentials.clearAll()
-        isAuthenticated = false
-        // Both VMs are @StateObjects on ContentView and outlive a re-pair; nothing
-        // queued here may flush into the next pairing's sessions (spec ⚠6).
         pendingMessages.removeAll()
         pendingReasons.removeAll()
+        postReconnectFlushFallback?.cancel()
+        postReconnectFlushFallback = nil
+        awaitingPostReconnectSync = false
+        queueReleasePendingIdle.removeAll()
+        releasedBeforeReconnectSync.removeAll()
+        onUnpair?()
+        credentials.clearAll()
+        isAuthenticated = false
     }
 
     // MARK: - Private

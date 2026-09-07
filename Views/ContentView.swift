@@ -9,6 +9,15 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isPaired = KeychainManager.isPaired
 
+    @MainActor
+    static func bindPairingTeardown(
+        chat: ChatViewModel, team: TeamViewModel, capabilities: CapabilityManager
+    ) {
+        chat.onUnpair = { [weak team] in team?.resetForPairingTeardown() }
+        team.onAuthFailure = { [weak chat] in chat?.unpair() }
+        capabilities.onAuthFailure = { [weak chat] in chat?.unpair() }
+    }
+
     var body: some View {
         Group {
             if isPaired {
@@ -16,8 +25,11 @@ struct ContentView: View {
             } else {
                 PairingView(
                     onPaired: {
-                        isPaired = true
+                        Self.bindPairingTeardown(chat: chatViewModel, team: teamViewModel,
+                                                capabilities: capabilityManager)
                         chatViewModel.isAuthenticated = true
+                        teamViewModel.isAuthenticated = true
+                        isPaired = true
                         chatViewModel.configure(context: modelContext)
                         teamViewModel.speechManager = chatViewModel.speechManager
                         teamViewModel.configure(context: modelContext, capabilityManager: capabilityManager)
@@ -27,9 +39,8 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            capabilityManager.onAuthFailure = {
-                chatViewModel.unpair()
-            }
+            Self.bindPairingTeardown(chat: chatViewModel, team: teamViewModel,
+                                    capabilities: capabilityManager)
             if isPaired {
                 chatViewModel.configure(context: modelContext)
                 teamViewModel.speechManager = chatViewModel.speechManager
@@ -50,16 +61,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: chatViewModel.isAuthenticated) {
-            if !chatViewModel.isAuthenticated && isPaired {
-                isPaired = false
-                teamViewModel.disconnect()
-            }
+            if !chatViewModel.isAuthenticated && isPaired { isPaired = false }
         }
         .onChange(of: teamViewModel.isAuthenticated) {
-            if !teamViewModel.isAuthenticated && isPaired {
-                isPaired = false
-                chatViewModel.unpair()
-            }
+            if !teamViewModel.isAuthenticated && isPaired { isPaired = false }
         }
         .task(id: isPaired) {
             guard isPaired else { return }
