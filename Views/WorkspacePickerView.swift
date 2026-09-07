@@ -37,7 +37,7 @@ struct WorkspacePickerView: View {
                 }
 
                 Section {
-                    if !viewModel.socket.isConnected {
+                    if viewModel.connectionState != .connected {
                         ContentUnavailableView {
                             Label("Disconnected", systemImage: "wifi.slash")
                         } description: {
@@ -46,7 +46,8 @@ struct WorkspacePickerView: View {
                             Button("Reconnect") {
                                 viewModel.browseError = nil
                                 viewModel.reconnect()
-                                viewModel.browse()
+                                // No browse() here: it would be dropped while handshaking
+                                // (child A's documented interim). The .onChange below re-browses.
                             }
                             .buttonStyle(KeepurPrimaryButtonStyle())
                             .padding(.horizontal, KeepurTheme.Spacing.s7)
@@ -173,6 +174,13 @@ struct WorkspacePickerView: View {
                 viewModel.browseError = nil
                 viewModel.workspaceSessions = []
                 viewModel.browse()
+            }
+            .onChange(of: viewModel.connectionState) { _, newState in
+                // ⚠5: browse once the handshake lands, whether from Reconnect above or
+                // from the picker having appeared while still connecting.
+                if newState == .connected {
+                    viewModel.browse()
+                }
             }
         }
     }

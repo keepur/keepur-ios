@@ -71,6 +71,12 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            KeepurConnectionBanner(
+                presentation: .make(state: viewModel.connectionState, error: viewModel.lastError),
+                onRetry: { viewModel.reconnect() },
+                onDismissError: { viewModel.lastError = nil }
+            )
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: KeepurTheme.Spacing.s3) {
