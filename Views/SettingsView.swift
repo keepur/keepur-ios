@@ -58,6 +58,16 @@ struct SettingsView: View {
 
     // MARK: - Sections
 
+    /// Status row copy + tint by connection state (spec §2 table).
+    private var connectionStatus: (label: String, tint: Color) {
+        switch viewModel.connectionState {
+        case .connected:    return ("Connected",     KeepurTheme.Color.success)
+        case .connecting:   return ("Connecting…",   KeepurTheme.Color.warning)
+        case .reconnecting: return ("Reconnecting…", KeepurTheme.Color.warning)
+        case .disconnected: return ("Disconnected",  KeepurTheme.Color.danger)
+        }
+    }
+
     private var deviceSection: some View {
         VStack(alignment: .leading, spacing: KeepurTheme.Spacing.s2) {
             eyebrowHeader("DEVICE")
@@ -97,10 +107,10 @@ struct SettingsView: View {
                         Spacer()
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                                .fill(connectionStatus.tint)
                                 .frame(width: 8, height: 8)
-                            Text(viewModel.socket.isConnected ? "Connected" : "Disconnected")
-                                .foregroundStyle(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                            Text(connectionStatus.label)
+                                .foregroundStyle(connectionStatus.tint)
                         }
                     }
                     .padding(.vertical, KeepurTheme.Spacing.s3)
@@ -184,8 +194,8 @@ struct SettingsView: View {
     private var footerSection: some View {
         KeepurCard(bordered: true) {
             VStack(spacing: 0) {
-                Button(viewModel.socket.isConnected ? "Disconnect" : "Reconnect") {
-                    if viewModel.socket.isConnected {
+                Button(viewModel.connectionState == .connected ? "Disconnect" : "Reconnect") {
+                    if viewModel.connectionState == .connected {
                         viewModel.disconnect()
                     } else {
                         viewModel.reconnect()

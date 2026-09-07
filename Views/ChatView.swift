@@ -71,13 +71,19 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            KeepurConnectionBanner(
+                presentation: .make(state: viewModel.connectionState, error: viewModel.lastError),
+                onRetry: { viewModel.reconnect() },
+                onDismissError: { viewModel.lastError = nil }
+            )
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: KeepurTheme.Spacing.s3) {
                         ForEach(messages, id: \.id) { message in
                             MessageBubble(
                                 message: message,
-                                showWaitingBadge: viewModel.pendingMessageIds.contains(message.id),
+                                pendingReason: viewModel.pendingReasons[message.id],
                                 onSpeak: message.role == "assistant" ? { text in
                                     viewModel.speechManager.speak(text)
                                 } : nil

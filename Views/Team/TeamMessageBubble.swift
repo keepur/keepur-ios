@@ -4,6 +4,7 @@ import SwiftUI
 struct TeamMessageBubble: View {
     let message: TeamMessage
     let isOwnMessage: Bool
+    var isOffline: Bool = false
     var onSpeak: ((String) -> Void)? = nil
     @State private var isPulsing = false
 
@@ -37,8 +38,9 @@ struct TeamMessageBubble: View {
                         ))
                         .foregroundStyle(KeepurTheme.Color.fgOnHoney)
 
-                    if message.pending {
-                        Text("sending")
+                    if isOffline || message.pending {
+                        let badgeText = isOffline ? "not sent" : "sending"
+                        Text(badgeText)
                             .font(KeepurTheme.Font.caption)
                             .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             .padding(.horizontal, KeepurTheme.Spacing.s2)
@@ -48,6 +50,7 @@ struct TeamMessageBubble: View {
                             .opacity(isPulsing ? 0.6 : 1.0)
                             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
                             .onAppear { isPulsing = true }
+                            .accessibilityLabel(badgeText)
                     }
                 }
 

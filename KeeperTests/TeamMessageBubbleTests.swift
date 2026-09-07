@@ -31,6 +31,7 @@ final class TeamMessageBubbleTests: XCTestCase {
 
         let pending = makeMessage(senderId: "device-self", senderType: "person", senderName: "me", pending: true)
         _ = TeamMessageBubble(message: pending, isOwnMessage: true).body
+        _ = TeamMessageBubble(message: pending, isOwnMessage: true, isOffline: true).body
     }
 
     func testAgentBubbleInstantiates() {

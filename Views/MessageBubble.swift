@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MessageBubble: View {
     let message: Message
-    var showWaitingBadge: Bool = false
+    var pendingReason: ChatViewModel.PendingReason? = nil
     var onSpeak: ((String) -> Void)? = nil
     @State private var isPulsing = false
 
@@ -67,8 +67,9 @@ struct MessageBubble: View {
                     ))
                     .foregroundStyle(KeepurTheme.Color.fgOnHoney)
 
-                    if showWaitingBadge {
-                        Text("waiting")
+                    if let pendingReason {
+                        let badgeText = pendingReason == .busy ? "waiting" : "not sent"
+                        Text(badgeText)
                             .font(KeepurTheme.Font.caption)
                             .foregroundStyle(KeepurTheme.Color.fgPrimaryDynamic)
                             .padding(.horizontal, KeepurTheme.Spacing.s2)
@@ -81,6 +82,7 @@ struct MessageBubble: View {
                             .opacity(isPulsing ? 0.6 : 1.0)
                             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
                             .onAppear { isPulsing = true }
+                            .accessibilityLabel(badgeText)
                     }
                 }
 

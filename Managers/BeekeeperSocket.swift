@@ -124,6 +124,11 @@ final class BeekeeperSocket: ObservableObject {
         connect(channel: channel)
     }
 
+    /// User-initiated close. Clears `lastChannel` (so `reconnect()` is a no-op until the
+    /// next `connect(channel:)`, matching the old Team manager) and closes with
+    /// `.normalClosure` — internal teardowns keep `.goingAway`. Safe: in `.disconnected`
+    /// `connect(channel:)` never consults `lastChannel`, and the generation bump means no
+    /// callback can reach `scheduleReconnect` afterwards.
     func disconnect() {
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -131,7 +136,8 @@ final class BeekeeperSocket: ObservableObject {
         tokenRetryTask = nil
         reconnectAttempts = 0
         tokenReadRetries = 0
-        teardown()
+        lastChannel = nil
+        teardown(closeCode: .normalClosure)
         setState(.disconnected)
     }
 
@@ -246,7 +252,9 @@ final class BeekeeperSocket: ObservableObject {
                     guard gen == self.generation else { return }
                     self.receive()
                 case .failure:
-                    if task.closeCode.rawValue == 4001 {
+                    // `self.task` — not the captured `task` — clears the macOS Sendable warning;
+                    // the `gen == self.generation` guard above already proves they are the same task.
+                    if self.task?.closeCode.rawValue == 4001 {
                         Log.socket.notice("close code 4001; auth failure")
                         self.teardown()
                         self.reconnectAttempts = 0
@@ -270,6 +278,10 @@ final class BeekeeperSocket: ObservableObject {
 
     private func scheduleReconnect() {
         guard credentials.isPaired, let channel = lastChannel else {
+            // An exhausted token-read retry lands here with the count still set; without
+            // the reset the next `connect()` skips `.connecting` (`open` only sets it at 0)
+            // and the next failure starts backoff one exponent high.
+            reconnectAttempts = 0
             setState(.disconnected)
             return
         }
@@ -287,12 +299,13 @@ final class BeekeeperSocket: ObservableObject {
     }
 
     /// Cancels the task and the ping loop and invalidates their callbacks. Does not
-    /// touch `state`; callers set it.
-    private func teardown() {
+    /// touch `state`; callers set it. Failure and channel-switch teardowns close with
+    /// `.goingAway`; `disconnect()` passes `.normalClosure`.
+    private func teardown(closeCode: URLSessionWebSocketTask.CloseCode = .goingAway) {
         generation += 1
         pingTask?.cancel()
         pingTask = nil
-        task?.cancel(with: .goingAway, reason: nil)
+        task?.cancel(with: closeCode, reason: nil)
         task = nil
     }
 

@@ -42,7 +42,12 @@ docs/plans/              → Implementation plans for in-progress work
 - Endpoint: `ws://beekeeper.dodihome.com?token=<JWT>`
 - Cleartext WS allowed via ATS exception for this host
 - 30s ping interval to keep connection alive
-- Auth failure (401) → clears token, returns to setup
+- Views observe each VM's published `connectionState` and `lastError`, never `viewModel.socket`. `ChatViewModel` and `TeamViewModel` subscribe to `socket.$state` in `init`; never send synchronously from a state sink because `@Published` emits before the socket's send gate updates.
+- `KeepurConnectionBanner` mounts in `ChatView` and once in `TeamRootView`. Its `Theme/Components` implementation accepts presentation values and closures only; socket/error mapping lives in `Views/ConnectionBannerPresentation.swift`. `UserFacingError` overrides banner text while preserving the state's Retry action, and clears on dismissal or after 6 seconds.
+- Chat's `pendingReasons` distinguishes `.busy` ("waiting") from `.offline` ("not sent"). Sends preserve per-session FIFO, including new sends behind a backlog or a released head awaiting idle. Reconnect reconciliation (`syncSessions`, with a 5-second fallback) releases one head per idle session, skipping sessions already released by an earlier idle event. Absent-session cleanup uses the full server ID set, including concierge sessions.
+- Team's ordered `offlineEntries` retain the original hive and resend never-sent and unacknowledged text only on that hive's `onConnected`; lost acknowledgements can cause duplicates. Both queues and retained queued attachments are in memory only and are not restored from persisted message rows after relaunch.
+- Manual `BeekeeperSocket.disconnect()` clears its remembered channel and closes normally; its `reconnect()` does nothing until another `connect(channel:)`. VM reconnect methods supply the channel. Ordinary disconnect/hive switch preserves queued messages.
+- Manual unpair or auth failure from Beekeeper, Team, or capabilities synchronously clears both VMs' queues, retained queued attachments, and Team's pending message-request mappings before re-pairing. `ContentView.bindPairingTeardown` installs the callbacks before configure/connect; `ChatViewModel.unpair()` owns credential clearing, and auth view observers only update navigation state.
 
 ## Code Conventions
 

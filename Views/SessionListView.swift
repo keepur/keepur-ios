@@ -92,7 +92,7 @@ struct SessionListView: View {
         Group {
             ToolbarItem(placement: .navigation) {
                 Circle()
-                    .fill(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                    .fill(viewModel.connectionState == .connected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                     .frame(width: 8, height: 8)
             }
             ToolbarItem(placement: .primaryAction) {
