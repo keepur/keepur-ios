@@ -1,3 +1,5 @@
+> **Superseded for resume:** The original tasks below are already implemented at `1fa9a4e`; do not rerun them. Resume only with [the corrective plan](2026-09-07-kpr-442-connection-truth-corrective-plan.md) after its review and dispatcher-owned merge of the latest epic docs into the preserved child.
+
 # KPR-442 — Connection Truth, Banner, Offline Send Queue Implementation Plan
 
 > **For agentic workers:** Use dodi-dev:implement to execute this plan.
