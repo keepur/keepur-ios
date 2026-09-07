@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import Combine
 @testable import Keepur
 
 /// `ChatViewModel` on an injected `BeekeeperSocket` driven by the fake task:
@@ -369,5 +370,432 @@ final class ChatViewModelSocketTests: XCTestCase {
         task.deliver(Self.s1Idle)
         await settle()
         XCTAssertEqual(try messageTexts(task), [], "nothing queued before the unpair reaches the new pairing")
+    }
+}
+
+@MainActor
+private final class QueueReleaseHarness {
+    let credentials: FakeCredentialStore
+    let factory: FakeWebSocketTaskFactory
+    let container: ModelContainer
+    let context: ModelContext
+    let vm: ChatViewModel
+    var task: FakeWebSocketTask
+    let bytes = Data([9, 4, 2])
+    init() throws {
+        let credentials = FakeCredentialStore(), factory = FakeWebSocketTaskFactory()
+        let container = try ModelContainer(for: Session.self, Message.self, Workspace.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let vm = ChatViewModel(socket: BeekeeperSocket(credentials: credentials,
+            endpoint: { URL(string: "wss://queue.unit.test")! },
+            taskFactory: { factory.make(url: $0) }), credentials: credentials)
+        vm.configure(context: context)
+        self.credentials = credentials
+        self.factory = factory
+        self.container = container
+        self.context = context
+        self.vm = vm
+        task = try XCTUnwrap(factory.latest)
+        vm.currentSessionId = "s1"
+        vm.sessionStatuses["s1"] = "idle"
+    }
+    func settle() async { for _ in 0..<8 { await Task.yield() } }
+    func handshake() async { task.completeHandshake(); await settle() }
+    func reconnectHandshake() async throws {
+        vm.reconnect()
+        task = try XCTUnwrap(factory.latest)
+        await handshake()
+    }
+    func deliver(_ object: [String: Any]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: object)
+        task.deliver(String(decoding: data, as: UTF8.self))
+        await settle()
+    }
+    func list(_ sessions: [(String, String)] = [("s1", "idle")]) async throws {
+        try await deliver(["type": "session_list", "sessions": sessions.map {
+            ["sessionId": $0.0, "path": "/tmp/\($0.0)", "state": $0.1, "mode": "sessions"]
+        }])
+    }
+    func status(_ state: String, _ id: String = "s1") async throws {
+        try await deliver(["type": "status", "state": state, "sessionId": id])
+    }
+    @discardableResult
+    func send(_ text: String, _ id: String = "s1", attachment: AttachmentData? = nil) throws -> String {
+        vm.currentSessionId = id
+        vm.messageText = text
+        vm.pendingAttachment = attachment
+        vm.sendText()
+        let display = text.isEmpty ? (attachment?.name ?? "") : text
+        let rows = try context.fetch(FetchDescriptor<Message>())
+        return try XCTUnwrap(rows.first { $0.sessionId == id && $0.text == display }?.id)
+    }
+    func attachment(_ mime: String = "application/octet-stream") -> AttachmentData {
+        AttachmentData(data: bytes, name: mime.hasPrefix("image/") ? "a.png" : "a.bin", mimeType: mime)
+    }
+    func payloads(_ id: String? = nil) throws -> [[String: Any]] {
+        try task.sentTexts.map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }.filter {
+            ["message", "image", "file"].contains($0["type"] as? String ?? "")
+                && (id == nil || $0["sessionId"] as? String == id)
+        }
+    }
+    func messages(_ id: String = "s1") throws -> [String] {
+        try payloads(id).filter { $0["type"] as? String == "message" }.compactMap { $0["text"] as? String }
+    }
+    func waitForFallback(messageCount: Int) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(7))
+        while try payloads().filter({ $0["type"] as? String == "message" }).count < messageCount,
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(try payloads().filter { $0["type"] as? String == "message" }.count, messageCount)
+    }
+}
+
+extension ChatViewModelSocketTests {
+    func testSendAfterReconnectHandshakeJoinsEarlierOfflineEntries() async throws {
+        for mixedBusy in [false, true] {
+            let h = try QueueReleaseHarness()
+            defer { h.vm.disconnect() }
+            await h.handshake()
+            try await h.list()
+            var expected: [String] = []
+            if mixedBusy {
+                try await h.status("thinking")
+                let older = try h.send("older-busy")
+                XCTAssertEqual(h.vm.pendingReasons[older], .busy)
+                expected.append("older-busy")
+            }
+            h.vm.disconnect()
+            let a = try h.send("A")
+            try await h.reconnectHandshake()
+            let b = try h.send("B")
+            XCTAssertTrue(try h.payloads().isEmpty)
+            XCTAssertEqual(h.vm.pendingReasons[a], .offline)
+            XCTAssertEqual(h.vm.pendingReasons[b], .offline)
+            expected += ["A", "B", "C"]
+            try await h.list()
+            XCTAssertEqual(try h.messages(), Array(expected.prefix(1)))
+            XCTAssertEqual(h.vm.pendingReasons[b], .busy)
+            let c = try h.send("C")
+            XCTAssertEqual(h.vm.pendingReasons[c], .busy)
+            for count in 2...expected.count {
+                try await h.status("idle")
+                XCTAssertEqual(try h.messages(), Array(expected.prefix(count)))
+            }
+            XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+        }
+    }
+
+    func testReconnectBacklogDoesNotBlockUnrelatedSession() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        let a = try h.send("A")
+        await h.handshake()
+        let b = try h.send("B")
+        try h.send("X", "s2")
+        XCTAssertEqual(try h.messages("s2"), ["X"])
+        XCTAssertEqual(try h.messages(), [])
+        XCTAssertEqual(h.vm.pendingReasons, [a: .offline, b: .offline])
+        try await h.list([("s1", "idle"), ("s2", "idle")])
+        XCTAssertEqual(try h.messages(), ["A"])
+        XCTAssertEqual(try h.messages("s2"), ["X"])
+    }
+
+    func testAttachmentEntryCannotBeOvertakenDuringReconnect() async throws {
+        for mime in ["image/png", "application/octet-stream"] {
+            for text in ["", "A"] {
+                let h = try QueueReleaseHarness()
+                defer { h.vm.disconnect() }
+                let attachment = h.attachment(mime)
+                let a = try h.send(text, attachment: attachment)
+                await h.handshake()
+                let b = try h.send("B")
+                XCTAssertEqual(h.vm.pendingReasons, [a: .offline, b: .offline])
+                XCTAssertTrue(try h.payloads().isEmpty)
+                try await h.list()
+                let types = (text.isEmpty ? [] : ["message"]) + [mime.hasPrefix("image/") ? "image" : "file"]
+                let sent = try h.payloads()
+                XCTAssertEqual(sent.compactMap { $0["type"] as? String }, types)
+                XCTAssertEqual(sent.last?["data"] as? String, h.bytes.base64EncodedString())
+                XCTAssertEqual(sent.last?["filename"] as? String, attachment.name)
+                XCTAssertEqual(try h.messages(), text.isEmpty ? [] : ["A"])
+                XCTAssertEqual(h.vm.pendingReasons, [b: .busy])
+                try await h.status("idle")
+                XCTAssertEqual(try h.payloads().compactMap { $0["type"] as? String }, types + ["message"])
+                XCTAssertEqual(try h.messages(), text.isEmpty ? ["B"] : ["A", "B"])
+                XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+            }
+        }
+    }
+
+    func testNewSendWaitsForIdleAfterQueueHeadEmptiesQueue() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        try h.send("A")
+        await h.handshake()
+        try await h.list()
+        XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+        let b = try h.send("B")
+        XCTAssertEqual(h.vm.pendingReasons[b], .busy)
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("thinking")
+        let c = try h.send("C")
+        XCTAssertEqual(h.vm.pendingReasons, [b: .busy, c: .busy])
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B", "C"])
+    }
+
+    func testBusyReconnectListHoldsBothNewAndEarlierEntries() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        let a = try h.send("A")
+        await h.handshake()
+        let b = try h.send("B")
+        try await h.list([("s1", "busy")])
+        XCTAssertEqual(h.vm.pendingReasons, [a: .busy, b: .busy])
+        XCTAssertTrue(try h.payloads().isEmpty)
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+    }
+
+    func testLiveBusyBeforeListReclassifiesOnlyItsSession() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        let a = try h.send("A")
+        let x = try h.send("X", "s2")
+        await h.handshake()
+        try await h.status("thinking")
+        let b = try h.send("B")
+        XCTAssertEqual(h.vm.pendingReasons, [a: .busy, b: .busy, x: .offline])
+        XCTAssertTrue(try h.payloads().isEmpty)
+        try await h.list([("s1", "busy"), ("s2", "idle")])
+        XCTAssertEqual(try h.messages(), [])
+        XCTAssertEqual(try h.messages("s2"), ["X"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+    }
+
+    func testEarlyIdleReleaseIsNotRepeatedByInitialSync() async throws {
+        for busyBeforeList in [false, true] {
+            let h = try QueueReleaseHarness()
+            defer { h.vm.disconnect() }
+            try h.send("A")
+            let b = try h.send("B")
+            try h.send("X", "s2")
+            await h.handshake()
+            try await h.status("idle")
+            XCTAssertEqual(try h.messages(), ["A"])
+            XCTAssertEqual(h.vm.pendingReasons[b], .busy)
+            let c = try h.send("C")
+            if busyBeforeList { try await h.status("thinking") }
+            try await h.list([("s1", "idle"), ("s2", "idle")])
+            XCTAssertEqual(try h.messages(), ["A"], "initial busy-to-idle reconciliation cannot grant a second release")
+            XCTAssertEqual(try h.messages("s2"), ["X"])
+            XCTAssertEqual(h.vm.pendingReasons, [b: .busy, c: .busy])
+            try await h.status("idle")
+            XCTAssertEqual(try h.messages(), ["A", "B"])
+            try await h.status("idle")
+            XCTAssertEqual(try h.messages(), ["A", "B", "C"])
+        }
+    }
+
+    func testEarlyIdleReleaseIsNotRepeatedByFallback() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        try h.send("A")
+        let b = try h.send("B")
+        try h.send("X", "s2")
+        await h.handshake()
+        try await h.status("idle")
+        let c = try h.send("C")
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.waitForFallback(messageCount: 2) // A already sent; fallback must send only s2's X.
+        XCTAssertEqual(try h.messages(), ["A"])
+        XCTAssertEqual(try h.messages("s2"), ["X"])
+        XCTAssertEqual(h.vm.pendingReasons, [b: .busy, c: .busy])
+        try await h.list([("s1", "idle"), ("s2", "idle")])
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B", "C"])
+    }
+
+    func testSendAfterHandshakeWaitsForFallbackAndLateListDoesNotDoubleFlush() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        let a = try h.send("A")
+        await h.handshake()
+        let b = try h.send("B")
+        XCTAssertEqual(h.vm.pendingReasons, [a: .offline, b: .offline])
+        XCTAssertTrue(try h.payloads().isEmpty)
+        try await h.waitForFallback(messageCount: 1)
+        XCTAssertEqual(try h.messages(), ["A"])
+        XCTAssertEqual(h.vm.pendingReasons, [b: .busy])
+        try await h.list()
+        XCTAssertEqual(try h.messages(), ["A"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+    }
+
+    func testSessionReplacementMigratesReleaseAndInitialSyncSkip() async throws {
+        for queuedBeforeReplacement in [false, true] {
+            let h = try QueueReleaseHarness()
+            defer { h.vm.disconnect() }
+            try h.send("A")
+            var b: String?
+            if queuedBeforeReplacement { b = try h.send("B") }
+            await h.handshake()
+            try await h.status("idle")
+            try await h.deliver(["type": "session_replaced", "oldSessionId": "s1",
+                                 "newSessionId": "s-new", "path": "/tmp/s1"])
+            XCTAssertEqual(h.vm.currentSessionId, "s-new")
+            if !queuedBeforeReplacement { b = try h.send("B", "s-new") }
+            let bID = try XCTUnwrap(b)
+            let c = try h.send("C", "s-new")
+            XCTAssertEqual(try h.messages("s-new"), [], "even an emptied queue must retain its migrated release gate")
+            XCTAssertEqual(h.vm.pendingReasons, [bID: .busy, c: .busy])
+            try await h.status("thinking", "s-new")
+            try await h.list([("s-new", "idle")])
+            XCTAssertEqual(try h.messages("s-new"), [], "migrated skip survives the initial busy-to-idle list")
+            try await h.status("idle", "s-new")
+            XCTAssertEqual(try h.messages("s-new"), ["B"])
+            try await h.status("idle", "s-new")
+            XCTAssertEqual(try h.messages("s-new"), ["B", "C"])
+            XCTAssertEqual(try h.messages("s1"), ["A"])
+            XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+        }
+    }
+
+    func testSessionCleanupRemovesReleaseOnlyAndQueuedBookkeeping() async throws {
+        for cleanup in ["cancel", "ended", "absent", "clear", "server-clear", "context-clear"] {
+            for queuedTail in [false, true] {
+                let h = try QueueReleaseHarness()
+                defer { h.vm.disconnect() }
+                try h.send("A")
+                await h.handshake()
+                try await h.status("idle") // Last queue head sent before initial sync.
+                if queuedTail { try h.send("B", attachment: h.attachment()) }
+                switch cleanup {
+                case "cancel": h.vm.cancelCurrentOperation(for: "s1")
+                case "ended": try await h.status("session_ended")
+                case "absent": try await h.list([])
+                case "clear": h.vm.clearSession(sessionId: "s1")
+                case "server-clear": try await h.deliver(["type": "session_cleared", "sessionId": "s1"])
+                default:
+                    try await h.deliver(["type": "context_cleared", "oldSessionId": "s1", "sessionId": "s1"])
+                }
+                XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+                XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 0)
+                h.vm.sessionStatuses["s1"] = "idle"
+                try h.send("fresh")
+                XCTAssertEqual(try h.messages(), ["A", "fresh"], "release-only admission gate must be cleared")
+                // For cleanup paths that did not consume initial sync, prove the old skip ID is gone too.
+                if cleanup != "absent" {
+                    h.vm.sessionStatuses["s1"] = "busy"
+                    let next = try h.send("new-queued")
+                    XCTAssertEqual(h.vm.pendingReasons[next], .busy)
+                    h.vm.sessionStatuses["s1"] = "idle"
+                    try await h.list()
+                    XCTAssertEqual(try h.messages(), ["A", "fresh", "new-queued"])
+                }
+            }
+        }
+    }
+
+    func testDisconnectClearsReleaseGateAndCancelsEarlierFallback() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        try h.send("A")
+        let b = try h.send("B")
+        await h.handshake()
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A"])
+        let old = h.task
+        h.vm.disconnect()
+        let c = try h.send("C", attachment: h.attachment())
+        h.vm.reconnect()
+        h.task = try XCTUnwrap(h.factory.latest)
+        let reasons: [String: ChatViewModel.PendingReason] = [b: .busy, c: .offline]
+        XCTAssertEqual(h.vm.pendingReasons, reasons)
+        try await Task.sleep(for: .milliseconds(5200))
+        XCTAssertEqual(h.vm.pendingReasons, reasons, "cancelled fallback must not reclassify C")
+        XCTAssertTrue(h.task.sentTexts.isEmpty)
+        await h.handshake()
+        try await h.list()
+        XCTAssertEqual(try h.messages(), ["B"], "old submitted A is not resent; stale release cannot block B")
+        XCTAssertEqual(h.vm.pendingReasons, [c: .busy])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["B", "C"])
+        XCTAssertEqual(try h.payloads().last?["data"] as? String, h.bytes.base64EncodedString())
+        let oldMessages = try old.sentTexts.map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }.compactMap { $0?["text"] as? String }
+        XCTAssertEqual(oldMessages, ["A"])
+    }
+
+    func testRejectedDirectSendKeepsAttachmentAheadOfLaterSubmission() async throws {
+        let h = try QueueReleaseHarness()
+        // State forwarding is deliberately frozen below, so unpair also cancels
+        // the VM's fallback directly rather than relying on its state subscriber.
+        defer { h.vm.unpair() }
+        await h.handshake()
+        XCTAssertEqual(h.vm.connectionState, .connected)
+        XCTAssertEqual(h.vm.socket.state, .connected)
+        // Test-only fault injection: detach the existing state subscription, then
+        // disconnect the real socket. Reflection avoids a production test seam;
+        // unwrap both the reflected optional and its value so renames fail loudly.
+        // This does not depend on Combine subscriber order or willSet timing.
+        let stateSubscription = try XCTUnwrap(
+            Mirror(reflecting: h.vm).descendant("stateSubscription") as? Optional<AnyCancellable>
+        )
+        try XCTUnwrap(stateSubscription).cancel()
+        h.vm.socket.disconnect()
+        XCTAssertTrue(h.vm.pendingReasons.isEmpty)
+        XCTAssertEqual(h.vm.statusFor("s1"), "idle")
+        XCTAssertEqual(h.vm.connectionState, .connected)
+        XCTAssertEqual(h.vm.socket.state, .disconnected)
+        let aID = try h.send("A", attachment: h.attachment())
+        let bID = try h.send("B")
+        XCTAssertEqual(h.vm.pendingReasons, [aID: .offline, bID: .offline])
+        XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
+        XCTAssertTrue(try h.payloads().isEmpty)
+        // The first handshake's initial-sync flag is still armed in the frozen VM.
+        // Reconnect the transport before delivering that sync to release rejected A.
+        try await h.reconnectHandshake()
+        try await h.list()
+        XCTAssertEqual(try h.payloads().compactMap { $0["type"] as? String }, ["message", "file"])
+        XCTAssertEqual(try h.payloads().last?["data"] as? String, h.bytes.base64EncodedString())
+        XCTAssertEqual(h.vm.pendingReasons, [bID: .busy])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+    }
+
+    func testOrdinaryBusyToIdleSyncReleasesHeldQueueHead() async throws {
+        let h = try QueueReleaseHarness()
+        defer { h.vm.disconnect() }
+        try h.send("A")
+        await h.handshake()
+        try await h.list()
+        let b = try h.send("B")
+        try await h.status("thinking")
+        XCTAssertEqual(h.vm.pendingReasons[b], .busy)
+        try await h.list() // Ordinary sync after initial sync has already completed.
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+        let c = try h.send("C")
+        XCTAssertEqual(h.vm.pendingReasons[c], .busy)
+        XCTAssertEqual(try h.messages(), ["A", "B"])
+        try await h.status("idle")
+        XCTAssertEqual(try h.messages(), ["A", "B", "C"])
     }
 }
