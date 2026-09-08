@@ -3,42 +3,43 @@ import XCTest
 
 final class ChatHeaderMappingTests: XCTestCase {
     func testChatViewStatusMapping() {
-        XCTAssertEqual(ChatView.mapSessionStatus("idle").text, nil)
-        XCTAssertEqual(ChatView.mapSessionStatus("idle").isActive, false)
+        XCTAssertEqual(SessionStatus(wire: "idle").headerText, nil)
+        XCTAssertEqual(SessionStatus(wire: "idle").isActive, false)
 
-        XCTAssertEqual(ChatView.mapSessionStatus("thinking").text, "thinking")
-        XCTAssertTrue(ChatView.mapSessionStatus("thinking").isActive)
+        XCTAssertEqual(SessionStatus(wire: "thinking").headerText, "thinking")
+        XCTAssertTrue(SessionStatus(wire: "thinking").isActive)
 
-        XCTAssertEqual(ChatView.mapSessionStatus("tool_running").text, "running tool")
-        XCTAssertTrue(ChatView.mapSessionStatus("tool_running").isActive)
+        XCTAssertEqual(SessionStatus(wire: "tool_running").headerText, "running tool")
+        XCTAssertTrue(SessionStatus(wire: "tool_running").isActive)
 
-        XCTAssertEqual(ChatView.mapSessionStatus("tool_starting").text, "starting tool")
-        XCTAssertTrue(ChatView.mapSessionStatus("tool_starting").isActive)
+        XCTAssertEqual(SessionStatus(wire: "tool_starting").headerText, "starting tool")
+        XCTAssertTrue(SessionStatus(wire: "tool_starting").isActive)
 
-        XCTAssertEqual(ChatView.mapSessionStatus("busy").text, "server busy")
-        XCTAssertTrue(ChatView.mapSessionStatus("busy").isActive)
+        XCTAssertEqual(SessionStatus(wire: "busy").headerText, "server busy")
+        XCTAssertTrue(SessionStatus(wire: "busy").isActive)
 
-        XCTAssertEqual(ChatView.mapSessionStatus("custom").text, "custom")
-        XCTAssertFalse(ChatView.mapSessionStatus("custom").isActive)
+        XCTAssertEqual(SessionStatus(wire: "custom").headerText, "custom")
+        XCTAssertTrue(SessionStatus(wire: "custom").isActive)
     }
 
     func testTeamChatViewAgentStatusMapping() {
-        XCTAssertNil(TeamChatView.mapAgentStatus(nil).text)
-        XCTAssertFalse(TeamChatView.mapAgentStatus(nil).isActive)
+        let absent: AgentStatus? = nil
+        XCTAssertNil(absent?.presentation.headerText)
+        XCTAssertFalse(absent?.presentation.isActive ?? false)
 
-        XCTAssertNil(TeamChatView.mapAgentStatus("idle").text)
-        XCTAssertFalse(TeamChatView.mapAgentStatus("idle").isActive)
+        XCTAssertNil(AgentStatus(wire: "idle").presentation.headerText)
+        XCTAssertFalse(AgentStatus(wire: "idle").presentation.isActive)
 
-        XCTAssertEqual(TeamChatView.mapAgentStatus("processing").text, "working")
-        XCTAssertTrue(TeamChatView.mapAgentStatus("processing").isActive)
+        XCTAssertEqual(AgentStatus(wire: "processing").presentation.headerText, "working")
+        XCTAssertTrue(AgentStatus(wire: "processing").presentation.isActive)
 
-        XCTAssertEqual(TeamChatView.mapAgentStatus("error").text, "error")
-        XCTAssertFalse(TeamChatView.mapAgentStatus("error").isActive)
+        XCTAssertEqual(AgentStatus(wire: "error").presentation.headerText, "error")
+        XCTAssertFalse(AgentStatus(wire: "error").presentation.isActive)
 
-        XCTAssertEqual(TeamChatView.mapAgentStatus("stopped").text, "stopped")
-        XCTAssertFalse(TeamChatView.mapAgentStatus("stopped").isActive)
+        XCTAssertEqual(AgentStatus(wire: "stopped").presentation.headerText, "stopped")
+        XCTAssertFalse(AgentStatus(wire: "stopped").presentation.isActive)
 
-        XCTAssertEqual(TeamChatView.mapAgentStatus("custom").text, "custom")
-        XCTAssertFalse(TeamChatView.mapAgentStatus("custom").isActive)
+        XCTAssertEqual(AgentStatus(wire: "custom").presentation.headerText, "custom")
+        XCTAssertFalse(AgentStatus(wire: "custom").presentation.isActive)
     }
 }

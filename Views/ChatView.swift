@@ -84,14 +84,14 @@ struct ChatView: View {
                             MessageBubble(
                                 message: message,
                                 pendingReason: viewModel.pendingReasons[message.id],
-                                onSpeak: message.role == "assistant" ? { text in
+                                onSpeak: message.typedRole == .assistant ? { text in
                                     viewModel.speechManager.speak(text)
                                 } : nil
                             )
                                 .id(message.id)
                         }
 
-                        if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
+                        if viewModel.statusFor(sessionId).isActive {
                             StatusIndicator(status: viewModel.statusFor(sessionId), toolName: viewModel.toolNameFor(sessionId), onCancel: { viewModel.cancelCurrentOperation(for: sessionId) })
                                 .id("status")
                         }
@@ -116,7 +116,7 @@ struct ChatView: View {
                     }
                 }
                 .onChange(of: viewModel.sessionStatuses[sessionId]) {
-                    if ["thinking", "tool_running", "tool_starting", "busy"].contains(viewModel.statusFor(sessionId)) {
+                    if viewModel.statusFor(sessionId).isActive {
                         withAnimation {
                             proxy.scrollTo("status", anchor: .bottom)
                         }
@@ -196,19 +196,8 @@ struct ChatView: View {
         )
     }
 
-    static func mapSessionStatus(_ status: String) -> (text: String?, isActive: Bool) {
-        switch status {
-        case "idle": return (nil, false)
-        case "thinking": return ("thinking", true)
-        case "tool_running": return ("running tool", true)
-        case "tool_starting": return ("starting tool", true)
-        case "busy": return ("server busy", true)
-        default: return (status, false)
-        }
-    }
-
-    private var headerStatusText: String? { Self.mapSessionStatus(viewModel.statusFor(sessionId)).text }
-    private var headerIsStatusActive: Bool { Self.mapSessionStatus(viewModel.statusFor(sessionId)).isActive }
+    private var headerStatusText: String? { viewModel.statusFor(sessionId).headerText }
+    private var headerIsStatusActive: Bool { viewModel.statusFor(sessionId).isActive }
     private var headerStatusDate: Date? { messages.last?.timestamp }
 
     private var backAction: (() -> Void)? {
@@ -255,7 +244,7 @@ struct ChatView: View {
 // MARK: - Status Indicator
 
 struct StatusIndicator: View {
-    let status: String
+    let status: SessionStatus
     var toolName: String? = nil
     var onCancel: (() -> Void)? = nil
     @State private var phase = 0.0
@@ -263,25 +252,29 @@ struct StatusIndicator: View {
     var body: some View {
         HStack {
             HStack(spacing: KeepurTheme.Spacing.s1 + 2) {
-                if status == "thinking" {
+                if status == .thinking {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
                             .fill(KeepurTheme.Color.fgSecondaryDynamic)
                             .frame(width: 8, height: 8)
                             .offset(y: sin(phase + Double(i) * 0.8) * 4)
                     }
-                } else if status == "busy" {
+                } else if status == .busy {
                     Image(systemName: "clock")
                         .font(KeepurTheme.Font.caption)
                         .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     Text("Server busy...")
                         .font(KeepurTheme.Font.caption)
                         .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
-                } else {
+                } else if status == .toolStarting || status == .toolRunning {
                     Image(systemName: "hammer.fill")
                         .font(KeepurTheme.Font.caption)
                         .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                     Text("Running \(toolName ?? "tool")...")
+                        .font(KeepurTheme.Font.caption)
+                        .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
+                } else {
+                    Text(status.headerText ?? "")
                         .font(KeepurTheme.Font.caption)
                         .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
                 }
@@ -303,7 +296,7 @@ struct StatusIndicator: View {
             Spacer()
         }
         .onAppear {
-            if status == "thinking" {
+            if status == .thinking {
                 withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
                     phase = .pi
                 }

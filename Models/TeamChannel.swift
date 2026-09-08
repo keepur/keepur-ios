@@ -12,6 +12,8 @@ final class TeamChannel {
     var lastServerMessageId: String?
     var updatedAt: Date
 
+    var kind: ChannelKind { ChannelKind(wire: type) }
+
     init(
         id: String,
         type: String,
@@ -33,6 +35,6 @@ final class TeamChannel {
     }
 
     var displayName: String {
-        type == "channel" ? "#\(name)" : name
+        kind == .channel ? "#\(name)" : name
     }
 }

@@ -46,7 +46,7 @@ final class ConciergeSessionStore: ObservableObject {
     /// the per-admin map invariant should leave at most one match; if more
     /// than one comes back, pick the first and warn so we'd notice drift.
     static func pickConciergeSession(from sessions: [ServerSession]) -> ServerSession? {
-        let matches = sessions.filter { $0.mode == "concierge" }
+        let matches = sessions.filter { $0.mode == .concierge }
         if matches.count > 1 {
             print("[Concierge] Warning: multiple concierge slots returned by server (\(matches.count)); using first")
         }

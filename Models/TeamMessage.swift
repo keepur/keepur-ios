@@ -13,6 +13,8 @@ final class TeamMessage {
     var createdAt: Date
     var pending: Bool
 
+    var typedSenderType: SenderType { SenderType(wire: senderType) }
+
     init(
         id: String = UUID().uuidString,
         channelId: String,

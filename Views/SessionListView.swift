@@ -327,6 +327,6 @@ struct SessionRow: View {
 
     private var lastMessagePreview: String? {
         guard let msg = latestMessages.first else { return nil }
-        return msg.role == "user" ? msg.text : "Claude: \(msg.text)"
+        return msg.typedRole == .user ? msg.text : "Claude: \(msg.text)"
     }
 }

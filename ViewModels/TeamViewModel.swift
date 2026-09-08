@@ -244,7 +244,7 @@ final class TeamViewModel: ObservableObject {
             id: localId,
             channelId: channelId,
             senderId: deviceId,
-            senderType: "person",
+            senderType: SenderType.person.wireValue,
             senderName: credentials.deviceName ?? "Me",
             text: effectiveText,
             pending: true
@@ -458,7 +458,7 @@ final class TeamViewModel: ObservableObject {
 
     func openAgentDM(agent: TeamAgentInfo) {
         // 1. Search for existing DM with this agent
-        if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agent.id) }) {
+        if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agent.id) }) {
             selectChannel(dm.id)
             return
         }
@@ -490,7 +490,7 @@ final class TeamViewModel: ObservableObject {
             let message = TeamMessage(
                 channelId: channelId,
                 senderId: agentId,
-                senderType: "agent",
+                senderType: SenderType.agent.wireValue,
                 senderName: agentName,
                 text: text
             )
@@ -530,7 +530,7 @@ final class TeamViewModel: ObservableObject {
             let message = TeamMessage(
                 channelId: targetChannelId,
                 senderId: "system",
-                senderType: "agent",
+                senderType: SenderType.agent.wireValue,
                 senderName: agentName,
                 text: text
             )
@@ -618,7 +618,7 @@ final class TeamViewModel: ObservableObject {
             } else {
                 let channel = TeamChannel(
                     id: info.id,
-                    type: info.type,
+                    type: info.type.wireValue,
                     name: info.name,
                     members: info.members
                 )
@@ -631,7 +631,7 @@ final class TeamViewModel: ObservableObject {
 
         // Auto-select DM after /dm creation.
         if let agentId = pendingAgentDM {
-            if let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) }) {
+            if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agentId) }) {
                 // Success: DM found — navigate and clear.
                 pendingAgentDM = nil
                 selectChannel(dm.id)
@@ -711,7 +711,7 @@ final class TeamViewModel: ObservableObject {
             }
 
             // Step 3: Agent message match
-            if histMsg.senderType == "agent" && existingContentKeys.contains(contentKey) {
+            if histMsg.senderType == .agent && existingContentKeys.contains(contentKey) {
                 continue
             }
 
@@ -726,7 +726,7 @@ final class TeamViewModel: ObservableObject {
                 channelId: channelId,
                 threadId: histMsg.threadId,
                 senderId: histMsg.senderId,
-                senderType: histMsg.senderType,
+                senderType: histMsg.senderType.wireValue,
                 senderName: histMsg.senderName,
                 text: histMsg.text,
                 createdAt: histMsg.createdAt,
@@ -829,13 +829,13 @@ final class TeamViewModel: ObservableObject {
     /// perspective), which is useless to the person reading the app. Replace
     /// it with the agent name by matching channel members against agents.
     func displayName(for channel: TeamChannel) -> String {
-        if channel.type == "dm" {
+        if channel.kind == .dm {
             if let agent = agents.first(where: { channel.members.contains($0.id) }) {
                 return agent.name
             }
             return channel.name
         }
-        return channel.type == "channel" ? "#\(channel.name)" : channel.name
+        return channel.kind == .channel ? "#\(channel.name)" : channel.name
     }
 
     func refreshActiveMessages() {
@@ -857,7 +857,7 @@ final class TeamViewModel: ObservableObject {
     /// so sidebar display and DM navigation stay consistent.
     func recomputeSortedAgents() {
         let paired: [(agent: TeamAgentInfo, dmChannel: TeamChannel?)] = agents.map { agent in
-            let dm = channels.first { $0.type == "dm" && $0.members.contains(agent.id) }
+            let dm = channels.first { $0.kind == .dm && $0.members.contains(agent.id) }
             return (agent: agent, dmChannel: dm)
         }
         sortedAgents = paired.sorted { lhs, rhs in

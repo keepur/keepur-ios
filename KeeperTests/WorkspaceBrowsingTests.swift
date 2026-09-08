@@ -135,7 +135,7 @@ final class WorkspaceBrowsingTests: XCTestCase {
         XCTAssertEqual(sessionId, "sess-789")
         XCTAssertEqual(path, "/workspace/project")
         // Fixture omits `mode`; decoder defaults it for pre-v1.6.1 daemons.
-        XCTAssertEqual(mode, "sessions")
+        XCTAssertEqual(mode, .sessions)
     }
 
     func testSessionListDecoding() {
@@ -153,7 +153,7 @@ final class WorkspaceBrowsingTests: XCTestCase {
         XCTAssertEqual(sessions.count, 2)
         XCTAssertEqual(sessions[0].sessionId, "s1")
         XCTAssertEqual(sessions[0].path, "/a")
-        XCTAssertEqual(sessions[0].state, "idle")
+        XCTAssertEqual(sessions[0].state, .idle)
         XCTAssertEqual(sessions[1].sessionId, "s2")
     }
 

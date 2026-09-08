@@ -29,7 +29,7 @@ struct AgentRow: View {
             KeepurAvatar(
                 size: 56,
                 content: .letter(agent.name),
-                statusOverlay: agent.statusTint
+                statusOverlay: agent.status.presentation.tint
             )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -60,16 +60,5 @@ struct AgentRow: View {
         }
         .padding(.vertical, KeepurTheme.Spacing.s2)
         .contentShape(Rectangle())
-    }
-}
-
-private extension TeamAgentInfo {
-    var statusTint: KeepurStatusPill.Tint {
-        switch status {
-        case "idle": return .success
-        case "processing": return .warning
-        case "error", "stopped": return .danger
-        default: return .muted
-        }
     }
 }

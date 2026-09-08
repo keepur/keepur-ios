@@ -7,11 +7,11 @@ import os
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
-    @Published var sessionStatuses: [String: String] = [:]
+    @Published var sessionStatuses: [String: SessionStatus] = [:]
     @Published var sessionToolNames: [String: String] = [:]
 
-    func statusFor(_ sessionId: String) -> String {
-        sessionStatuses[sessionId] ?? "idle"
+    func statusFor(_ sessionId: String) -> SessionStatus {
+        sessionStatuses[sessionId] ?? .idle
     }
 
     func toolNameFor(_ sessionId: String) -> String? {
@@ -225,7 +225,7 @@ final class ChatViewModel: ObservableObject {
         let message = Message(
             sessionId: sessionId,
             text: effectiveText,
-            role: "user",
+            role: MessageRole.user.rawValue,
             attachmentName: attachment?.name,
             attachmentType: attachment?.mimeType,
             attachmentData: attachment?.data
@@ -242,7 +242,7 @@ final class ChatViewModel: ObservableObject {
                 $0.sessionId == sessionId && pendingReasons[$0.messageId] == .offline
             }
             enqueue(entry, reason: hasOffline ? .offline : .busy)
-        } else if statusFor(sessionId) != "idle" {
+        } else if statusFor(sessionId) != .idle {
             enqueue(entry, reason: .busy)
         } else {
             sendToServer(entry)
@@ -349,7 +349,7 @@ final class ChatViewModel: ObservableObject {
                 sessionStatuses[effectiveId] = state
 
                 // Store or clear tool name based on state
-                if state == "tool_running" || state == "tool_starting" {
+                if state == .toolRunning || state == .toolStarting {
                     if let toolName {
                         sessionToolNames[effectiveId] = toolName
                     } else {
@@ -361,7 +361,7 @@ final class ChatViewModel: ObservableObject {
 
                 // Clear streaming ID on round boundaries so the next
                 // streaming segment creates a new message bubble.
-                if state == "thinking" || state == "tool_starting" || state == "tool_running" {
+                if state == .thinking || state == .toolStarting || state == .toolRunning {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                 }
 
@@ -372,13 +372,13 @@ final class ChatViewModel: ObservableObject {
                 }
 
                 // Flush next pending message when session becomes idle
-                if state == "idle" {
+                if state == .idle {
                     releaseQueuedHead(for: effectiveId)
                 } else {
                     reclassifyOfflineAsBusy(for: effectiveId)
                 }
 
-                if state == "session_ended" {
+                if state == .sessionEnded {
                     endSession(effectiveId)
                 }
             }
@@ -396,13 +396,13 @@ final class ChatViewModel: ObservableObject {
             // We still update currentSessionId/currentPath/sessionStatuses so
             // ConciergeViewModel can detect arrival via its Combine observation
             // and ChatView's status indicator works inside the concierge tab.
-            let isConcierge = mode == "concierge"
+            let isConcierge = mode == .concierge
                 || sessionId == knownConciergeSessionId
                 || sessionId == ConciergeSessionStore.cachedSessionId
             if isConcierge {
                 currentSessionId = sessionId
                 currentPath = path
-                sessionStatuses[sessionId] = "idle"
+                sessionStatuses[sessionId] = .idle
                 cancelBusyWatchdog(for: sessionId)
                 break
             }
@@ -429,7 +429,7 @@ final class ChatViewModel: ObservableObject {
             try? context.save()
             currentSessionId = sessionId
             currentPath = path
-            sessionStatuses[sessionId] = "idle"
+            sessionStatuses[sessionId] = .idle
             cancelBusyWatchdog(for: sessionId)
             if let handoff {
                 // Now delete the old (already-wiped) Session row.
@@ -584,7 +584,7 @@ final class ChatViewModel: ObservableObject {
 
         case .error(let message, let sessionId):
             if let sessionId {
-                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: "system")
+                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: MessageRole.system.rawValue)
                 context.insert(msg)
                 try? context.save()
             } else if isBrowsePending {
@@ -598,13 +598,13 @@ final class ChatViewModel: ObservableObject {
             break
 
         case .toolOutput(let toolName, let output, _, let sessionId):
-            let msg = Message(sessionId: sessionId, text: "[\(toolName)]\n\(output)", role: "tool")
+            let msg = Message(sessionId: sessionId, text: "[\(toolName)]\n\(output)", role: MessageRole.tool.rawValue)
             context.insert(msg)
             try? context.save()
 
         case .unknown(let raw):
             let targetSessionId = currentSessionId ?? "unknown"
-            let msg = Message(sessionId: targetSessionId, text: raw, role: "unknown")
+            let msg = Message(sessionId: targetSessionId, text: raw, role: MessageRole.unknown.rawValue)
             context.insert(msg)
             try? context.save()
         }
@@ -651,7 +651,7 @@ final class ChatViewModel: ObservableObject {
 
     @discardableResult
     private func flushNextPendingMessage(for sessionId: String) -> Bool {
-        guard connectionState == .connected, statusFor(sessionId) == "idle",
+        guard connectionState == .connected, statusFor(sessionId) == .idle,
               !queueReleasePendingIdle.contains(sessionId),
               let index = pendingMessages.firstIndex(where: { $0.sessionId == sessionId }) else {
             return false
@@ -692,8 +692,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func isActiveBusy(_ id: String) -> Bool {
-        guard let state = sessionStatuses[id] else { return false }
-        return state != "idle" && state != "session_ended"
+        statusFor(id).isActive
     }
 
     private func cancelBusyWatchdog(for id: String) {
@@ -731,7 +730,7 @@ final class ChatViewModel: ObservableObject {
         reclassifyOfflineAsBusy()   // no-op on the sync path; real work on the fallback path
         var seen = Set<String>()
         for sessionId in pendingMessages.map(\.sessionId) where seen.insert(sessionId).inserted {
-            guard statusFor(sessionId) == "idle", !flushed.contains(sessionId) else { continue }
+            guard statusFor(sessionId) == .idle, !flushed.contains(sessionId) else { continue }
             flushNextPendingMessage(for: sessionId)
         }
     }
@@ -760,7 +759,7 @@ final class ChatViewModel: ObservableObject {
                 }
             } else if !text.isEmpty {
                 // Single-shot final message (e.g. AskUserQuestion) — no prior chunks existed
-                let msg = Message(sessionId: sessionId, text: text, role: "assistant")
+                let msg = Message(sessionId: sessionId, text: text, role: MessageRole.assistant.rawValue)
                 context.insert(msg)
                 try? context.save()
                 streamingMessageIds[sessionId] = msg.id
@@ -769,7 +768,7 @@ final class ChatViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<Message>(
                     predicate: #Predicate { $0.id == completedId }
                 )
-                if let msg = try? context.fetch(descriptor).first, msg.role == "assistant" {
+                if let msg = try? context.fetch(descriptor).first, msg.typedRole == .assistant {
                     speechManager.speak(msg.text)
                 }
             }
@@ -787,7 +786,7 @@ final class ChatViewModel: ObservableObject {
                 try? context.save()
             }
         } else {
-            let msg = Message(sessionId: sessionId, text: text, role: "assistant")
+            let msg = Message(sessionId: sessionId, text: text, role: MessageRole.assistant.rawValue)
             context.insert(msg)
             try? context.save()
             streamingMessageIds[sessionId] = msg.id
@@ -796,11 +795,11 @@ final class ChatViewModel: ObservableObject {
 
     private func syncSessions(serverSessions: [ServerSession], context: ModelContext) {
         let allServerIds = Set(serverSessions.map(\.sessionId))
-        var conciergeIds = Set(serverSessions.filter { $0.mode == "concierge" }.map(\.sessionId))
+        var conciergeIds = Set(serverSessions.filter { $0.mode == .concierge }.map(\.sessionId))
         if let knownConciergeSessionId { conciergeIds.insert(knownConciergeSessionId) }
         if let cached = ConciergeSessionStore.cachedSessionId { conciergeIds.insert(cached) }
         let tableRows = serverSessions.filter {
-            $0.mode == "sessions" && !conciergeIds.contains($0.sessionId)
+            $0.mode == .sessions && !conciergeIds.contains($0.sessionId)
         }
         let tableIds = Set(tableRows.map(\.sessionId))
         guard let fetched = try? context.fetch(FetchDescriptor<Session>()) else { return }
@@ -843,8 +842,8 @@ final class ChatViewModel: ObservableObject {
         for server in serverSessions {
             let id = server.sessionId
             let wasBusy = isActiveBusy(id)
-            if server.state == "idle" {
-                sessionStatuses[id] = "idle"
+            if server.state == .idle {
+                sessionStatuses[id] = .idle
                 sessionToolNames.removeValue(forKey: id)
                 cancelBusyWatchdog(for: id)
                 if wasBusy, !flushed.contains(id), releaseQueuedHead(for: id) {

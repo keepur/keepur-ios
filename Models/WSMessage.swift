@@ -5,8 +5,8 @@ import Foundation
 struct ServerSession {
     let sessionId: String
     let path: String
-    let state: String
-    let mode: String
+    let state: SessionStatus
+    let mode: SessionMode
 }
 
 struct BrowseEntry {
@@ -51,7 +51,7 @@ enum WSOutgoing {
         case .newSession(let path):
             dict = ["type": "new_session", "path": path]
         case .newSessionConcierge:
-            dict = ["type": "new_session", "mode": "concierge"]
+            dict = ["type": "new_session", "mode": SessionMode.concierge.wireValue]
         case .clearSession(let sessionId):
             dict = ["type": "clear_session", "sessionId": sessionId]
         case .listSessions:
@@ -82,8 +82,8 @@ enum WSOutgoing {
 enum WSIncoming {
     case message(text: String, sessionId: String, final: Bool)
     case toolApproval(toolUseId: String, tool: String, input: String, sessionId: String?)
-    case status(state: String, sessionId: String?, toolName: String?)
-    case sessionInfo(sessionId: String, path: String, mode: String)
+    case status(state: SessionStatus, sessionId: String?, toolName: String?)
+    case sessionInfo(sessionId: String, path: String, mode: SessionMode)
     case sessionList(sessions: [ServerSession])
     case sessionCleared(sessionId: String)
     case browseResult(path: String, entries: [BrowseEntry])
@@ -115,13 +115,13 @@ enum WSIncoming {
             guard let state = json["state"] as? String else { return nil }
             let sessionId = json["sessionId"] as? String
             let toolName = json["toolName"] as? String
-            return .status(state: state, sessionId: sessionId, toolName: toolName)
+            return .status(state: SessionStatus(wire: state), sessionId: sessionId, toolName: toolName)
         case "session_info":
             guard let sessionId = json["sessionId"] as? String,
                   let path = json["path"] as? String else { return nil }
             // Forward-compat: pre-v1.6.1 daemons omit `mode`; default to "sessions".
             let mode = (json["mode"] as? String) ?? "sessions"
-            return .sessionInfo(sessionId: sessionId, path: path, mode: mode)
+            return .sessionInfo(sessionId: sessionId, path: path, mode: SessionMode(wire: mode))
         case "session_list":
             guard let sessionsArray = json["sessions"] as? [[String: Any]] else { return nil }
             let sessions = sessionsArray.compactMap { dict -> ServerSession? in
@@ -130,7 +130,7 @@ enum WSIncoming {
                       let state = dict["state"] as? String else { return nil }
                 // Forward-compat: older daemons omit `mode`; default to "sessions".
                 let mode = (dict["mode"] as? String) ?? "sessions"
-                return ServerSession(sessionId: sessionId, path: path, state: state, mode: mode)
+                return ServerSession(sessionId: sessionId, path: path, state: SessionStatus(wire: state), mode: SessionMode(wire: mode))
             }
             return .sessionList(sessions: sessions)
         case "session_cleared":

@@ -15,7 +15,7 @@ final class BusyStateRecoveryTests: XCTestCase {
         guard case .status(let state, let sessionId, let toolName) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "thinking")
+        XCTAssertEqual(state, .thinking)
         XCTAssertEqual(sessionId, "sess-1")
         XCTAssertNil(toolName)
     }
@@ -31,7 +31,7 @@ final class BusyStateRecoveryTests: XCTestCase {
         guard case .status(let state, let sessionId, let toolName) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "tool_running")
+        XCTAssertEqual(state, .toolRunning)
         XCTAssertEqual(sessionId, "sess-1")
         XCTAssertEqual(toolName, "Read")
     }
@@ -46,7 +46,7 @@ final class BusyStateRecoveryTests: XCTestCase {
         guard case .status(let state, _, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "tool_starting")
+        XCTAssertEqual(state, .toolStarting)
     }
 
     func testStatusIdleDecodes() {
@@ -59,7 +59,7 @@ final class BusyStateRecoveryTests: XCTestCase {
         guard case .status(let state, let sessionId, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "idle")
+        XCTAssertEqual(state, .idle)
         XCTAssertEqual(sessionId, "sess-1")
     }
 
@@ -73,7 +73,7 @@ final class BusyStateRecoveryTests: XCTestCase {
         guard case .status(let state, _, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "session_ended")
+        XCTAssertEqual(state, .sessionEnded)
     }
 
     // MARK: - Session List Decode with State Field
@@ -92,9 +92,9 @@ final class BusyStateRecoveryTests: XCTestCase {
         }
         XCTAssertEqual(sessions.count, 2)
         XCTAssertEqual(sessions[0].sessionId, "s1")
-        XCTAssertEqual(sessions[0].state, "idle")
+        XCTAssertEqual(sessions[0].state, .idle)
         XCTAssertEqual(sessions[1].sessionId, "s2")
-        XCTAssertEqual(sessions[1].state, "busy")
+        XCTAssertEqual(sessions[1].state, .busy)
     }
 
     func testSessionListEmptySessions() {
