@@ -174,7 +174,7 @@ Each of the following 30 saves migrates once. Grouping does not authorize moving
 |---|---|---|
 | ChatViewModel | 234 optimistic send; 429 session-info upsert; 442 old handoff deletion; 492 context-clear deletion; 527 replacement upsert; 536 replacement message migration; 580 replacement old-row deletion; 589 scoped error bubble; 603 tool output; 609 unknown frame; 759 final append; 765 final single shot; 787 nonfinal append; 792 first chunk; 859 full-list sync; 889 local session deletion; 915 workspace upsert/prune | Log once through helper, then assign VM `lastError` on non-nil error. |
 | TeamViewModel | 253 optimistic send; 498 incoming team message; 538 system response; 572 ack; 629 channel sync; 738 history; 768 joined member; 779 self left; 796 archived; 820 preview | Same VM rule, with no change to request IDs, history algorithm, queue or channel cleanup. |
-| SessionListView | 138 rename; 206 workspace removal | Log through helper only; retain existing view state/actions. |
+| SessionListView | 138 iOS rename; 206 macOS rename | Log through helper only; retain existing view state/actions. |
 | BeekeeperRootView | 74 vestigial concierge row deletion | Log through helper only; retain failed/missing-row return. |
 
 ### Deterministic error tests without changing storage architecture
