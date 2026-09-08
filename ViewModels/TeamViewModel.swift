@@ -74,6 +74,7 @@ final class TeamViewModel: ObservableObject {
     private let credentials: CredentialStore
     private var subscriptions = Set<AnyCancellable>()
     private var modelContext: ModelContext?
+    private let saveOperation: (ModelContext) throws -> Void
     /// Read on every use so a re-pair (new device id) is picked up immediately.
     private var deviceId: String { credentials.deviceId ?? "" }
     private var pendingCommandChannels: [String: String] = [:]  // requestId -> channelId
@@ -97,11 +98,13 @@ final class TeamViewModel: ObservableObject {
     init(
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore(),
-        lastErrorAutoClear: Duration = .seconds(6)
+        lastErrorAutoClear: Duration = .seconds(6),
+        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
         self.lastErrorAutoClear = lastErrorAutoClear
+        self.saveOperation = saveOperation
         // In init, not configure: Settings observes truth before configure runs. The
         // `capabilityManager` uses in the handler are `guard let`-safe before configure.
         self.socket.$state
@@ -250,7 +253,7 @@ final class TeamViewModel: ObservableObject {
             pending: true
         )
         context.insert(message)
-        try? context.save()
+        save(context, "team.sendMessage.save")
 
         if connectionState == .connected,
            let requestId = sendWithId(.teamMessage(channelId: channelId, text: trimmed, threadId: nil)) {
@@ -285,7 +288,7 @@ final class TeamViewModel: ObservableObject {
             let channelDescriptor = FetchDescriptor<TeamChannel>(
                 predicate: #Predicate { $0.id == cid }
             )
-            if let channel = try? context.fetch(channelDescriptor).first {
+            if let channel = context.fetchOrEmpty(channelDescriptor, "team.selectChannel.fetch").first {
                 channel.lastServerMessageId = nil
             }
         }
@@ -309,7 +312,7 @@ final class TeamViewModel: ObservableObject {
             let channelDescriptor = FetchDescriptor<TeamChannel>(
                 predicate: #Predicate { $0.id == cid }
             )
-            if let channel = try? context.fetch(channelDescriptor).first {
+            if let channel = context.fetchOrEmpty(channelDescriptor, "team.fetchHistory.fetch").first {
                 before = channel.lastServerMessageId
             }
         }
@@ -328,7 +331,7 @@ final class TeamViewModel: ObservableObject {
         let descriptor = FetchDescriptor<TeamChannel>(
             predicate: #Predicate { $0.id == cid }
         )
-        if (try? context.fetch(descriptor).first) != nil { return }
+        if context.fetchOrEmpty(descriptor, "team.joinChannel.fetch").first != nil { return }
         send(.join(channelId: channelId))
     }
 
@@ -354,7 +357,7 @@ final class TeamViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<TeamChannel>(
                     predicate: #Predicate { $0.id == cid }
                 )
-                if let channel = try? context.fetch(descriptor).first {
+                if let channel = context.fetchOrEmpty(descriptor, "team.onConnected.fetch").first {
                     channel.lastServerMessageId = nil
                 }
             }
@@ -397,7 +400,7 @@ final class TeamViewModel: ObservableObject {
                 predicate: #Predicate { ids.contains($0.id) },
                 sortBy: [SortDescriptor(\TeamMessage.createdAt)]
             )
-            ordered = ((try? context.fetch(descriptor)) ?? []).map(\.id)
+            ordered = context.fetchOrEmpty(descriptor, "team.moveUnacked.fetch").map(\.id)
         }
         for id in localIds where !ordered.contains(id) {
             ordered.append(id)
@@ -417,7 +420,7 @@ final class TeamViewModel: ObservableObject {
             let descriptor = FetchDescriptor<TeamMessage>(
                 predicate: #Predicate { $0.id == lid }
             )
-            guard let row = try? context.fetch(descriptor).first else {
+            guard let row = context.fetchOrEmpty(descriptor, "team.resendOffline.fetch").first else {
                 offlineEntries.removeAll { $0.localId == lid }
                 offlineAttachments.removeValue(forKey: lid)
                 continue
@@ -495,7 +498,7 @@ final class TeamViewModel: ObservableObject {
                 text: text
             )
             context.insert(message)
-            try? context.save()
+            save(context, "team.message.save")
 
             updateChannelPreview(channelId: channelId, text: text, context: context)
             refreshActiveMessages()
@@ -535,7 +538,7 @@ final class TeamViewModel: ObservableObject {
                 text: text
             )
             context.insert(message)
-            try? context.save()
+            save(context, "team.systemMessage.save")
 
             updateChannelPreview(channelId: targetChannelId, text: text, context: context)
             refreshActiveMessages()
@@ -567,15 +570,15 @@ final class TeamViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<TeamMessage>(
                     predicate: #Predicate { $0.id == lid }
                 )
-                if let msg = try? context.fetch(descriptor).first {
+                if let msg = context.fetchOrEmpty(descriptor, "team.ack.fetch").first {
                     msg.pending = false
-                    try? context.save()
+                    save(context, "team.ack.save")
                     refreshActiveMessages()
                 }
             }
 
         case .typing:
-            break  // v1: ignore typing indicators
+            break // Deliberately ignored: the current Team UI has no typing surface.
 
         case .error(let message):
             pendingAgentDM = nil
@@ -591,7 +594,7 @@ final class TeamViewModel: ObservableObject {
             recomputeSortedAgents()
 
         case .commandList:
-            break
+            break // Deliberately ignored: slash commands use the existing free-form input.
         }
     }
 
@@ -602,7 +605,7 @@ final class TeamViewModel: ObservableObject {
 
         // Fetch all local channels
         let descriptor = FetchDescriptor<TeamChannel>()
-        let localChannels = (try? context.fetch(descriptor)) ?? []
+        let localChannels = context.fetchOrEmpty(descriptor, "team.syncChannels.fetch")
 
         // Remove channels no longer on server
         for local in localChannels where !serverIds.contains(local.id) {
@@ -626,7 +629,7 @@ final class TeamViewModel: ObservableObject {
             }
         }
 
-        try? context.save()
+        save(context, "team.syncChannels.save")
         loadChannels(context: context)
 
         // Auto-select DM after /dm creation.
@@ -649,7 +652,7 @@ final class TeamViewModel: ObservableObject {
         let descriptor = FetchDescriptor<TeamChannel>(
             sortBy: [SortDescriptor(\TeamChannel.lastMessageAt, order: .reverse)]
         )
-        channels = (try? context.fetch(descriptor)) ?? []
+        channels = context.fetchOrEmpty(descriptor, "team.loadChannels.fetch")
         recomputeSortedAgents()
     }
 
@@ -671,7 +674,7 @@ final class TeamViewModel: ObservableObject {
             let descriptor = FetchDescriptor<TeamChannel>(
                 predicate: #Predicate { $0.id == cid }
             )
-            if let channel = try? context.fetch(descriptor).first {
+            if let channel = context.fetchOrEmpty(descriptor, "team.history.cursor.fetch").first {
                 if isActiveChannel || channel.lastServerMessageId == nil {
                     channel.lastServerMessageId = oldestMsg.id
                 }
@@ -684,7 +687,7 @@ final class TeamViewModel: ObservableObject {
         let allDescriptor = FetchDescriptor<TeamMessage>(
             predicate: #Predicate { $0.channelId == cid }
         )
-        let existingMessages = (try? context.fetch(allDescriptor)) ?? []
+        let existingMessages = context.fetchOrEmpty(allDescriptor, "team.history.messages.fetch")
 
         // Build lookup structures for fast dedup
         let existingIds = Set(existingMessages.map(\.id))
@@ -735,7 +738,7 @@ final class TeamViewModel: ObservableObject {
             context.insert(message)
         }
 
-        try? context.save()
+        save(context, "team.history.save")
 
         // Update sidebar preview from the most recent history message.
         // Use max(by:) since server may return messages in descending order.
@@ -762,10 +765,10 @@ final class TeamViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<TeamChannel>(
                     predicate: #Predicate { $0.id == cid }
                 )
-                if let channel = try? context.fetch(descriptor).first,
+                if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.joined.fetch").first,
                    !channel.members.contains(memberId) {
                     channel.members.append(memberId)
-                    try? context.save()
+                    save(context, "team.channelEvent.joined.save")
                 }
             }
         case "left":
@@ -774,9 +777,9 @@ final class TeamViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<TeamChannel>(
                     predicate: #Predicate { $0.id == cid }
                 )
-                if let channel = try? context.fetch(descriptor).first {
+                if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.left.fetch").first {
                     context.delete(channel)
-                    try? context.save()
+                    save(context, "team.channelEvent.left.save")
                     loadChannels(context: context)
                     if activeChannelId == channelId {
                         activeChannelId = nil
@@ -791,9 +794,9 @@ final class TeamViewModel: ObservableObject {
             let descriptor = FetchDescriptor<TeamChannel>(
                 predicate: #Predicate { $0.id == cid }
             )
-            if let channel = try? context.fetch(descriptor).first {
+            if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.archived.fetch").first {
                 context.delete(channel)
-                try? context.save()
+                save(context, "team.channelEvent.archived.save")
                 loadChannels(context: context)
                 if activeChannelId == channelId {
                     activeChannelId = nil
@@ -812,12 +815,12 @@ final class TeamViewModel: ObservableObject {
         let descriptor = FetchDescriptor<TeamChannel>(
             predicate: #Predicate { $0.id == cid }
         )
-        if let channel = try? context.fetch(descriptor).first {
+        if let channel = context.fetchOrEmpty(descriptor, "team.preview.fetch").first {
             channel.lastMessageText = String(text.prefix(100))
             if channel.lastMessageAt == nil || date > channel.lastMessageAt! {
                 channel.lastMessageAt = date
             }
-            try? context.save()
+            save(context, "team.preview.save")
             channels.sort { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
             recomputeSortedAgents()
         }
@@ -848,7 +851,13 @@ final class TeamViewModel: ObservableObject {
             predicate: #Predicate { $0.channelId == cid },
             sortBy: [SortDescriptor(\TeamMessage.createdAt)]
         )
-        activeMessages = (try? context.fetch(descriptor)) ?? []
+        activeMessages = context.fetchOrEmpty(descriptor, "team.activeMessages.fetch")
+    }
+
+    private func save(_ context: ModelContext, _ what: StaticString) {
+        if context.saveReporting(what, operation: { try saveOperation(context) }) != nil {
+            lastError = UserFacingError("Couldn't save. Your last change may not be kept.")
+        }
     }
 
     /// Rebuild `sortedAgents` from current `agents` and `channels`.
