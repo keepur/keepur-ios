@@ -17,6 +17,7 @@ final class FakeWebSocketTask: WebSocketTasking {
     /// failure/channel-switch teardown → `.goingAway`).
     private(set) var lastCloseCode: URLSessionWebSocketTask.CloseCode?
     private(set) var sentTexts: [String] = []
+    var onSend: ((String) -> Void)?
     private var pingHandler: (@Sendable (Error?) -> Void)?
     private var receiveHandler: (@Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void)?
 
@@ -33,7 +34,10 @@ final class FakeWebSocketTask: WebSocketTasking {
 
     func send(_ message: URLSessionWebSocketTask.Message,
               completionHandler: @escaping @Sendable (Error?) -> Void) {
-        if case .string(let text) = message { sentTexts.append(text) }
+        if case .string(let text) = message {
+            sentTexts.append(text)
+            onSend?(text)
+        }
         completionHandler(nil)
     }
 
@@ -48,6 +52,7 @@ final class FakeWebSocketTask: WebSocketTasking {
     // MARK: Test controls
 
     var handshakeRequested: Bool { pingHandler != nil }
+    var receiveRequested: Bool { receiveHandler != nil }
 
     func completeHandshake(error: Error? = nil) {
         let handler = pingHandler

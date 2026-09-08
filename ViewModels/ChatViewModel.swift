@@ -55,12 +55,14 @@ final class ChatViewModel: ObservableObject {
 
     static let channel = "beekeeper"
 
-    let socket: BeekeeperSocket
-    let speechManager = SpeechManager()
+    private let socket: BeekeeperSocket
+    let incoming = PassthroughSubject<WSIncoming, Never>()
+    private var storedSpeech: SpeechManager?
     private let credentials: CredentialStore
     private var frameSubscription: AnyCancellable?
     private var stateSubscription: AnyCancellable?     // sibling of frameSubscription; no Set here
     private var lastErrorTimer: Task<Void, Never>?
+    private let staleBusyTimeout: Duration
     private let lastErrorAutoClear: Duration
     var autoReadAloud = false
     private var modelContext: ModelContext?
@@ -87,8 +89,12 @@ final class ChatViewModel: ObservableObject {
     private var awaitingPostReconnectSync = false
     private var postReconnectFlushFallback: Task<Void, Never>?
     private static let postReconnectFlushTimeout: Duration = .seconds(5)
-    private static let staleBusyTimeout: TimeInterval = 90
-    private var busyTimers: [String: Task<Void, Never>] = [:]
+    private struct BusyWatch {
+        let token: UUID
+        let task: Task<Void, Never>
+    }
+    private var busyTimers: [String: BusyWatch] = [:]
+    private var knownConciergeSessionId: String?
     /// Pending `/clear` handoffs, keyed by workspace path. Populated when
     /// `context_cleared` arrives; consumed by the follow-up `session_info` for the
     /// same path which performs the atomic old→new swap (see HIVE-113).
@@ -97,6 +103,13 @@ final class ChatViewModel: ObservableObject {
         let oldName: String?
     }
     private var pendingClearHandoffs: [String: ClearHandoff] = [:]
+
+    var speechManager: SpeechManager {
+        if let storedSpeech { return storedSpeech }
+        let created = SpeechManager()
+        storedSpeech = created
+        return created
+    }
 
     struct ToolApproval: Identifiable {
         let id: String  // toolUseId
@@ -108,10 +121,14 @@ final class ChatViewModel: ObservableObject {
     init(
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore(),
+        speech: SpeechManager? = nil,
+        staleBusyTimeout: Duration = .seconds(90),
         lastErrorAutoClear: Duration = .seconds(6)
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
+        self.storedSpeech = speech
+        self.staleBusyTimeout = staleBusyTimeout
         self.lastErrorAutoClear = lastErrorAutoClear
         // Subscribed in init, not configure, so Settings and the list views observe
         // truth before configure runs and independently of it.
@@ -165,13 +182,19 @@ final class ChatViewModel: ObservableObject {
                 self.releasedBeforeReconnectSync.removeAll()
                 self.flushOfflineQueue(skipping: alreadyReleased)
             }
-        } else if state != .connected, previous == .connected {
-            postReconnectFlushFallback?.cancel()
-            postReconnectFlushFallback = nil
-            awaitingPostReconnectSync = false
-            queueReleasePendingIdle.removeAll()
-            releasedBeforeReconnectSync.removeAll()
-            // Unsent entries survive; already submitted Chat messages are not requeued.
+            for id in sessionStatuses.keys where isActiveBusy(id) {
+                armBusyWatchdog(for: id)
+            }
+        } else if state != .connected {
+            cancelAllBusyWatchdogs()
+            if previous == .connected {
+                postReconnectFlushFallback?.cancel()
+                postReconnectFlushFallback = nil
+                awaitingPostReconnectSync = false
+                queueReleasePendingIdle.removeAll()
+                releasedBeforeReconnectSync.removeAll()
+                // Unsent entries survive; already submitted Chat messages are not requeued.
+            }
         }
     }
 
@@ -187,9 +210,10 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func handleFrame(_ data: Data) {
-        let incoming = WSIncoming.decode(from: data)
+        let decoded = WSIncoming.decode(from: data)
             ?? .unknown(raw: String(decoding: data, as: UTF8.self))
-        handleIncoming(incoming)
+        handleIncoming(decoded)
+        incoming.send(decoded)
     }
 
     func sendText() {
@@ -224,7 +248,7 @@ final class ChatViewModel: ObservableObject {
             sendToServer(entry)
         }
         messageText = ""
-        speechManager.liveText = ""
+        storedSpeech?.liveText = ""
         pendingAttachment = nil
     }
 
@@ -242,7 +266,8 @@ final class ChatViewModel: ObservableObject {
         deleteLocalSession(sessionId: sessionId)
     }
 
-    func listSessions() {
+    @discardableResult
+    func listSessions() -> Bool {
         send(.listSessions)
     }
 
@@ -251,8 +276,20 @@ final class ChatViewModel: ObservableObject {
         send(.listWorkspaceSessions(path: path))
     }
 
-    func resumeSession(sessionId: String, path: String) {
+    @discardableResult
+    func resumeSession(sessionId: String, path: String) -> Bool {
         send(.resumeSession(sessionId: sessionId, path: path))
+    }
+
+    @discardableResult
+    func newConciergeSession() -> Bool {
+        send(.newSessionConcierge)
+    }
+
+    /// Supplies already-known identity before a legacy resume reply is handled.
+    /// It is metadata, not a request, cache write, or raw transport entry point.
+    func registerConciergeSession(_ sessionId: String?) {
+        knownConciergeSessionId = sessionId
     }
 
     func browse(path: String? = nil) {
@@ -276,6 +313,8 @@ final class ChatViewModel: ObservableObject {
 
     func unpair() {
         socket.disconnect()
+        cancelAllBusyWatchdogs()
+        knownConciergeSessionId = nil
         pendingMessages.removeAll()
         pendingReasons.removeAll()
         postReconnectFlushFallback?.cancel()
@@ -302,9 +341,6 @@ final class ChatViewModel: ObservableObject {
                 send(.deny(toolUseId: toolUseId))
                 return
             }
-            if let sessionId, sessionId != currentSessionId {
-                currentSessionId = sessionId
-            }
             pendingApprovals[effectiveSessionId] = ToolApproval(id: toolUseId, tool: tool, input: input, sessionId: sessionId)
 
         case .status(let state, let sessionId, let toolName):
@@ -329,19 +365,10 @@ final class ChatViewModel: ObservableObject {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                 }
 
-                // Stale-busy watchdog
-                if state != "idle" && state != "session_ended" {
-                    busyTimers[effectiveId]?.cancel()
-                    busyTimers[effectiveId] = Task { @MainActor [weak self] in
-                        try? await Task.sleep(for: .seconds(Self.staleBusyTimeout))
-                        guard !Task.isCancelled else { return }
-                        self?.sessionStatuses[effectiveId] = "idle"
-                        self?.releaseQueuedHead(for: effectiveId)
-                    }
+                if isActiveBusy(effectiveId) {
+                    armBusyWatchdog(for: effectiveId)
                 } else {
-                    // Covers both idle and session_ended — cancel any active watchdog
-                    busyTimers[effectiveId]?.cancel()
-                    busyTimers.removeValue(forKey: effectiveId)
+                    cancelBusyWatchdog(for: effectiveId)
                 }
 
                 // Flush next pending message when session becomes idle
@@ -360,20 +387,23 @@ final class ChatViewModel: ObservableObject {
             // Concierge slots (KPR-204): don't add to the SwiftData Session table
             // and don't add to workspace history. Concierge is owned by
             // ConciergeSessionStore + BeekeeperRootView; it has its own dedicated
-            // tab and shouldn't appear in the Sessions list. Detect via either
-            // wire `mode == "concierge"` (correct path for new slots) OR the
-            // locally-cached concierge id (fallback for slots persisted server-
-            // side before KPR-203 — those report `mode: "sessions"` because
-            // restoreSessions defaults missing-mode to "sessions").
+            // tab and shouldn't appear in the Sessions list. Detect via wire
+            // `mode == "concierge"` (correct path for new slots), a registered
+            // request identity, or the locally-cached concierge id (fallback for
+            // slots persisted server-side before KPR-203 — those report
+            // `mode: "sessions"` because restoreSessions defaults missing-mode
+            // to "sessions").
             // We still update currentSessionId/currentPath/sessionStatuses so
             // ConciergeViewModel can detect arrival via its Combine observation
             // and ChatView's status indicator works inside the concierge tab.
             let isConcierge = mode == "concierge"
+                || sessionId == knownConciergeSessionId
                 || sessionId == ConciergeSessionStore.cachedSessionId
             if isConcierge {
                 currentSessionId = sessionId
                 currentPath = path
                 sessionStatuses[sessionId] = "idle"
+                cancelBusyWatchdog(for: sessionId)
                 break
             }
 
@@ -400,6 +430,7 @@ final class ChatViewModel: ObservableObject {
             currentSessionId = sessionId
             currentPath = path
             sessionStatuses[sessionId] = "idle"
+            cancelBusyWatchdog(for: sessionId)
             if let handoff {
                 // Now delete the old (already-wiped) Session row.
                 let oldId = handoff.oldSessionId
@@ -414,34 +445,8 @@ final class ChatViewModel: ObservableObject {
             saveWorkspace(path: path, context: context)
 
         case .sessionList(let sessions):
-            // Keep the full list on serverSessions — ConciergeViewModel filters
-            // by mode == "concierge" against this. For the SwiftData Session
-            // table (which drives the Sessions tab), exclude concierge rows.
-            // Detect via wire mode OR the cached concierge id (fallback for
-            // server-side mode classification bugs, e.g. KPR-203 slots persisted
-            // by v1.6.0 that restored with mode defaulted to "sessions").
             serverSessions = sessions
-            var conciergeIds = Set(sessions.filter { $0.mode == "concierge" }.map(\.sessionId))
-            if let cachedConciergeId = ConciergeSessionStore.cachedSessionId {
-                conciergeIds.insert(cachedConciergeId)
-            }
-            if !conciergeIds.isEmpty {
-                let descriptor = FetchDescriptor<Session>()
-                if let localRows = try? context.fetch(descriptor) {
-                    for row in localRows where conciergeIds.contains(row.id) {
-                        context.delete(row)
-                    }
-                    try? context.save()
-                }
-            }
-            let sessionsTabOnly = sessions.filter { row in
-                row.mode == "sessions" && !conciergeIds.contains(row.sessionId)
-            }
-            // The absent-id check needs the FULL reply, not the Sessions-tab filter,
-            // or the concierge slot (never in the Session table) is reaped every list.
-            syncSessions(serverSessions: sessionsTabOnly,
-                         allServerIds: Set(sessions.map(\.sessionId)),
-                         context: context)
+            syncSessions(serverSessions: sessions, context: context)
 
         case .sessionCleared(let sessionId):
             deleteLocalSession(sessionId: sessionId)
@@ -492,8 +497,7 @@ final class ChatViewModel: ObservableObject {
             sessionStatuses.removeValue(forKey: oldSessionId)
             sessionToolNames.removeValue(forKey: oldSessionId)
             pendingApprovals.removeValue(forKey: oldSessionId)
-            busyTimers[oldSessionId]?.cancel()
-            busyTimers.removeValue(forKey: oldSessionId)
+            cancelBusyWatchdog(for: oldSessionId)
             clearPendingMessages(for: oldSessionId)
 
         case .sessionReplaced(let oldSessionId, let newSessionId, let path):
@@ -548,17 +552,17 @@ final class ChatViewModel: ObservableObject {
             if let status = sessionStatuses.removeValue(forKey: oldSessionId) {
                 sessionStatuses[newSessionId] = status
             }
+            cancelBusyWatchdog(for: oldSessionId)
+            cancelBusyWatchdog(for: newSessionId)
+            if isActiveBusy(newSessionId) {
+                armBusyWatchdog(for: newSessionId)
+            }
             if let toolName = sessionToolNames.removeValue(forKey: oldSessionId) {
                 sessionToolNames[newSessionId] = toolName
             }
             if let approval = pendingApprovals.removeValue(forKey: oldSessionId) {
                 pendingApprovals[newSessionId] = approval
             }
-            if let timer = busyTimers.removeValue(forKey: oldSessionId) {
-                timer.cancel()
-                busyTimers.removeValue(forKey: newSessionId)
-            }
-
             // Migrate queued pending messages.
             for i in pendingMessages.indices where pendingMessages[i].sessionId == oldSessionId {
                 pendingMessages[i].sessionId = newSessionId
@@ -687,6 +691,39 @@ final class ChatViewModel: ObservableObject {
         pendingReasons = pendingReasons.mapValues { $0 == .offline ? .busy : $0 }
     }
 
+    private func isActiveBusy(_ id: String) -> Bool {
+        guard let state = sessionStatuses[id] else { return false }
+        return state != "idle" && state != "session_ended"
+    }
+
+    private func cancelBusyWatchdog(for id: String) {
+        busyTimers.removeValue(forKey: id)?.task.cancel()
+    }
+
+    private func cancelAllBusyWatchdogs() {
+        let watches = busyTimers.values
+        busyTimers.removeAll()
+        for watch in watches { watch.task.cancel() }
+    }
+
+    private func armBusyWatchdog(for id: String) {
+        cancelBusyWatchdog(for: id)
+        guard isAuthenticated, connectionState == .connected,
+              isActiveBusy(id), staleBusyTimeout > .zero else { return }
+        let token = UUID(), delay = staleBusyTimeout
+        let task = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard !Task.isCancelled, let self,
+                  self.busyTimers[id]?.token == token,
+                  self.isAuthenticated, self.connectionState == .connected,
+                  self.isActiveBusy(id) else { return }
+            self.listSessions()
+            guard !Task.isCancelled, self.busyTimers[id]?.token == token else { return }
+            self.armBusyWatchdog(for: id)
+        }
+        busyTimers[id] = BusyWatch(token: token, task: task)
+    }
+
     /// Post-reconnect flush: one head per idle session that `syncSessions` did not
     /// already flush, in first-appearance order. The existing one-in-flight rule
     /// (`.status("idle")` flushes the next) drains the rest.
@@ -703,11 +740,11 @@ final class ChatViewModel: ObservableObject {
     /// in `syncSessions` (child C's watchdog relies on the latter).
     private func endSession(_ sessionId: String) {
         streamingMessageIds.removeValue(forKey: sessionId)
+        lastCompletedMessageIds.removeValue(forKey: sessionId)
         pendingApprovals.removeValue(forKey: sessionId)
         sessionStatuses.removeValue(forKey: sessionId)
         sessionToolNames.removeValue(forKey: sessionId)
-        busyTimers[sessionId]?.cancel()
-        busyTimers.removeValue(forKey: sessionId)
+        cancelBusyWatchdog(for: sessionId)
         clearPendingMessages(for: sessionId)
     }
 
@@ -757,16 +794,20 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func syncSessions(serverSessions: [ServerSession], allServerIds: Set<String>, context: ModelContext) {
-        let serverIds = Set(serverSessions.map(\.sessionId))
+    private func syncSessions(serverSessions: [ServerSession], context: ModelContext) {
+        let allServerIds = Set(serverSessions.map(\.sessionId))
+        var conciergeIds = Set(serverSessions.filter { $0.mode == "concierge" }.map(\.sessionId))
+        if let knownConciergeSessionId { conciergeIds.insert(knownConciergeSessionId) }
+        if let cached = ConciergeSessionStore.cachedSessionId { conciergeIds.insert(cached) }
+        let tableRows = serverSessions.filter {
+            $0.mode == "sessions" && !conciergeIds.contains($0.sessionId)
+        }
+        let tableIds = Set(tableRows.map(\.sessionId))
+        guard let fetched = try? context.fetch(FetchDescriptor<Session>()) else { return }
 
-        let descriptor = FetchDescriptor<Session>()
-        guard let localSessions = try? context.fetch(descriptor) else { return }
-
-        // B insertion 1 of 3 — post-reconnect reclassify (§4). Exactly one pass per
-        // reconnect: whichever of this sync and the 5 s fallback fires first clears the flag.
-        // Below the fetch guard on purpose: a failed fetch returns early and leaves the flag
-        // armed, so the fallback still gets its single flush pass instead of consuming it here.
+        // Snapshot every release-only identity before consuming reconnect bookkeeping.
+        let knownIds = Set(sessionStatuses.keys).union(pendingMessages.map(\.sessionId))
+            .union(queueReleasePendingIdle).union(releasedBeforeReconnectSync)
         let isPostReconnectSync = awaitingPostReconnectSync
         let alreadyReleased = isPostReconnectSync ? releasedBeforeReconnectSync : Set<String>()
         if isPostReconnectSync {
@@ -777,74 +818,49 @@ final class ChatViewModel: ObservableObject {
             reclassifyOfflineAsBusy()
         }
 
+        for row in fetched where conciergeIds.contains(row.id) { context.delete(row) }
+        let localSessions = fetched.filter { !conciergeIds.contains($0.id) }
         for local in localSessions {
             let wasStale = local.isStale
-            local.isStale = !serverIds.contains(local.id)
+            local.isStale = !tableIds.contains(local.id)
             if local.isStale && !wasStale {
                 streamingMessageIds[local.id] = nil
                 lastCompletedMessageIds[local.id] = nil
                 sessionToolNames.removeValue(forKey: local.id)
-                busyTimers[local.id]?.cancel()
-                busyTimers.removeValue(forKey: local.id)
+                cancelBusyWatchdog(for: local.id)
             }
         }
-
-        // B insertion 2 of 3 — absent-id cleanup (§5), against the FULL reply so the
-        // concierge slot is never reaped. Queued messages for any absent session are
-        // dropped; a non-idle absent session gets the full session_ended cleanup.
-        let knownIds = Set(sessionStatuses.keys).union(pendingMessages.map(\.sessionId))
-            .union(queueReleasePendingIdle).union(releasedBeforeReconnectSync)
         for id in knownIds where !allServerIds.contains(id) {
-            if statusFor(id) != "idle" {
-                endSession(id)
-            } else {
-                clearPendingMessages(for: id)
-            }
+            if isActiveBusy(id) { endSession(id) }
+            else { clearPendingMessages(for: id); cancelBusyWatchdog(for: id) }
         }
-
         let localIds = Set(localSessions.map(\.id))
-        for server in serverSessions where !localIds.contains(server.sessionId) {
-            let session = Session(id: server.sessionId, path: server.path)
-            context.insert(session)
+        for server in tableRows where !localIds.contains(server.sessionId) {
+            context.insert(Session(id: server.sessionId, path: server.path))
         }
 
-        // Reconcile session statuses from server state
         var flushed = alreadyReleased
         for server in serverSessions {
-            let serverState = server.state  // "idle" or "busy"
-            let clientState = sessionStatuses[server.sessionId]
-            if clientState != nil && clientState != "idle" && serverState == "idle" {
-                sessionStatuses[server.sessionId] = "idle"
-                busyTimers[server.sessionId]?.cancel()
-                busyTimers.removeValue(forKey: server.sessionId)
-                if !flushed.contains(server.sessionId), releaseQueuedHead(for: server.sessionId) {
-                    flushed.insert(server.sessionId)
+            let id = server.sessionId
+            let wasBusy = isActiveBusy(id)
+            if server.state == "idle" {
+                sessionStatuses[id] = "idle"
+                sessionToolNames.removeValue(forKey: id)
+                cancelBusyWatchdog(for: id)
+                if wasBusy, !flushed.contains(id), releaseQueuedHead(for: id) {
+                    flushed.insert(id)
                 }
-            } else if clientState == nil || clientState == "idle" {
-                sessionStatuses[server.sessionId] = serverState
-                // Start watchdog if adopting a non-idle state from the server
-                if serverState != "idle" {
-                    busyTimers[server.sessionId]?.cancel()
-                    busyTimers[server.sessionId] = Task { @MainActor [weak self] in
-                        try? await Task.sleep(for: .seconds(Self.staleBusyTimeout))
-                        guard !Task.isCancelled else { return }
-                        self?.sessionStatuses[server.sessionId] = "idle"
-                        self?.releaseQueuedHead(for: server.sessionId)
-                    }
-                }
+            } else {
+                if !wasBusy { sessionStatuses[id] = server.state }
+                // Preserve useful tool/thinking detail on busy → busy.
+                armBusyWatchdog(for: id)
             }
         }
-
         try? context.save()
-
         if let currentSessionId, localSessions.first(where: { $0.id == currentSessionId })?.isStale == true {
             self.currentSessionId = nil
         }
-
-        // B insertion 3 of 3 — post-loop flush (§4), only on the sync that cleared the flag.
-        if isPostReconnectSync {
-            flushOfflineQueue(skipping: flushed)
-        }
+        if isPostReconnectSync { flushOfflineQueue(skipping: flushed) }
     }
 
     private func deleteLocalSession(sessionId: String) {
@@ -854,8 +870,7 @@ final class ChatViewModel: ObservableObject {
         streamingMessageIds[sessionId] = nil
         lastCompletedMessageIds[sessionId] = nil
         sessionToolNames.removeValue(forKey: sessionId)
-        busyTimers[sessionId]?.cancel()
-        busyTimers.removeValue(forKey: sessionId)
+        cancelBusyWatchdog(for: sessionId)
 
         let msgDescriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sessionId }
@@ -898,5 +913,11 @@ final class ChatViewModel: ObservableObject {
         }
 
         try? context.save()
+    }
+
+    deinit {
+        for watch in busyTimers.values { watch.task.cancel() }
+        postReconnectFlushFallback?.cancel()
+        lastErrorTimer?.cancel()
     }
 }
