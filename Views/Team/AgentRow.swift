@@ -55,7 +55,6 @@ struct AgentRow: View {
                         .font(KeepurTheme.Font.caption)
                         .foregroundStyle(KeepurTheme.Color.fgTertiary)
                 }
-                KeepurUnreadBadge(count: 0)
             }
         }
         .padding(.vertical, KeepurTheme.Spacing.s2)

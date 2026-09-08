@@ -9,13 +9,7 @@ struct HivesGridView: View {
 
     var body: some View {
         Group {
-            if capabilityManager.hives.isEmpty {
-                ContentUnavailableView {
-                    Label("No hives available", systemImage: "hexagon")
-                } description: {
-                    Text("Pull to refresh.")
-                }
-            } else {
+            if !capabilityManager.hives.isEmpty {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: KeepurTheme.Spacing.s4) {
                         ForEach(capabilityManager.hives, id: \.self) { hive in
@@ -30,6 +24,14 @@ struct HivesGridView: View {
                         }
                     }
                     .padding()
+                }
+            } else if capabilityManager.isLoading {
+                ProgressView()
+            } else {
+                ContentUnavailableView {
+                    Label("No hives available", systemImage: "hexagon")
+                } description: {
+                    Text("Pull to refresh.")
                 }
             }
         }
