@@ -4,6 +4,46 @@ import Combine
 @testable import Keepur
 
 @MainActor
+final class WeakReference {
+    weak var value: AnyObject?
+    init(_ value: AnyObject) { self.value = value }
+}
+
+@MainActor
+func reflectedObject(_ root: Any, _ name: String) throws -> AnyObject {
+    let field = try XCTUnwrap(
+        Mirror(reflecting: root).children.first { $0.label == name }?.value
+    )
+    let mirror = Mirror(reflecting: field)
+    let value: Any = mirror.displayStyle == .optional
+        ? try XCTUnwrap(mirror.children.first?.value) : field
+    XCTAssertEqual(Mirror(reflecting: value).displayStyle, .class)
+    return value as AnyObject
+}
+
+@MainActor
+struct ConciergeFlowProbe {
+    let task: Task<Void, Never>
+    let run: WeakReference
+    let latch: WeakReference
+    let subscription: WeakReference
+
+    init(_ coordinator: ConciergeViewModel) throws {
+        let field = try XCTUnwrap(
+            Mirror(reflecting: coordinator).children.first { $0.label == "flowTask" }?.value
+        )
+        let stored = try XCTUnwrap(field as? Optional<Task<Void, Never>>)
+        task = try XCTUnwrap(stored)
+        let run = try reflectedObject(coordinator, "activeRun")
+        let latch = try reflectedObject(run, "replyLatch")
+        let subscription = try reflectedObject(latch, "subscription")
+        self.run = WeakReference(run)
+        self.latch = WeakReference(latch)
+        self.subscription = WeakReference(subscription)
+    }
+}
+
+@MainActor
 func eventually(_ label: String, timeout: Duration = .seconds(1),
                 file: StaticString = #filePath, line: UInt = #line,
                 _ condition: () throws -> Bool) async throws {

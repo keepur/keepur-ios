@@ -201,7 +201,7 @@ final class ChatViewModel: ObservableObject {
     /// Encodes and forwards. Returns `false` when the socket is not connected;
     /// child B queues on that signal.
     @discardableResult
-    func send(_ outgoing: WSOutgoing) -> Bool {
+    private func send(_ outgoing: WSOutgoing) -> Bool {
         guard let data = try? outgoing.encode() else {
             Log.chat.error("failed to encode outgoing frame")
             return false

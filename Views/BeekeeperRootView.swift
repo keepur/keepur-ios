@@ -75,14 +75,7 @@ struct BeekeeperRootView: View {
     }
 }
 
-/// Coordinates the resume → list-fallback → fresh-spawn flow for the
-/// admin's single concierge session. Observes `ChatViewModel.@Published`
-/// outputs (`currentSessionId`, `currentPath`, `serverSessions`) instead
-/// of subscribing to `WSIncoming` directly — `BeekeeperSocket.frames` is
-/// multicast, but this coordinator still observes `ChatViewModel`'s
-/// published state; child C switches it to the decoded-frame stream.
-/// Less invasive than adding a multicast hook for one tab's worth of
-/// orchestration.
+/// Coordinates concierge requests using Chat's post-handler decoded stream.
 @MainActor
 final class ConciergeViewModel: ObservableObject {
     enum State: Equatable {
@@ -90,171 +83,205 @@ final class ConciergeViewModel: ObservableObject {
         case ready(sessionId: String, path: String)
         case error(String)
     }
-
     @Published private(set) var state: State = .loading
-
-    /// True after `runFlow` gave up because the socket was down (nothing sent, cache
-    /// kept). Reset by `start`/`retry`; `BeekeeperRootView` re-runs the flow on the
-    /// next `.connected` transition (spec ⚠9). No self-heal loop: a flapping link
-    /// re-runs at most once per bail.
     private(set) var bailedOffline = false
-
     private var hasStarted = false
+    private var flowTask: Task<Void, Never>?
+    private var activeRun: Run?
     private static let offlineBailMessage = "Not connected. Retry when reconnected."
 
+    private struct Identity: Sendable {
+        let sessionId: String
+        let path: String
+    }
+    private enum Reply: Sendable {
+        case info(Identity)
+        case discovery(Identity?)  // .discovery(nil) is a received no-match list.
+    }
+    private enum WaitResult {
+        case reply(Reply), timeout, offline, stopped
+    }
+    private final class ReplyLatch {
+        let relay = CurrentValueSubject<Reply?, Never>(nil)
+        var subscription: AnyCancellable?
+        init(incoming: PassthroughSubject<WSIncoming, Never>,
+             match: @escaping (WSIncoming) -> Reply?) {
+            let relay = self.relay
+            subscription = incoming.compactMap(match).prefix(1).sink { reply in
+                relay.send(reply)
+            }
+        }
+        func cancel() {
+            subscription?.cancel()
+            subscription = nil
+            relay.send(completion: .finished)
+        }
+    }
+    private final class Run {
+        weak var owner: ConciergeViewModel?
+        let viewModel: ChatViewModel
+        let store: ConciergeSessionStore
+        var authSubscription: AnyCancellable?
+        var replyLatch: ReplyLatch?
+        init(owner: ConciergeViewModel, viewModel: ChatViewModel, store: ConciergeSessionStore) {
+            self.owner = owner
+            self.viewModel = viewModel
+            self.store = store
+        }
+        var isCurrent: Bool {
+            !Task.isCancelled && viewModel.isAuthenticated && owner?.activeRun === self
+        }
+        func bailOffline() {
+            guard isCurrent else { return }
+            owner?.bailedOffline = true
+            owner?.state = .error(ConciergeViewModel.offlineBailMessage)
+        }
+        func ready(_ info: Identity) {
+            guard isCurrent else { return }
+            viewModel.registerConciergeSession(info.sessionId)
+            store.cache(sessionId: info.sessionId, path: info.path)
+            owner?.state = .ready(sessionId: info.sessionId, path: info.path)
+        }
+        func mayContinue(after result: WaitResult) -> Bool {
+            guard isCurrent else { return false }
+            switch result {
+            case .offline: bailOffline(); return false
+            case .stopped: return false
+            case .timeout, .reply: return true
+            }
+        }
+    }
+
+    deinit { flowTask?.cancel() }
+
     func start(viewModel: ChatViewModel, store: ConciergeSessionStore) {
-        // Idempotent: tab `.task` fires on every appear; only run the dance once
-        // unless the caller explicitly retries.
-        guard !hasStarted else { return }
+        guard !hasStarted, viewModel.isAuthenticated else { return }
         hasStarted = true
         bailedOffline = false
         state = .loading
-        Task { await runFlow(viewModel: viewModel, store: store) }
+        let run = Run(owner: self, viewModel: viewModel, store: store)
+        activeRun = run
+        // Start was checked synchronously above; ignore only this initial value.
+        run.authSubscription = viewModel.$isAuthenticated.dropFirst().sink { [weak self] authenticated in
+            if !authenticated { self?.cancelFlow() }
+        }
+        flowTask = Task { @MainActor in await Self.runFlow(run) }
     }
-
-    func retry(viewModel: ChatViewModel, store: ConciergeSessionStore) {
+    private func cancelFlow() {
+        flowTask?.cancel()
+        flowTask = nil
+        activeRun?.authSubscription?.cancel()
+        activeRun = nil
         hasStarted = false
+    }
+    private func finished(_ run: Run) {
+        guard activeRun === run else { return }
+        activeRun = nil
+        flowTask = nil
+    }
+    func retry(viewModel: ChatViewModel, store: ConciergeSessionStore) {
+        cancelFlow()
         start(viewModel: viewModel, store: store)
     }
-
-    /// What `BeekeeperRootView`'s `.onChange(of: connectionState)` calls: re-run only
-    /// after an offline bail and only once actually connected. Unit-reachable so the
-    /// predicate is tested without the view.
     func retryIfBailedOffline(viewModel: ChatViewModel, store: ConciergeSessionStore) {
         guard bailedOffline, viewModel.connectionState == .connected else { return }
         retry(viewModel: viewModel, store: store)
     }
 
-    private func runFlow(viewModel: ChatViewModel, store: ConciergeSessionStore) async {
-        // Cold start races this task against the socket handshake: the tab's `.task`
-        // fires `start()` → `runFlow` as soon as the view appears, while `configure()`
-        // has only just called `connect()`. Sending into `.connecting` is a silent
-        // no-op (`BeekeeperSocket.send` returns `false`), which used to lose the
-        // cache-hit `resume_session` and spawn duplicates. Wait for the connection.
-        // If the socket is definitively down (`.disconnected` after a connect request:
-        // not paired, host unconfigured, token retries exhausted) bail right away —
-        // without sending and WITHOUT `store.clear()`; the old flow would burn
-        // 3 s + 3 s + 5 s of dead timeouts and wipe the cached concierge id.
-        let connected = await waitForSocketConnected(viewModel: viewModel, timeoutSeconds: 5)
-        // The transition may have landed in the timeout's own turn; re-read before bailing.
-        if !connected, viewModel.connectionState != .connected {
-            bailedOffline = true
-            state = .error(Self.offlineBailMessage)
-            return
-        }
-
-        // 1) Cache hit → resume_session.
-        if let cached = store.cachedSession {
-            viewModel.send(.resumeSession(sessionId: cached.sessionId, path: cached.path))
-            if let info = await waitForSessionInfo(viewModel: viewModel, expecting: cached.sessionId, timeoutSeconds: 3) {
-                store.cache(sessionId: info.sessionId, path: info.path)
-                state = .ready(sessionId: info.sessionId, path: info.path)
-                return
-            }
-            // Resume failed (server reaped the slot, returned error, or timed out).
-            // Drop cache and fall through to list_sessions discovery.
-            store.clear()
-        }
-
-        // 2) Cache miss → list_sessions, filter mode == "concierge".
-        viewModel.send(.listSessions)
-        if let match = await waitForConciergeInList(viewModel: viewModel, timeoutSeconds: 3) {
-            viewModel.send(.resumeSession(sessionId: match.sessionId, path: match.path))
-            if let info = await waitForSessionInfo(viewModel: viewModel, expecting: match.sessionId, timeoutSeconds: 3) {
-                store.cache(sessionId: info.sessionId, path: info.path)
-                state = .ready(sessionId: info.sessionId, path: info.path)
-                return
-            }
-        }
-
-        // 3) Still nothing → spawn fresh.
-        viewModel.send(.newSessionConcierge)
-        if let info = await waitForSessionInfo(viewModel: viewModel, expecting: nil, timeoutSeconds: 5) {
-            store.cache(sessionId: info.sessionId, path: info.path)
-            state = .ready(sessionId: info.sessionId, path: info.path)
-            return
-        }
-
-        state = .error("Concierge did not respond in time")
-    }
-
-    /// Polls `viewModel.currentSessionId` and `currentPath` until a `session_info`
-    /// has landed (ChatViewModel updates both atomically in its `.sessionInfo` handler).
-    /// When `expecting` is non-nil the wait is satisfied only by that exact id;
-    /// when nil, any new id distinct from the snapshot taken at entry counts.
-    private func waitForSessionInfo(
-        viewModel: ChatViewModel,
-        expecting: String?,
-        timeoutSeconds: Double
-    ) async -> (sessionId: String, path: String)? {
-        let initial = viewModel.currentSessionId
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if let id = viewModel.currentSessionId, !viewModel.currentPath.isEmpty {
-                if let expecting {
-                    if id == expecting { return (id, viewModel.currentPath) }
-                } else if id != initial {
-                    return (id, viewModel.currentPath)
+    private static func waitForSocketConnected(_ run: Run) async -> Bool {
+        if run.viewModel.connectionState == .connected { return true }
+        let result: Bool? = await withTimeout(.seconds(5)) {
+            for await state in run.viewModel.$connectionState.values {
+                guard !Task.isCancelled else { return nil }
+                switch state {
+                case .connected: return true
+                case .disconnected where run.viewModel.hasRequestedConnection
+                    && run.viewModel.connectionState == .disconnected: return false
+                case .disconnected, .connecting, .reconnecting: continue
                 }
             }
-            try? await Task.sleep(for: .milliseconds(50))
+            return nil
         }
-        return nil
+        return result == true || run.viewModel.connectionState == .connected
     }
-
-    /// Consumes `viewModel.$connectionState` (no polling, no `socket` read). Returns
-    /// `true` on `.connected`; `false` immediately on `.disconnected` once the VM has
-    /// asked the socket to connect (nothing is in flight), or when the timeout elapses
-    /// while still `.connecting`/`.reconnecting` — waiting through `.reconnecting` is
-    /// deliberate: on a flaky cold start the first 2 s backoff often lands inside the
-    /// budget. A `.disconnected` seen before any connect request is the cold initial
-    /// value, not a failure, so the result does not depend on `configure()` having run
-    /// before the tab's `.task` (ordering-proof). The `.disconnected` case also re-reads
-    /// `viewModel.connectionState` live rather than trusting the buffered value alone:
-    /// `AsyncPublisher` can hand this loop a stale `.disconnected` on a main-actor turn
-    /// after `configure()`/`reconnect()` has already flipped the socket to `.connecting`
-    /// (that emission just has not been consumed yet); without the re-read the flow
-    /// would bail "Not connected…" while a connect is in flight. The buffered
-    /// `.connecting`, if any, arrives on the next iteration and the wait continues.
-    private func waitForSocketConnected(viewModel: ChatViewModel, timeoutSeconds: Double) async -> Bool {
-        await withTaskGroup(of: Bool?.self) { group in
-            group.addTask { @MainActor in
-                for await state in viewModel.$connectionState.values {
-                    switch state {
-                    case .connected:
-                        return true
-                    case .disconnected where viewModel.hasRequestedConnection && viewModel.connectionState == .disconnected:
-                        return false
-                    case .disconnected, .connecting, .reconnecting:
-                        continue
-                    }
-                }
-                return nil
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(timeoutSeconds))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()   // AsyncPublisher honours cancellation; the loser finishes
-            return first ?? false
+    private static func request(
+        _ run: Run, timeout: Duration,
+        match: @escaping (WSIncoming) -> Reply?,
+        send: () -> Bool
+    ) async -> WaitResult {
+        guard run.isCurrent else { return .stopped }
+        let latch = ReplyLatch(incoming: run.viewModel.incoming, match: match)
+        run.replyLatch = latch
+        defer {
+            latch.cancel()
+            if run.replyLatch === latch { run.replyLatch = nil }
         }
+        guard run.isCurrent else { return .stopped }
+        // There is NO await between subscription installation and this request.
+        guard send() else { return .offline }
+        let reply: Reply? = await withTimeout(timeout) {
+            for await value in latch.relay.values {
+                guard !Task.isCancelled else { return nil }
+                if let value { return value }
+            }
+            return nil
+        }
+        guard run.isCurrent else { return .stopped }
+        if let reply { return .reply(reply) }
+        return run.viewModel.connectionState == .connected ? .timeout : .offline
     }
-
-    /// Polls `viewModel.serverSessions` for the concierge slot until one shows
-    /// up or the timeout elapses. The list_sessions response could already be
-    /// in `serverSessions` from a prior tab fetch — checking on entry is fine.
-    private func waitForConciergeInList(
-        viewModel: ChatViewModel,
-        timeoutSeconds: Double
-    ) async -> ServerSession? {
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if let match = ConciergeSessionStore.pickConciergeSession(from: viewModel.serverSessions) {
-                return match
-            }
-            try? await Task.sleep(for: .milliseconds(50))
+    private static func resume(_ identity: Identity, run: Run) async -> WaitResult {
+        guard run.isCurrent else { return .stopped }
+        // Metadata is available to the real handler BEFORE the response arrives.
+        run.viewModel.registerConciergeSession(identity.sessionId)
+        return await request(run, timeout: .seconds(3), match: { frame in
+            guard case .sessionInfo(let id, let path, _) = frame,
+                  id == identity.sessionId, !path.isEmpty else { return nil }
+            return .info(Identity(sessionId: id, path: path))
+        }, send: {
+            run.viewModel.resumeSession(sessionId: identity.sessionId, path: identity.path)
+        })
+    }
+    private static func runFlow(_ run: Run) async {
+        defer {
+            run.authSubscription?.cancel()
+            run.authSubscription = nil
+            run.owner?.finished(run)
         }
-        return nil
+        guard run.isCurrent else { return }
+        let connected = await waitForSocketConnected(run)
+        guard run.isCurrent else { return }
+        guard connected else { run.bailOffline(); return }
+
+        if let cached = run.store.cachedSession {
+            let result = await resume(Identity(sessionId: cached.sessionId, path: cached.path), run: run)
+            guard run.mayContinue(after: result) else { return }
+            if case .reply(.info(let info)) = result { run.ready(info); return }
+            // Only a connected response timeout reaches this cache mutation.
+            run.store.clear()
+            run.viewModel.registerConciergeSession(nil)
+        }
+
+        let discovery = await request(run, timeout: .seconds(3), match: { frame in
+            guard case .sessionList(let sessions) = frame else { return nil }
+            let chosen = ConciergeSessionStore.pickConciergeSession(from: sessions)
+            return .discovery(chosen.map { Identity(sessionId: $0.sessionId, path: $0.path) })
+        }, send: { run.viewModel.listSessions() })
+        guard run.mayContinue(after: discovery) else { return }
+        if case .reply(.discovery(let match)) = discovery, let match {
+            let result = await resume(match, run: run)
+            guard run.mayContinue(after: result) else { return }
+            if case .reply(.info(let info)) = result { run.ready(info); return }
+            run.viewModel.registerConciergeSession(nil)
+        }
+
+        let spawned = await request(run, timeout: .seconds(5), match: { frame in
+            guard case .sessionInfo(let id, let path, let mode) = frame,
+                  mode == "concierge", !path.isEmpty else { return nil }
+            return .info(Identity(sessionId: id, path: path))
+        }, send: { run.viewModel.newConciergeSession() })
+        guard run.mayContinue(after: spawned) else { return }
+        if case .reply(.info(let info)) = spawned { run.ready(info); return }
+        run.owner?.state = .error("Concierge did not respond in time")
     }
 }
