@@ -135,7 +135,7 @@ struct SessionListView: View {
                 Button("Save") {
                     if let session = renamingSession {
                         session.name = renameText.isEmpty ? nil : renameText
-                        try? modelContext.save()
+                        modelContext.saveReporting("view.sessionList.rename.iOS.save")
                     }
                     renamingSession = nil
                 }
@@ -203,7 +203,7 @@ struct SessionListView: View {
             Button("Save") {
                 if let session = renamingSession {
                     session.name = renameText.isEmpty ? nil : renameText
-                    try? modelContext.save()
+                    modelContext.saveReporting("view.sessionList.rename.macOS.save")
                 }
                 renamingSession = nil
             }

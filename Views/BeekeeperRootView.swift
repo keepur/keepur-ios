@@ -69,9 +69,9 @@ struct BeekeeperRootView: View {
         let descriptor = FetchDescriptor<Session>(
             predicate: #Predicate { $0.id == cachedId }
         )
-        guard let row = try? modelContext.fetch(descriptor).first else { return }
+        guard let row = modelContext.fetchOrEmpty(descriptor, "view.conciergeCleanup.fetch").first else { return }
         modelContext.delete(row)
-        try? modelContext.save()
+        modelContext.saveReporting("view.conciergeCleanup.save")
     }
 }
 
