@@ -70,7 +70,7 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Internal State
 
-    let socket: BeekeeperSocket
+    private let socket: BeekeeperSocket
     private let credentials: CredentialStore
     private var subscriptions = Set<AnyCancellable>()
     private var modelContext: ModelContext?

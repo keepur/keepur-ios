@@ -119,18 +119,21 @@ final class ChatViewModelSocketTests: XCTestCase {
     }
 
     func testSendIsGatedOnConnectionAndForwardsEncodedFrame() async throws {
-        XCTAssertFalse(vm.send(.listSessions), "no socket task yet")
+        XCTAssertFalse(vm.listSessions(), "no socket task yet")
 
         vm.configure(context: context)
         let task = try XCTUnwrap(factory.latest)
-        XCTAssertFalse(vm.send(.listSessions), "still handshaking")
+        XCTAssertFalse(vm.listSessions(), "still handshaking")
         XCTAssertTrue(task.sentTexts.isEmpty)
 
         task.completeHandshake()
         await settle()
 
-        XCTAssertTrue(vm.send(.cancel(sessionId: "s1")))
+        XCTAssertTrue(vm.listSessions())
+        XCTAssertEqual(try sentFrames(task).last as NSDictionary?, ["type": "list_sessions"] as NSDictionary)
+        vm.cancelCurrentOperation(for: "s1")
         XCTAssertEqual(try sentTypes(task).last, "cancel")
+        XCTAssertEqual(try sentFrames(task).last?["sessionId"] as? String, "s1")
     }
 
     func testCloseCode4001UnpairsAndClearsCredentials() async throws {
@@ -377,6 +380,7 @@ final class ChatViewModelSocketTests: XCTestCase {
 private final class QueueReleaseHarness {
     let credentials: FakeCredentialStore
     let factory: FakeWebSocketTaskFactory
+    let socket: BeekeeperSocket
     let container: ModelContainer
     let context: ModelContext
     let vm: ChatViewModel
@@ -387,12 +391,14 @@ private final class QueueReleaseHarness {
         let container = try ModelContainer(for: Session.self, Message.self, Workspace.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
-        let vm = ChatViewModel(socket: BeekeeperSocket(credentials: credentials,
+        let socket = BeekeeperSocket(credentials: credentials,
             endpoint: { URL(string: "wss://queue.unit.test")! },
-            taskFactory: { factory.make(url: $0) }), credentials: credentials)
+            taskFactory: { factory.make(url: $0) })
+        let vm = ChatViewModel(socket: socket, credentials: credentials)
         vm.configure(context: context)
         self.credentials = credentials
         self.factory = factory
+        self.socket = socket
         self.container = container
         self.context = context
         self.vm = vm
@@ -751,7 +757,7 @@ extension ChatViewModelSocketTests {
         defer { h.vm.unpair() }
         await h.handshake()
         XCTAssertEqual(h.vm.connectionState, .connected)
-        XCTAssertEqual(h.vm.socket.state, .connected)
+        XCTAssertEqual(h.socket.state, .connected)
         // Test-only fault injection: detach the existing state subscription, then
         // disconnect the real socket. Reflection avoids a production test seam;
         // unwrap both the reflected optional and its value so renames fail loudly.
@@ -760,11 +766,11 @@ extension ChatViewModelSocketTests {
             Mirror(reflecting: h.vm).descendant("stateSubscription") as? Optional<AnyCancellable>
         )
         try XCTUnwrap(stateSubscription).cancel()
-        h.vm.socket.disconnect()
+        h.socket.disconnect()
         XCTAssertTrue(h.vm.pendingReasons.isEmpty)
         XCTAssertEqual(h.vm.statusFor("s1"), "idle")
         XCTAssertEqual(h.vm.connectionState, .connected)
-        XCTAssertEqual(h.vm.socket.state, .disconnected)
+        XCTAssertEqual(h.socket.state, .disconnected)
         let aID = try h.send("A", attachment: h.attachment())
         let bID = try h.send("B")
         XCTAssertEqual(h.vm.pendingReasons, [aID: .offline, bID: .offline])
