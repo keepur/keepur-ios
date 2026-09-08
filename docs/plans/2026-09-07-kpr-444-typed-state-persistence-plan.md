@@ -73,13 +73,21 @@ kpr444_test() {
     -derivedDataPath "$KPR444_DD" -resultBundlePath "$kpr444_result" \
     "$@" 2>&1 | tee "/tmp/keepur-kpr444-${kpr444_label}-${kpr444_stamp}.log"
 }
+kpr444_macos() {
+  local kpr444_stamp="$(date +%Y%m%d-%H%M%S)"
+  set -o pipefail
+  xcodebuild build -project Keepur.xcodeproj -scheme Keepur \
+    -destination 'platform=macOS,arch=arm64' \
+    -derivedDataPath /tmp/keepur-kpr444-macos-dd CODE_SIGNING_ALLOWED=NO \
+    2>&1 | tee "/tmp/keepur-kpr444-macos-${kpr444_stamp}.log"
+}
 ```
 
 - Unit: `kpr444_test unit -only-testing:KeeperTests/TypedStateTests -only-testing:KeeperTests/PersistenceTests -only-testing:KeeperTests/ChatHeaderMappingTests -only-testing:KeeperTests/AgentRowTests -only-testing:KeeperTests/AgentDetailSheetTests -only-testing:KeeperTests/BusyStateRecoveryTests -only-testing:KeeperTests/TeamWSMessageTests -only-testing:KeeperTests/WorkspaceBrowsingTests -only-testing:KeeperTests/WSMessageAttachmentTests`
 - Integration: `kpr444_test integration -only-testing:KeeperTests/ChatPersistenceTests -only-testing:KeeperTests/TeamViewModelTests -only-testing:KeeperTests/PersistenceTests`
 - E2E: not applicable; Task 7's UI smoke is manual/preview validation.
 - Broader local regression: `kpr444_test regression -only-testing:KeeperTests -skip-testing:KeeperTests/CapabilityManagerTests`
-- macOS: `xcodebuild build -project Keepur.xcodeproj -scheme Keepur -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/keepur-kpr444-macos-dd CODE_SIGNING_ALLOWED=NO`
+- macOS: `kpr444_macos` (timestamped raw log; pipeline retains build failure status).
 - Full authoritative regression: the unchanged `.github/workflows/test.yml` **Unit tests (iOS Simulator)** job at the final reviewed PR head, `-only-testing:KeeperTests`, **no exclusion**, normal signing. Task 8 gives exact head/run checks.
 
 Expected iOS output: `** TEST SUCCEEDED **`, exit 0, the selected classes actually discovered in xcresult, zero failures; test count grows beyond the prior baseline. Expected macOS output: `** BUILD SUCCEEDED **`, exit 0. Do not substitute disabled iOS signing: Keychain tests need the signed host. The existing scheme is nonparallel.
@@ -117,7 +125,7 @@ Expected iOS output: `** TEST SUCCEEDED **`, exit 0, the selected classes actual
 | E | 7 | Modify `Views/Team/HivesGridView.swift`, `Views/Team/AgentRow.swift`, `Models/ConciergeSessionStore.swift`, `CLAUDE.md`, `Info.plist`; small assigned cleanup and UI smoke. |
 | F | 8 | Verification only; attach evidence to lane/PR via the existing delivery workflow after implementation review. No workflow/schema additions. |
 
-Each marked chunk is independently reviewable and under 1,000 lines. A's two tasks must land together before building because model/consumer typing is a compile-time dependency; B can be implemented independently, but C/D depend on A+B. Execute C then D serially because both touch shared persistence conventions. This is one plan because state typing and call-site replacement jointly touch the same two state machines; no independent product subsystem is being introduced.
+Each marked chunk is independently reviewable and under 1,000 lines (A: 458; B: 196; C: 400; D: 275; E: 510; F: 83). A's two tasks must land together before building because model/consumer typing is a compile-time dependency; B's helper is independent, but its combined tests/build require A's types/accessors. Execute A → B → C → D. Execute C then D serially because both touch shared persistence conventions. This is one plan because state typing and call-site replacement jointly touch the same two state machines; no independent product subsystem is being introduced.
 
 ### Shared Interfaces (binding across chunks)
 
@@ -331,7 +339,7 @@ Change `TeamChannel.displayName`'s expression to `kind == .channel ? "#\(name)" 
 
 ### Task 2: Migrate all consumers and prove mappings/compatibility
 
-**Files:** Create `Views/Team/AgentStatusPresentation.swift`, `KeeperTests/TypedStateTests.swift`; modify `ViewModels/ChatViewModel.swift`, `ViewModels/TeamViewModel.swift`, `Views/ChatView.swift`, `Views/MessageBubble.swift`, `Views/SessionListView.swift`, `Views/BeekeeperRootView.swift`, `Models/ConciergeSessionStore.swift`, `Views/Team/AgentRow.swift`, `Views/Team/AgentDetailSheet.swift`, `Views/Team/TeamChatView.swift`; modify `KeeperTests/ChatViewModelTests.swift`, `KeeperTests/ChatViewModelSocketTests.swift`, `KeeperTests/PairingTeardownTests.swift`, `KeeperTests/BusyStateRecoveryTests.swift`, `KeeperTests/WorkspaceBrowsingTests.swift`, `KeeperTests/ConciergeViewModelTests.swift`, `KeeperTests/TeamWSMessageTests.swift`, `KeeperTests/TeamSortedAgentsTests.swift`, `KeeperTests/AgentDetailSheetTests.swift`, `KeeperTests/AgentRowTests.swift`, `KeeperTests/ChatHeaderMappingTests.swift`.
+**Files:** Create `Views/Team/AgentStatusPresentation.swift`, `KeeperTests/TypedStateTests.swift`; modify `ViewModels/ChatViewModel.swift`, `ViewModels/TeamViewModel.swift`, `Views/ChatView.swift`, `Views/MessageBubble.swift`, `Views/SessionListView.swift`, `Views/BeekeeperRootView.swift`, `Models/ConciergeSessionStore.swift`, `Views/Team/AgentRow.swift`, `Views/Team/AgentDetailSheet.swift`, `Views/Team/TeamChatView.swift`; modify `KeeperTests/ChatViewModelTests.swift`, `KeeperTests/ChatViewModelSocketTests.swift`, `KeeperTests/PairingTeardownTests.swift`, `KeeperTests/BusyStateRecoveryTests.swift`, `KeeperTests/ChatResilienceTests.swift`, `KeeperTests/WorkspaceBrowsingTests.swift`, `KeeperTests/ConciergeViewModelTests.swift`, `KeeperTests/TeamWSMessageTests.swift`, `KeeperTests/TeamSortedAgentsTests.swift`, `KeeperTests/AgentDetailSheetTests.swift`, `KeeperTests/AgentRowTests.swift`, `KeeperTests/ChatHeaderMappingTests.swift`.
 
 - [ ] **Step 1:** Make Chat's runtime state typed, without changing branching/order. The complete replacement declaration/method is:
 
@@ -347,7 +355,7 @@ Within `ViewModels/ChatViewModel.swift` only, replace state comparisons and dict
 
 Replace mode membership in Chat `.sessionInfo` and `syncSessions`, the fresh-spawn guard in `Views/BeekeeperRootView.swift:280`, and `Models/ConciergeSessionStore.swift:49` with `.concierge` / `.sessions` cases. Unknown `.sessionInfo` still takes the ordinary path; unknown full-list mode still fails exact `.sessions` insertion.
 
-Replace **all seven** Chat production Message role constructor arguments with `MessageRole.user.rawValue`, `.assistant.rawValue` (three sites), `.system.rawValue`, `.tool.rawValue`, `.unknown.rawValue`, written with the `MessageRole` qualifier. Change final speech eligibility to `msg.typedRole == .assistant`. Keep fallback session ID `"unknown"` unchanged.
+Replace **all six** Chat production Message role constructor arguments with `MessageRole.user.rawValue`, `.assistant.rawValue` (two sites), `.system.rawValue`, `.tool.rawValue`, `.unknown.rawValue`, written with the `MessageRole` qualifier. Change final speech eligibility to `msg.typedRole == .assistant`. Keep fallback session ID `"unknown"` unchanged.
 
 - [ ] **Step 2:** Apply these exact consumer replacements, with all occurrences in the listed files:
 
@@ -446,9 +454,9 @@ This keeps existing tool-specific copy for starting/running and displays unknown
 - [ ] **Step 4:** Migrate predecessor fixtures in the files listed above. Exact conversions:
 
 1. All `sessionStatuses[...] = "known"` and `XCTAssertEqual(sessionStatuses[...], "known")` / `statusFor` expectations use the SessionStatus cases in Step 1. Nil assertions, dictionary keys, tool-name strings and frame dictionaries remain identical.
-2. `BusyStateRecoveryTests` decoded local `state` and `sessions[n].state`, and `WorkspaceBrowsingTests` decoded `state`/`mode` expectations use `.thinking`, `.toolRunning`, `.toolStarting`, `.idle`, `.sessionEnded`, `.busy`, `.sessions` as applicable. Keep their wire inputs, required-field and malformed-entry assertions.
+2. `BusyStateRecoveryTests` decoded local `state` and `sessions[n].state`, and `WorkspaceBrowsingTests` decoded `state`/`mode` expectations use `.thinking`, `.toolRunning`, `.toolStarting`, `.idle`, `.sessionEnded`, `.busy`, `.sessions` as applicable. Keep their wire inputs, required-field and malformed-entry assertions. In `ChatResilienceTests`, both decoded busy assertions (baseline lines 121 and 134) become `XCTAssertEqual(state, .busy)`; preserve JSON strings and the session-ID/nil assertions.
 3. `ChatViewModelTests` pattern `.sessionInfo("cached", "/cached", "sessions")` becomes `.sessionInfo("cached", "/cached", .sessions)`. Three direct `incoming.send(.sessionInfo(... mode: ...))` test fixtures in `ConciergeViewModelTests` become `.sessions`/`.concierge`; production still never sends into this subject.
-4. `TeamWSMessageTests`: decoded `channels[0].type`/`channels[1].type` expectations become `.channel`/`.dm`; decoded agent statuses become `.idle`/`.processing`. Keep JSON values as strings.
+4. `TeamWSMessageTests`: decoded `channels[0].type`/`channels[1].type` expectations become `.channel`/`.dm`; decoded agent statuses become `.idle`/`.processing`. In `testAgentInfoDMChannelMemberMatching`, change the two decoded `TeamChannelInfo` lookup/filter comparisons (baseline lines 450/455) to `$0.type == .dm` and `$0.type != .dm`; retain member predicates and all three DM-match assertions. These decoded values use `.type`, not the persisted accessor `.kind`. Keep JSON values as strings.
 5. `AgentRowTests` and `AgentDetailSheetTests` helper `status: String = "idle"` becomes `status: AgentStatus = .idle`, with typed call arguments. `TeamSortedAgentsTests`' constructor status becomes `.idle`.
 6. `AgentDetailSheetTests` replace `AgentDetailSheet.statusTint(for: "raw")` with `AgentStatus(wire: "raw").presentation.tint`, and `statusDisplay` with `.presentation.label`. Retain each existing expected result and all unrelated tests.
 7. `AgentRowTests.testStatusTintMapping`: use explicit pairs `[("idle", .success), ("processing", .warning), ("error", .danger), ("stopped", .danger), ("unknown", .muted), ("", .muted)]` with array type `[(String, KeepurStatusPill.Tint)]`; construct `makeAgent(status: AgentStatus(wire: raw))`, assert `agent.status.presentation.tint == expected`, and retain `_ = AgentRow(...).body` as secondary construction coverage.
@@ -583,11 +591,11 @@ final class TypedStateTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 6:** Run the Unit command without `PersistenceTests` (Task 3 has not created it yet), plus `kpr444_test typed-regression -only-testing:KeeperTests -skip-testing:KeeperTests/CapabilityManagerTests`. Expected: existing local 263 tests retained plus the new typed tests, no compile failures, all selected tests pass. Inspect schema/consumer diffs, then commit Tasks 1–2 together:
+- [ ] **Step 6:** Run the Unit command without `PersistenceTests` (Task 3 has not created it yet), plus `kpr444_test typed-legacy -only-testing:KeeperTests/ChatResilienceTests -only-testing:KeeperTests/TeamWSMessageTests` (both existing classes discovered; all assertions pass) and `kpr444_test typed-regression -only-testing:KeeperTests -skip-testing:KeeperTests/CapabilityManagerTests`. Expected: existing local 263 tests retained plus the new typed tests, no compile failures, all selected tests pass. Inspect schema/consumer diffs, then commit Tasks 1–2 together:
 
 ```sh
 git diff --check
-git add Models/SessionStatus.swift Models/MessageRole.swift Models/SessionMode.swift Models/WSMessage.swift Models/TeamWSMessage.swift Models/Message.swift Models/TeamMessage.swift Models/TeamChannel.swift Models/ConciergeSessionStore.swift ViewModels/ChatViewModel.swift ViewModels/TeamViewModel.swift Views/ChatView.swift Views/MessageBubble.swift Views/SessionListView.swift Views/BeekeeperRootView.swift Views/Team/AgentStatusPresentation.swift Views/Team/AgentRow.swift Views/Team/AgentDetailSheet.swift Views/Team/TeamChatView.swift KeeperTests/TypedStateTests.swift KeeperTests/ChatViewModelTests.swift KeeperTests/ChatViewModelSocketTests.swift KeeperTests/PairingTeardownTests.swift KeeperTests/BusyStateRecoveryTests.swift KeeperTests/WorkspaceBrowsingTests.swift KeeperTests/ConciergeViewModelTests.swift KeeperTests/TeamWSMessageTests.swift KeeperTests/TeamSortedAgentsTests.swift KeeperTests/AgentDetailSheetTests.swift KeeperTests/AgentRowTests.swift KeeperTests/ChatHeaderMappingTests.swift
+git add Models/SessionStatus.swift Models/MessageRole.swift Models/SessionMode.swift Models/WSMessage.swift Models/TeamWSMessage.swift Models/Message.swift Models/TeamMessage.swift Models/TeamChannel.swift Models/ConciergeSessionStore.swift ViewModels/ChatViewModel.swift ViewModels/TeamViewModel.swift Views/ChatView.swift Views/MessageBubble.swift Views/SessionListView.swift Views/BeekeeperRootView.swift Views/Team/AgentStatusPresentation.swift Views/Team/AgentRow.swift Views/Team/AgentDetailSheet.swift Views/Team/TeamChatView.swift KeeperTests/TypedStateTests.swift KeeperTests/ChatViewModelTests.swift KeeperTests/ChatViewModelSocketTests.swift KeeperTests/PairingTeardownTests.swift KeeperTests/BusyStateRecoveryTests.swift KeeperTests/ChatResilienceTests.swift KeeperTests/WorkspaceBrowsingTests.swift KeeperTests/ConciergeViewModelTests.swift KeeperTests/TeamWSMessageTests.swift KeeperTests/TeamSortedAgentsTests.swift KeeperTests/AgentDetailSheetTests.swift KeeperTests/AgentRowTests.swift KeeperTests/ChatHeaderMappingTests.swift
 git commit -m "refactor: type runtime state and unify status presentation"
 ```
 
@@ -986,10 +994,13 @@ final class ChatPersistenceTests: XCTestCase {
         try await h.chunk("first")
         let streamID = try XCTUnwrap(h.messages("a", role: "assistant").first?.id)
         let before = attempts
+        let previousErrorID = try XCTUnwrap(h.vm.lastError?.id)
         fail = true
         try await h.chunk(" second")
         XCTAssertEqual(attempts, before + 1)
         XCTAssertEqual(h.vm.lastError?.text, copy)
+        XCTAssertNotEqual(try XCTUnwrap(h.vm.lastError?.id), previousErrorID,
+                          "conditional append must assign a new persistence error")
         let rows = try h.messages("a", role: "assistant")
         XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.first?.id, streamID)
         XCTAssertEqual(rows.first?.text, "first second")
@@ -1062,6 +1073,16 @@ final class ChatPersistenceTests: XCTestCase {
         try await h.connect()
         try await h.list([("a", "idle", "sessions"), ("c", "busy", "concierge"), ("future", "idle", "new-mode")])
         XCTAssertEqual(fetches, 1); XCTAssertEqual(try h.sessions().map(\.id), ["a"])
+        let awaiting = try XCTUnwrap(Mirror(reflecting: h.vm).children.first {
+            $0.label == "awaitingPostReconnectSync"
+        }?.value as? Bool)
+        XCTAssertFalse(awaiting, "successful empty fetch consumes the reconnect pass")
+        let fallback = try XCTUnwrap(Mirror(reflecting: h.vm).children.first {
+            $0.label == "postReconnectFlushFallback"
+        }?.value)
+        XCTAssertEqual(Mirror(reflecting: fallback).displayStyle, .optional)
+        XCTAssertTrue(Mirror(reflecting: fallback).children.isEmpty,
+                      "successful empty fetch cancels and clears fallback ownership")
         XCTAssertEqual(h.vm.serverSessions.count, 3); XCTAssertEqual(h.vm.sessionStatuses["c"], .busy)
         XCTAssertNil(h.vm.pendingReasons[first]); XCTAssertEqual(h.vm.pendingReasons[tail], .busy)
         XCTAssertEqual(try h.frames("message").count, 1)
@@ -1242,7 +1263,14 @@ case .commandList:
 
 Keep their positions in the switch; the snippets are separate replacements, not adjacent new switch branches.
 
-- [ ] **Step 5:** Extend the private `makeViewModel` test builder in `KeeperTests/TeamViewModelTests.swift` with `saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }` after its current `lastErrorAutoClear` argument, and forward it into `TeamViewModel`. Retain the existing container/factory/capability and selected-channel setup. Add the following helper and tests **inside the existing class**; keep every previous test unchanged apart from typed fixtures already covered by Task 2:
+- [ ] **Step 5:** Extend the private `makeViewModel` test builder in `KeeperTests/TeamViewModelTests.swift` with `saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }` after its current `lastErrorAutoClear` argument, and forward it into `TeamViewModel`. Retain the existing container/factory/capability and selected-channel setup. Make fixture isolation explicit: add `private var savedHive: String?` beside the existing properties; make `savedHive = UserDefaults.standard.string(forKey: "selectedHive")` the first line of `setUp`, before its existing removal. In `tearDown`, replace its final unconditional removal with the following, after releasing the VM/capability/context/container:
+
+```swift
+if let savedHive { UserDefaults.standard.set(savedHive, forKey: "selectedHive") }
+else { UserDefaults.standard.removeObject(forKey: "selectedHive") }
+```
+
+This follows `PairingTeardownTests` and preserves both a prior value and prior absence. Add the following helper and tests **inside the existing class**; keep every previous test unchanged apart from typed fixtures already covered by Task 2:
 
 ```swift
 private func receivePersistenceFrame(_ object: [String: Any], on task: FakeWebSocketTask) async throws {
@@ -1592,32 +1620,345 @@ assert contracts in p.read_text()
 PY
 ```
 
-- [ ] **Step 5:** Perform a bounded UI smoke in Xcode's existing preview/simulator tooling; record screenshots and observed state, not just view construction. Use a disposable preview runtime with no real credentials. If stable loading observation is needed, temporarily add `try? await Task.sleep(for: .seconds(15))` after `defer { isLoading = false }` in `CapabilityManager.performRefresh`, and append the complete temporary preview below to `HivesGridView.swift`. This is **local observation scaffolding only**: remove the delay and both previews before checks/commit; the final manager diff must be empty. No loading state abstraction, test setter, service or E2E target is added.
+- [ ] **Step 5:** Perform the mandatory rendered UI smoke using this **disposable simulator host**, after Tasks 1–6 and Steps 1–4 above. This is observation scaffolding, not a new app feature, E2E target or production seam. Use fresh simulators; do not pair, enter credentials or invoke microphone/speaker controls. The host replaces normal app startup, uses in-memory SwiftData, retains speech/capability dependencies, and drives private-set connection state through real VMs and fake socket handshakes. The two source backups below are taken **after the assigned edits**, so restoration retains all intended work.
+
+First make backups and copy the existing fake implementations into the app's synchronized `Managers` group under temporary names. These copies have no XCTest dependency; do not import or reference `ChatTestHarness` from the app target:
+
+```sh
+export KPR444_SMOKE="$(mktemp -d /tmp/keepur-kpr444-smoke.XXXXXX)"
+cp KeepurApp.swift "$KPR444_SMOKE/KeepurApp.swift"
+cp Managers/CapabilityManager.swift "$KPR444_SMOKE/CapabilityManager.swift"
+python3 - <<'PY'
+from pathlib import Path
+dest = Path('Managers/KPR444SmokeFakes.swift')
+assert not dest.exists()
+parts = []
+for source in ['KeeperTests/FakeWebSocketTask.swift', 'KeeperTests/FakeCredentialStore.swift']:
+    text = Path(source).read_text().replace('@testable import Keepur\n', '')
+    text = text.replace('FakeWebSocketTask', 'KPR444SmokeWebSocketTask')
+    text = text.replace('FakeCredentialStore', 'KPR444SmokeCredentialStore')
+    parts.append(text)
+dest.write_text('\n'.join(parts))
+# Replace only this private method temporarily; no API/Keychain request runs.
+# Its existing refresh coalescing and isLoading ownership still drive the view.
+p = Path('Managers/CapabilityManager.swift')
+s = p.read_text()
+start = s.index('    private func performRefresh() async {')
+end = s.index('    private func reconcileSelectedHive()', start)
+s = s[:start] + '''    private func performRefresh() async {
+        isLoading = true
+        defer { isLoading = false }
+        try? await Task.sleep(for: .seconds(15))
+    }
+
+''' + s[end:]
+p.write_text(s)
+PY
+```
+
+Temporarily replace the whole `KeepurApp.swift` with this complete host (the backup restores its original startup/container logic afterward):
 
 ```swift
-#if DEBUG
-private struct KPR444HiveSmoke: View {
-    @StateObject private var capability: CapabilityManager
-    @StateObject private var team = TeamViewModel()
+import Foundation
+import SwiftUI
+import SwiftData
+import Combine
 
-    init(hives: [String]) {
-        let manager = CapabilityManager()
-        manager._setHivesForTesting(hives)
-        manager.selectedHive = nil
-        _capability = StateObject(wrappedValue: manager)
-    }
-    var body: some View {
-        NavigationStack {
-            HivesGridView(capabilityManager: capability, teamViewModel: team)
+@main
+struct KeepurApp: App {
+    @StateObject private var smoke = KPR444SmokeModel()
+    var body: some Scene {
+        WindowGroup {
+            KPR444SmokeHost(smoke: smoke)
+                .modelContainer(smoke.container)
         }
     }
 }
-#Preview("KPR444 Empty") { KPR444HiveSmoke(hives: []) }
-#Preview("KPR444 Cached") { KPR444HiveSmoke(hives: ["Hive A", "Hive B"]) }
-#endif
+
+@MainActor
+private final class KPR444SmokeSave {
+    var fail = false
+    func call(_ context: ModelContext) throws {
+        if fail { throw NSError(domain: "KPR444Smoke", code: 444) }
+        try context.save()
+    }
+}
+
+@MainActor
+private final class KPR444SmokeModel: ObservableObject {
+    let container: ModelContainer
+    let context: ModelContext
+    let capability: CapabilityManager
+    let speech: SpeechManager
+    let chat: ChatViewModel
+    let team: TeamViewModel
+    let chatFactory: KPR444SmokeWebSocketTaskFactory
+    let teamFactory: KPR444SmokeWebSocketTaskFactory
+    private let saveAttempt: KPR444SmokeSave
+    private let dm: TeamChannel
+    @Published var surface = "Chat"
+    @Published var hiveGeneration = 0
+    @Published var note = "Disconnected; choose a surface/state"
+    let surfaces = ["Chat", "Team root", "Team chat", "Hives empty", "Hives cached"]
+    let chatStates = ["idle", "thinking", "tool_starting", "tool_running", "busy", "session_ended", "customState"]
+    let teamStates = ["idle", "processing", "error", "stopped", "customState"]
+
+    init() {
+        // This runs only in newly created disposable simulators.
+        UserDefaults.standard.set(false, forKey: "autoReadAloud")
+        UserDefaults.standard.set(false, forKey: "teamAutoReadAloud")
+        let schema = Schema([Session.self, Message.self, Workspace.self,
+                             TeamChannel.self, TeamMessage.self])
+        do {
+            container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(isStoredInMemoryOnly: true)
+            ])
+        } catch { fatalError("Smoke in-memory container failed: \(error)") }
+        let context = container.mainContext
+        context.autosaveEnabled = false
+        self.context = context
+        let capability = CapabilityManager(), speech = SpeechManager()
+        let credentials = KPR444SmokeCredentialStore(
+            token: "synthetic-smoke-token", deviceId: "smoke-device", deviceName: "Smoke")
+        let chatFactory = KPR444SmokeWebSocketTaskFactory()
+        let teamFactory = KPR444SmokeWebSocketTaskFactory()
+        let saveAttempt = KPR444SmokeSave()
+        let chatSocket = BeekeeperSocket(credentials: credentials,
+            endpoint: { URL(string: "wss://smoke.invalid")! },
+            taskFactory: { chatFactory.make(url: $0) })
+        let teamSocket = BeekeeperSocket(credentials: credentials,
+            endpoint: { URL(string: "wss://smoke.invalid")! },
+            taskFactory: { teamFactory.make(url: $0) })
+        let chat = ChatViewModel(socket: chatSocket, credentials: credentials,
+            speech: speech, lastErrorAutoClear: .seconds(600),
+            saveOperation: { try saveAttempt.call($0) })
+        let team = TeamViewModel(socket: teamSocket, credentials: credentials,
+            lastErrorAutoClear: .seconds(600), saveOperation: { try saveAttempt.call($0) })
+        let dm = TeamChannel(id: "smoke-dm", type: ChannelKind.dm.wireValue,
+            name: "Smoke agent", members: ["smoke-agent", "smoke-device"],
+            lastMessageText: "A retained preview", lastMessageAt: .now.addingTimeInterval(-120))
+        self.capability = capability; self.speech = speech
+        self.chatFactory = chatFactory; self.teamFactory = teamFactory
+        self.saveAttempt = saveAttempt; self.dm = dm
+        self.chat = chat; self.team = team
+        context.insert(Session(id: "smoke", path: "/smoke", name: "Smoke chat"))
+        context.insert(Message(sessionId: "smoke", text: "A rendered chat message",
+                               role: MessageRole.assistant.rawValue))
+        context.insert(dm)
+        let message = TeamMessage(channelId: dm.id, senderId: "smoke-agent",
+            senderType: SenderType.agent.wireValue, senderName: "Smoke agent",
+            text: "A rendered Team message")
+        context.insert(message)
+        do { try context.save() }
+        catch { fatalError("Smoke seed save failed: \(error)") }
+        capability._setHivesForTesting(["Hive A"])
+        team.configure(context: context, capabilityManager: capability)
+        team.speechManager = speech // weak in Team; retained above and by Chat.
+        team.channels = [dm]; team.activeChannelId = dm.id
+        team.activeMessages = [message]; team.hasMoreHistory = false
+        chat.configure(context: context) // creates only an injected fake task.
+        chat.disconnect()
+        chat.currentSessionId = "smoke"; chat.currentPath = "/smoke"
+        setChatState("thinking"); setTeamState("idle")
+    }
+
+    func show(_ value: String) {
+        if value.hasPrefix("Hives") {
+            chat.disconnect(); team.disconnect()
+            capability._setHivesForTesting(value == "Hives cached" ? ["Hive A", "Hive B"] : [])
+            capability.selectedHive = nil
+            hiveGeneration += 1
+        } else {
+            capability._setHivesForTesting(["Hive A"])
+        }
+        surface = value
+    }
+
+    func setChatState(_ raw: String) {
+        chat.sessionStatuses["smoke"] = SessionStatus(wire: raw)
+        chat.sessionToolNames["smoke"] = "Read"
+        note = "Chat state: \(raw)"
+    }
+
+    func setTeamState(_ raw: String) {
+        let agent = TeamAgentInfo(id: "smoke-agent", name: "Smoke agent", icon: "",
+            title: "Fixture", model: "Smoke model", status: AgentStatus(wire: raw),
+            tools: ["Read"], schedule: [], channels: ["Hive A"], messagesProcessed: 1,
+            lastActivity: "2026-09-07T12:00:00Z")
+        team.agents = [agent]; team.sortedAgents = [(agent: agent, dmChannel: dm)]
+        note = "Team state: \(raw)"
+    }
+
+    private func wait(_ label: String, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                throw NSError(domain: "KPR444Smoke.\(label)", code: 1)
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    func connect() async {
+        do {
+            capability._setHivesForTesting(["Hive A"])
+            if chat.connectionState != .connected {
+                chat.reconnect()
+                try await wait("Chat handshake") { self.chatFactory.latest?.handshakeRequested == true }
+                chatFactory.latest?.completeHandshake()
+                try await wait("Chat connected") { self.chat.connectionState == .connected }
+            }
+            if team.connectionState != .connected {
+                team.connectIfPossible()
+                try await wait("Team handshake") { self.teamFactory.latest?.handshakeRequested == true }
+                teamFactory.latest?.completeHandshake()
+                try await wait("Team connected") { self.team.connectionState == .connected }
+            }
+            // Fake transport has no history reply; the fixture displays its seeded history.
+            team.isLoadingHistory = false; team.hasMoreHistory = false
+            note = "Both real VMs connected through fake handshakes"
+        } catch { note = "SMOKE BLOCKED: \(error)" }
+    }
+
+    func disconnect() {
+        chat.disconnect(); team.disconnect()
+        note = "Both real VMs disconnected"
+    }
+
+    func failSave() {
+        saveAttempt.fail = true
+        defer { saveAttempt.fail = false }
+        if surface == "Chat" {
+            chat.messageText = "Smoke optimistic save"
+            chat.sendText()
+        } else {
+            team.sendMessage(text: "Smoke optimistic save")
+        }
+        note = "Injected save throws through the real reporting helper"
+    }
+}
+
+private struct KPR444SmokeHost: View {
+    @ObservedObject var smoke: KPR444SmokeModel
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Menu(smoke.surface) {
+                    ForEach(smoke.surfaces, id: \.self) { value in
+                        Button(value) { smoke.show(value) }
+                    }
+                }
+                Menu("Chat state") {
+                    ForEach(smoke.chatStates, id: \.self) { value in
+                        Button(value) { smoke.setChatState(value) }
+                    }
+                }
+                Menu("Team state") {
+                    ForEach(smoke.teamStates, id: \.self) { value in
+                        Button(value) { smoke.setTeamState(value) }
+                    }
+                }
+            }
+            HStack {
+                Button("Connect") { Task { await smoke.connect() } }
+                Button("Disconnect") { smoke.disconnect() }
+                Button("Save error") { smoke.failSave() }
+            }
+            .disabled(smoke.surface.hasPrefix("Hives"))
+            Text(smoke.note).font(.caption)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    renderedSurface
+                    Text("Rendered surface width: \(Int(geometry.size.width)) pt")
+                        .font(.caption2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var renderedSurface: some View {
+        switch smoke.surface {
+        case "Chat":
+            NavigationStack {
+                ChatView(viewModel: smoke.chat, sessionId: "smoke",
+                         navigationTitle: "Smoke chat", showsBackButton: false)
+            }
+        case "Team root":
+            TeamRootView(viewModel: smoke.team, capabilityManager: smoke.capability)
+        case "Team chat":
+            NavigationStack { TeamChatView(viewModel: smoke.team) }
+        default:
+            NavigationStack {
+                HivesGridView(capabilityManager: smoke.capability, teamViewModel: smoke.team)
+            }
+            .id(smoke.hiveGeneration)
+        }
+    }
+}
 ```
 
-Inspect these exact states: empty while refresh sleeps → standard spinner in existing content area; empty when refresh exits → “No hives available” and “Pull to refresh.”; two cached hives while refresh sleeps → both cards retained. With a credential-free preview the API failure leaves cached hives unchanged after loading and does not auto-select either of two hives. If previews cannot render, use the same temporary host in a disposable simulator build and record the limitation; don't waive smoke verification. Remove scaffolding, and inspect Chat's known/unknown status indicator plus Team's idle/processing/error/unknown header/pill/avatar and existing persistence banner at narrow/wide sizes. Preserve text/tints, timestamp, cancel/retry controls and layout; use existing fake state/preview facilities rather than real network activity.
+The standalone **Team chat** surface supplies deterministic access to the real header/info-sheet at narrow size, where `TeamRootView` initially displays its sidebar. Observe the actual root separately for its banner and `AgentRow` avatar/timestamp. This host does not change either view's navigation or sheet implementation. State menus set existing public presentation inputs; persistence errors use the approved throwing save seam. Connection state is never assigned directly. Long error lifetime is fixture-only so screenshots do not race the six-second production timer.
+
+Create fresh narrow/wide devices using these planning-observed installed identifiers (verify them with `xcrun simctl list devicetypes` and `xcrun simctl list runtimes`; substitute only actual installed equivalents if unavailable). Build once with normal simulator signing, install the temporary app on both, and run it:
+
+```sh
+export KPR444_SMOKE_NARROW="$(xcrun simctl create KPR444-Smoke-Narrow com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-3)"
+export KPR444_SMOKE_WIDE="$(xcrun simctl create KPR444-Smoke-Wide com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB com.apple.CoreSimulator.SimRuntime.iOS-26-3)"
+xcrun simctl boot "$KPR444_SMOKE_NARROW"
+xcrun simctl bootstatus "$KPR444_SMOKE_NARROW" -b
+xcrun simctl boot "$KPR444_SMOKE_WIDE"
+xcrun simctl bootstatus "$KPR444_SMOKE_WIDE" -b
+set -o pipefail
+xcodebuild build -project Keepur.xcodeproj -scheme Keepur \
+  -destination "platform=iOS Simulator,id=$KPR444_SMOKE_NARROW" \
+  -derivedDataPath "$KPR444_SMOKE/dd" 2>&1 | tee "$KPR444_SMOKE/build.log"
+export KPR444_SMOKE_APP="$KPR444_SMOKE/dd/Build/Products/Debug-iphonesimulator/Keepur.app"
+export KPR444_SMOKE_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$KPR444_SMOKE_APP/Info.plist")"
+xcrun simctl install "$KPR444_SMOKE_NARROW" "$KPR444_SMOKE_APP"
+xcrun simctl install "$KPR444_SMOKE_WIDE" "$KPR444_SMOKE_APP"
+xcrun simctl launch "$KPR444_SMOKE_NARROW" "$KPR444_SMOKE_BUNDLE"
+xcrun simctl launch "$KPR444_SMOKE_WIDE" "$KPR444_SMOKE_BUNDLE"
+open -a Simulator
+kpr444_smoke_capture() {
+  xcrun simctl io "$1" screenshot "$KPR444_SMOKE/$2.png"
+}
+```
+
+Expected build: exit 0 and `** BUILD SUCCEEDED **`. If boot/build/render fails, retain its concrete failure and resolve the harness or report a blocker; do not replace rendered evidence with `.body` construction. In Simulator choose each named device window and keep it in portrait. For **each** device complete the following observations and record the displayed surface width (expected iPhone 17: 402 pt; iPad Pro 13: 1032 pt, verify actual values):
+
+| Surface/actions | Required visible observation |
+|---|---|
+| Choose **Hives empty**, immediately capture, then capture after the 15-second refresh completes | Spinner inside the existing content area, then exactly “No hives available” / “Pull to refresh.”. No artificial loading copy. |
+| Choose **Hives cached**, immediately capture before 15 seconds and again after completion | Both Hive A/Hive B cards remain visible throughout loading. Do not tap a card; selectedHive stays nil. The temporary refresh returns without HTTP/Keychain access. |
+| Choose **Chat**, **Connect**, then each Chat state from its menu | idle/terminal have no active indicator; thinking, both tool states, busy and customState retain exact header/copy and Cancel affordance; customState is active with raw text. Message/query, timestamp and input render with no clipping at either width. |
+| Chat thinking → tap the actual **Cancel** button | Existing action remains tappable, no crash. Inspect fake `sentTexts` in Xcode's debugger if needed; it must contain the existing cancel frame. Do not infer server completion from this fake transport. |
+| Chat → **Disconnect** → **Save error** | Exact persistence banner with **Retry**, message/input layout remains visible. Tap banner text to dismiss, repeat Save error, then tap the banner's real Retry: connection banner updates via the VM to connecting, with persistence copy retained. Press fixture **Connect** to complete the pending fake handshake. |
+| **Team root**, each Team state | Sidebar avatar overlay is success/warning/danger/danger/muted for idle/processing/error/stopped/customState; preview and timestamp remain and no zero badge appears. At wide size observe the root's detail if visible; use Team chat for deterministic narrow detail access. |
+| **Team chat**, each Team state; tap the actual info button, inspect, dismiss before changing state | Actual Team header text/activity and real `AgentDetailSheet` pill: Idle/success, Processing/warning, Error/danger, Stopped/danger, CustomState/muted. Processing alone is active; idle header nil, other header values working/error/stopped/customState. Matching DM members make the info action available and retained speech makes its sheet nonempty. |
+| **Team root** → **Disconnect** → **Save error**, dismiss/repeat, tap its actual **Retry**, then fixture Connect | The root owns exactly one persistence banner with the same copy and state-dependent Retry behavior. Inspect wrapping, controls and sidebar/detail layout at both widths. |
+
+Capture each named observation with the helper, for example `kpr444_smoke_capture "$KPR444_SMOKE_NARROW" narrow-chat-customState` and `kpr444_smoke_capture "$KPR444_SMOKE_WIDE" wide-team-processing-sheet`. Use corresponding unique names for every matrix row/state and width; retain PNGs with a short observation record under `$KPR444_SMOKE`. Actually open/review screenshots before recording a pass. The temporary host's controls are outside the product views; no screenshot-only product UI or new behavior is to be committed.
+
+After screenshots/observations are saved, terminate both temporary apps and restore **all** scaffolding before Step 6, any regression check or commit. Run this cleanup even if smoke is blocked (the logs/screenshots/backups remain outside the repository):
+
+```sh
+xcrun simctl terminate "$KPR444_SMOKE_NARROW" "$KPR444_SMOKE_BUNDLE"
+xcrun simctl terminate "$KPR444_SMOKE_WIDE" "$KPR444_SMOKE_BUNDLE"
+cp "$KPR444_SMOKE/KeepurApp.swift" KeepurApp.swift
+cp "$KPR444_SMOKE/CapabilityManager.swift" Managers/CapabilityManager.swift
+rm Managers/KPR444SmokeFakes.swift
+cmp KeepurApp.swift "$KPR444_SMOKE/KeepurApp.swift"
+cmp Managers/CapabilityManager.swift "$KPR444_SMOKE/CapabilityManager.swift"
+xcrun simctl shutdown "$KPR444_SMOKE_NARROW"
+xcrun simctl shutdown "$KPR444_SMOKE_WIDE"
+xcrun simctl delete "$KPR444_SMOKE_NARROW"
+xcrun simctl delete "$KPR444_SMOKE_WIDE"
+git diff -- KeepurApp.swift Managers/CapabilityManager.swift
+rg -n 'KPR444Smoke|KPR444-Smoke|synthetic-smoke-token|smoke\.invalid' KeepurApp.swift Managers Views --glob '*.swift'
+git status --short
+```
+
+Expected: both `cmp` commands exit 0, startup/manager diff empty, temporary-file search has zero matches/exit 1, and no temporary source appears in git status/staging. Delete only the two returned smoke device IDs. The clean-source Step 6 tests/macOS build and Task 8 final iOS regression, not this temporary-host build, provide implementation verification. Do not count any smoke code as new permanent test methods.
 
 - [ ] **Step 6:** Run static checks, selected UI/codec tests and macOS build:
 
@@ -1694,7 +2035,7 @@ PY
 
 Review all existing-test edits to confirm assertions remain meaningful and event/FIFO/lifetime ordering is unchanged. Only the approved Chat unknown-activity expectation changes behavior. Unit decode wire strings, malformed-row tests, the Team command-list request/no-op cases, attachment bytes and C post-handler/lazy-speech assertions remain intact. There are 23 new test methods in this draft (4 typed, 5 helper, 9 Chat, 5 Team); expected full count is at least **298** if baseline 275 discovery remains unchanged, and local broad count at least **286** with the same 12-test KPR-446 exclusion. Any discrepancy must be explained with actual discovery, not accepted solely because the command exited zero.
 
-- [ ] **Step 4:** Run the required Unit and Integration commands, broad local regression command and macOS build from the Testing Contract. Avoid repeating already-passing focused runs unless code changed; the final broad local regression/macOS pass must cover the actual final code. Preserve raw `.log` and `.xcresult` paths. Read summaries:
+- [ ] **Step 4:** Run the required Unit and Integration commands, broad local regression command and macOS build from the Testing Contract. Avoid repeating already-passing focused runs unless code changed; the final broad local regression/macOS pass must cover the actual final code. Preserve raw `.log` and `.xcresult` paths, including the timestamped `/tmp/keepur-kpr444-macos-<stamp>.log` created by `kpr444_macos`; require its pipeline exit 0 and `** BUILD SUCCEEDED **`. Read summaries:
 
 ```sh
 xcrun xcresulttool get test-results summary --path /tmp/keepur-kpr444-REPLACE-WITH-ACTUAL-RESULT.xcresult
