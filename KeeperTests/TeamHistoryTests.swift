@@ -4,6 +4,15 @@ import SwiftData
 
 @MainActor
 final class TeamHistoryTests: XCTestCase {
+    func testTeamDisplayNameRetainsExactTypedMembership() async throws {
+        let h = try TeamTestHarness(); defer { h.close() }
+        h.vm.agents = [h.agent("agent")]
+        XCTAssertEqual(h.vm.displayName(for: TeamChannel(id: "c", type: "channel", name: "General")), "#General")
+        XCTAssertEqual(h.vm.displayName(for: TeamChannel(id: "d", type: "dm", name: "Server", members: ["agent"])), "agent")
+        XCTAssertEqual(h.vm.displayName(for: TeamChannel(id: "d2", type: "dm", name: "Fallback")), "Fallback")
+        XCTAssertEqual(h.vm.displayName(for: TeamChannel(id: "u", type: "future", name: "Raw", members: ["agent"])), "Raw")
+    }
+
     func testSeedAndFullBothOrdersKeepTheirOwnState() async throws {
         for seedFirst in [true, false] {
             let h = try TeamTestHarness(); defer { h.close() }

@@ -74,7 +74,7 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(rows.first?.name, "Second")
     }
 
-    func testStoredAccessorsRoundTripWithoutRewritingUnknownValues() throws {
+    func testStoredAccessorsRoundTripWithoutRewritingUnknownValues() async throws {
         let store = try container(), context = ModelContext(store)
         context.autosaveEnabled = false
         let roles: [MessageRole] = [.user, .assistant, .system, .tool, .unknown]
@@ -107,10 +107,11 @@ final class PersistenceTests: XCTestCase {
             XCTAssertEqual(row.typedSenderType, expected); XCTAssertEqual(row.senderType, expected.wireValue)
         }
         let channels = fresh.fetchOrEmpty(FetchDescriptor<TeamChannel>(), "test.kinds")
+        let titles = TeamViewModel(credentials: FakeCredentialStore())
         for (index, expected) in kinds.enumerated() {
             let row = try XCTUnwrap(channels.first { $0.id == "kind-\(index)" })
             XCTAssertEqual(row.kind, expected); XCTAssertEqual(row.type, expected.wireValue)
-            XCTAssertEqual(row.displayName, expected == .channel ? "#raw" : "raw")
+            XCTAssertEqual(titles.displayName(for: row), expected == .channel ? "#raw" : "raw")
         }
     }
 }

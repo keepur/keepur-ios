@@ -34,7 +34,4 @@ final class TeamChannel {
         self.updatedAt = updatedAt
     }
 
-    var displayName: String {
-        kind == .channel ? "#\(name)" : name
-    }
 }
