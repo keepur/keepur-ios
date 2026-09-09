@@ -15,7 +15,9 @@ final class TeamTestHarness {
     var task: FakeWebSocketTask { factory.latest! }
     let date = Date(timeIntervalSince1970: 1_700_000_000)
 
-    init(saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }) throws {
+    init(saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+         channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
+         cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }) throws {
         savedHive = UserDefaults.standard.string(forKey: "selectedHive")
         UserDefaults.standard.removeObject(forKey: "selectedHive")
         let schema = Schema([Session.self, Message.self, Workspace.self, TeamChannel.self, TeamMessage.self])
@@ -26,7 +28,9 @@ final class TeamTestHarness {
         socket = BeekeeperSocket(credentials: credentials, endpoint: { URL(string: "wss://unit.test")! },
                                  taskFactory: { factory.make(url: $0) })
         vm = TeamViewModel(socket: socket, credentials: credentials, lastErrorAutoClear: .seconds(30),
-                           saveOperation: saveOperation)
+                           saveOperation: saveOperation,
+                           channelInventoryOperation: channelInventoryOperation,
+                           cleanupMessageFetchOperation: cleanupMessageFetchOperation)
         vm.configure(context: context, capabilityManager: capability)
         capability._setHivesForTesting(["hive-a", "hive-b"])
         capability.selectedHive = "hive-a"

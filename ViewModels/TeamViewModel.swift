@@ -75,6 +75,8 @@ final class TeamViewModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
     private var modelContext: ModelContext?
     private let saveOperation: (ModelContext) throws -> Void
+    private let channelInventoryOperation: (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel]
+    private let cleanupMessageFetchOperation: (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage]
     /// Read on every use so a re-pair (new device id) is picked up immediately.
     private var deviceId: String { credentials.deviceId ?? "" }
     private var pendingCommandChannels: [String: String] = [:]  // requestId -> channelId
@@ -92,6 +94,10 @@ final class TeamViewModel: ObservableObject {
     private var connectionGeneration = UUID()
     private var activeHistoryRequest: HistoryRequest?
     private var seedHistoryRequests: [String: HistoryRequest] = [:]
+
+    private var protectedMessageIds: Set<String> {
+        Set(offlineEntries.map(\.localId)).union(pendingMessageIds.values)
+    }
 
     private var currentRequestOwner: RequestOwner? {
         guard connectionState == .connected, let hive = activeHive else { return nil }
@@ -136,12 +142,16 @@ final class TeamViewModel: ObservableObject {
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore(),
         lastErrorAutoClear: Duration = .seconds(6),
-        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }
+        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
+        cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
         self.lastErrorAutoClear = lastErrorAutoClear
         self.saveOperation = saveOperation
+        self.channelInventoryOperation = channelInventoryOperation
+        self.cleanupMessageFetchOperation = cleanupMessageFetchOperation
         // In init, not configure: Settings observes truth before configure runs. The
         // `capabilityManager` uses in the handler are `guard let`-safe before configure.
         self.socket.$state
@@ -349,16 +359,16 @@ final class TeamViewModel: ObservableObject {
             let descriptor = FetchDescriptor<TeamChannel>(predicate: #Predicate { $0.id == cid })
             before = context.fetchOrEmpty(descriptor, "team.fetchHistory.fetch").first?.lastServerMessageId
         }
-        guard let id = sendWithId(.history(channelId: channelId, before: before, limit: 50)) else {
-            return
-        }
+        guard let id = sendWithId(.history(channelId: channelId, before: before, limit: 50)),
+              owner == currentRequestOwner else { return }
         activeHistoryRequest = HistoryRequest(id: id, channelId: channelId, owner: owner)
         isLoadingHistory = true
     }
 
     private func seedHistory(channelId: String) {
         guard let owner = currentRequestOwner,
-              let id = sendWithId(.history(channelId: channelId, before: nil, limit: 1)) else { return }
+              let id = sendWithId(.history(channelId: channelId, before: nil, limit: 1)),
+              owner == currentRequestOwner else { return }
         seedHistoryRequests[id] = HistoryRequest(id: id, channelId: channelId, owner: owner)
     }
 
@@ -648,49 +658,39 @@ final class TeamViewModel: ObservableObject {
 
     private func syncChannels(_ channelInfos: [TeamChannelInfo], context: ModelContext) {
         let serverIds = Set(channelInfos.map(\.id))
-
-        // Fetch all local channels
+        let protectedIds = protectedMessageIds
+        var inventoryFailure: Error?
         let descriptor = FetchDescriptor<TeamChannel>()
-        let localChannels = context.fetchOrEmpty(descriptor, "team.syncChannels.fetch")
-
-        // Remove channels no longer on server
+        let localChannels = context.fetchOrEmpty(descriptor, "team.syncChannels.fetch",
+            failure: &inventoryFailure, operation: { try channelInventoryOperation(context, $0) })
         for local in localChannels where !serverIds.contains(local.id) {
-            context.delete(local)
+            TeamStore.deleteChannel(local, in: context, protecting: protectedIds,
+                                    fetchOperation: cleanupMessageFetchOperation)
+            removedChannel(local.id)
         }
-
-        // Insert or update channels
         for info in channelInfos {
             if let existing = localChannels.first(where: { $0.id == info.id }) {
                 existing.name = info.name
                 existing.members = info.members
                 existing.updatedAt = .now
             } else {
-                let channel = TeamChannel(
-                    id: info.id,
-                    type: info.type.wireValue,
-                    name: info.name,
-                    members: info.members
-                )
-                context.insert(channel)
+                context.insert(TeamChannel(id: info.id, type: info.type.wireValue,
+                                           name: info.name, members: info.members))
             }
         }
-
+        if inventoryFailure == nil {
+            TeamStore.deleteOrphans(in: context, validChannelIds: serverIds, protecting: protectedIds,
+                                    fetchOperation: cleanupMessageFetchOperation)
+        }
         save(context, "team.syncChannels.save")
         loadChannels(context: context)
-
-        // Auto-select DM after /dm creation.
         if let agentId = pendingAgentDM {
             if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agentId) }) {
-                // Success: DM found — navigate and clear.
                 pendingAgentDM = nil
                 selectChannel(dm.id)
             } else if pendingDMRequestId == nil {
-                // Failure: suppression already fired (cleared pendingDMRequestId)
-                // but the DM was not created. Clear to unblock openAgentDM.
                 pendingAgentDM = nil
             }
-            // Otherwise pendingDMRequestId is still set (systemMessage hasn't arrived
-            // yet, e.g. channel_event "created" raced ahead) — keep waiting.
         }
     }
 
@@ -796,13 +796,11 @@ final class TeamViewModel: ObservableObject {
                     predicate: #Predicate { $0.id == cid }
                 )
                 if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.left.fetch").first {
-                    context.delete(channel)
+                    TeamStore.deleteChannel(channel, in: context, protecting: protectedMessageIds,
+                                            fetchOperation: cleanupMessageFetchOperation)
+                    removedChannel(channel.id)
                     save(context, "team.channelEvent.left.save")
                     loadChannels(context: context)
-                    if activeChannelId == channelId {
-                        activeChannelId = nil
-                        activeMessages = []
-                    }
                 }
             }
         case "created":
@@ -813,13 +811,11 @@ final class TeamViewModel: ObservableObject {
                 predicate: #Predicate { $0.id == cid }
             )
             if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.archived.fetch").first {
-                context.delete(channel)
+                TeamStore.deleteChannel(channel, in: context, protecting: protectedMessageIds,
+                                        fetchOperation: cleanupMessageFetchOperation)
+                removedChannel(channel.id)
                 save(context, "team.channelEvent.archived.save")
                 loadChannels(context: context)
-                if activeChannelId == channelId {
-                    activeChannelId = nil
-                    activeMessages = []
-                }
             }
         default:
             break
