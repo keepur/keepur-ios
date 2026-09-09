@@ -75,11 +75,126 @@ final class TeamViewModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
     private var modelContext: ModelContext?
     private let saveOperation: (ModelContext) throws -> Void
+    private let historyMessageFetchOperation: (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage]
+    private let channelInventoryOperation: (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel]
+    private let cleanupMessageFetchOperation: (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage]
     /// Read on every use so a re-pair (new device id) is picked up immediately.
     private var deviceId: String { credentials.deviceId ?? "" }
     private var pendingCommandChannels: [String: String] = [:]  // requestId -> channelId
     private var pendingMessageIds: [String: String] = [:]       // requestId -> local message id
     private var pendingNewCommands: Set<String> = []             // requestIds for /new commands
+    private struct RequestOwner: Equatable {
+        let generation: UUID
+        let hive: String
+    }
+    private struct DMAttempt {
+        let token: UUID
+        let requestId: String
+        let agentId: String
+        let owner: RequestOwner
+    }
+    private struct HistoryRequest {
+        let id: String
+        let channelId: String
+        let owner: RequestOwner
+    }
+    private var connectionGeneration = UUID()
+    private var activeHistoryRequest: HistoryRequest?
+    private var seedHistoryRequests: [String: HistoryRequest] = [:]
+    private var dmAttempt: DMAttempt?
+    private var dmTask: Task<Void, Never>?
+    private var suppressedDMRequestIds = Set<String>()
+
+    private var protectedMessageIds: Set<String> {
+        Set(offlineEntries.map(\.localId)).union(pendingMessageIds.values)
+    }
+
+    private var currentRequestOwner: RequestOwner? {
+        guard connectionState == .connected, let hive = activeHive else { return nil }
+        return RequestOwner(generation: connectionGeneration, hive: hive)
+    }
+    private func armDM(requestId: String, agentId: String, owner: RequestOwner) {
+        let attempt = DMAttempt(token: UUID(), requestId: requestId, agentId: agentId, owner: owner)
+        dmAttempt = attempt
+        pendingAgentDM = agentId
+        pendingDMRequestId = requestId
+        suppressedDMRequestIds.insert(requestId)
+        let delay = dmTimeout
+        dmTask?.cancel()
+        dmTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard !Task.isCancelled else { return }
+            self?.expireDM(token: attempt.token, owner: attempt.owner)
+        }
+    }
+
+    private func expireDM(token: UUID, owner: RequestOwner) {
+        guard let attempt = dmAttempt, attempt.token == token,
+              attempt.owner == owner, currentRequestOwner == owner else { return }
+        pendingAgentDM = nil
+        if pendingDMRequestId == attempt.requestId { pendingDMRequestId = nil }
+        pendingNewCommands.remove(attempt.requestId)
+        pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        suppressedDMRequestIds.remove(attempt.requestId)
+        dmAttempt = nil
+        dmTask = nil
+        lastError = UserFacingError("Couldn't open a direct message. Try again.")
+    }
+
+    private func cancelDM() {
+        if let attempt = dmAttempt {
+            pendingNewCommands.remove(attempt.requestId)
+            pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        }
+        dmTask?.cancel()
+        dmTask = nil
+        dmAttempt = nil
+        pendingAgentDM = nil
+        pendingDMRequestId = nil
+        suppressedDMRequestIds.removeAll()
+    }
+
+    private func completeDMIfAvailable() {
+        guard let attempt = dmAttempt, attempt.owner == currentRequestOwner,
+              let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(attempt.agentId) }) else { return }
+        dmTask?.cancel()
+        dmTask = nil
+        dmAttempt = nil
+        pendingAgentDM = nil
+        pendingNewCommands.remove(attempt.requestId)
+        pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        // Keep its outstanding suppression ID even if the next tap begins another DM.
+        selectChannel(dm.id)
+    }
+
+    private func retireConnectionWork() {
+        pendingCommandChannels.removeAll()
+        pendingNewCommands.removeAll()
+        cancelDM()
+        retireHistoryRequests()
+        connectionGeneration = UUID()
+    }
+
+    private func retireFullHistory() {
+        activeHistoryRequest = nil
+        isLoadingHistory = false
+    }
+    private func retireHistoryRequests() {
+        retireFullHistory()
+        seedHistoryRequests.removeAll()
+    }
+    private func retireHistoryRequests(channelId: String) {
+        if activeHistoryRequest?.channelId == channelId { retireFullHistory() }
+        seedHistoryRequests = seedHistoryRequests.filter { $0.value.channelId != channelId }
+    }
+    private func removedChannel(_ channelId: String) {
+        retireHistoryRequests(channelId: channelId)
+        if activeChannelId == channelId {
+            activeChannelId = nil
+            activeMessages = []
+            isLoadingHistory = false
+        }
+    }
     private var pendingAgentDM: String?       // agent ID to auto-select after channel refresh
     private var pendingDMRequestId: String?   // request UUID of the /dm command
     private var offlineAttachments: [String: AttachmentData] = [:]   // localId → attachment, in-memory only
@@ -93,23 +208,40 @@ final class TeamViewModel: ObservableObject {
     private var activeHive: String?
     private var lastErrorTimer: Task<Void, Never>?
     private let lastErrorAutoClear: Duration
+    private let dmTimeout: Duration
+    private let capabilityRefreshOperation: (CapabilityManager) async -> Void
     private static let notConnectedText = "Not connected. Try again when reconnected."
 
     init(
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore(),
         lastErrorAutoClear: Duration = .seconds(6),
-        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }
+        dmTimeout: Duration = .seconds(10),
+        capabilityRefreshOperation: @escaping (CapabilityManager) async -> Void = { await $0.refresh() },
+        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        historyMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) },
+        channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
+        cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
         self.lastErrorAutoClear = lastErrorAutoClear
+        self.dmTimeout = dmTimeout
+        self.capabilityRefreshOperation = capabilityRefreshOperation
         self.saveOperation = saveOperation
+        self.historyMessageFetchOperation = historyMessageFetchOperation
+        self.channelInventoryOperation = channelInventoryOperation
+        self.cleanupMessageFetchOperation = cleanupMessageFetchOperation
         // In init, not configure: Settings observes truth before configure runs. The
         // `capabilityManager` uses in the handler are `guard let`-safe before configure.
         self.socket.$state
             .sink { [weak self] state in self?.handleSocketState(state) }
             .store(in: &subscriptions)
+    }
+
+    deinit {
+        dmTask?.cancel()
+        lastErrorTimer?.cancel()
     }
 
     // MARK: - Setup
@@ -143,10 +275,11 @@ final class TeamViewModel: ObservableObject {
               let channel = manager.selectedHive,
               manager.hives.contains(channel) else {
             Log.team.info("connectIfPossible: no valid selectedHive; disconnecting")
-            socket.disconnect()
+            disconnect()
             return
         }
-        Log.team.info("connectIfPossible: channel=\(channel, privacy: .public)")
+        Log.team.info("connectIfPossible: connecting selected hive")
+        if activeHive != channel, connectionState != .connected { retireConnectionWork() }
         socket.connect(channel: channel)
         activeHive = channel   // after connect returns — see the activeHive doc comment
     }
@@ -167,6 +300,7 @@ final class TeamViewModel: ObservableObject {
         connectionState = state
         if previous == .connected, state != .connected {
             moveUnackedToOffline()
+            retireConnectionWork()
         }
         if case .reconnecting(let attempt) = state, state != previous, attempt == 1 {
             refreshCapabilitiesAfterConnectionLost()
@@ -175,8 +309,9 @@ final class TeamViewModel: ObservableObject {
 
     private func refreshCapabilitiesAfterConnectionLost() {
         guard let manager = capabilityManager else { return }
+        let refresh = capabilityRefreshOperation
         Task { [weak self] in
-            await manager.refresh()
+            await refresh(manager)
             guard let self else { return }
             if let current = manager.selectedHive, manager.hives.contains(current) {
                 // Hive still exists; the socket keeps backing off and the banner offers retry-now.
@@ -192,9 +327,8 @@ final class TeamViewModel: ObservableObject {
     /// Clears no queue state on purpose: entries keep their hive stamp and go out on
     /// the next connect to that hive (§7 *Hive switch*).
     func disconnect() {
-        pendingAgentDM = nil
-        pendingDMRequestId = nil
         socket.disconnect()
+        retireConnectionWork()
     }
 
     // MARK: - Sending
@@ -276,13 +410,12 @@ final class TeamViewModel: ObservableObject {
     }
 
     func selectChannel(_ channelId: String) {
+        retireFullHistory()
         activeChannelId = channelId
         hasMoreHistory = true
         refreshActiveMessages()
 
-        // Reset cursor on channel selection — the full page load starts fresh.
-        // Seeding only loaded 1 message for sidebar preview; now we load the full
-        // latest page. Dedup prevents duplicates if messages were already loaded.
+        // Reset the selected channel to its latest page; history identities prevent repeat inserts.
         if let context = modelContext {
             let cid = channelId
             let channelDescriptor = FetchDescriptor<TeamChannel>(
@@ -297,27 +430,25 @@ final class TeamViewModel: ObservableObject {
     }
 
     func fetchHistory(channelId: String) {
-        // Only track loading state for active channel (user-initiated pagination)
-        let isActive = channelId == activeChannelId
-        if isActive {
-            guard !isLoadingHistory else { return }
-            isLoadingHistory = true
-        }
-
-        // Find the oldest server message ID for cursor-based pagination.
-        // nil means "fetch the latest page" (no cursor).
+        guard channelId == activeChannelId, activeHistoryRequest == nil,
+              let owner = currentRequestOwner else { return }
         var before: String?
         if let context = modelContext {
             let cid = channelId
-            let channelDescriptor = FetchDescriptor<TeamChannel>(
-                predicate: #Predicate { $0.id == cid }
-            )
-            if let channel = context.fetchOrEmpty(channelDescriptor, "team.fetchHistory.fetch").first {
-                before = channel.lastServerMessageId
-            }
+            let descriptor = FetchDescriptor<TeamChannel>(predicate: #Predicate { $0.id == cid })
+            before = context.fetchOrEmpty(descriptor, "team.fetchHistory.fetch").first?.lastServerMessageId
         }
+        guard let id = sendWithId(.history(channelId: channelId, before: before, limit: 50)),
+              owner == currentRequestOwner else { return }
+        activeHistoryRequest = HistoryRequest(id: id, channelId: channelId, owner: owner)
+        isLoadingHistory = true
+    }
 
-        send(.history(channelId: channelId, before: before, limit: 50))
+    private func seedHistory(channelId: String) {
+        guard let owner = currentRequestOwner,
+              let id = sendWithId(.history(channelId: channelId, before: nil, limit: 1)),
+              owner == currentRequestOwner else { return }
+        seedHistoryRequests[id] = HistoryRequest(id: id, channelId: channelId, owner: owner)
     }
 
     func fetchChannels() {
@@ -342,8 +473,7 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Private: Connection
 
     private func onConnected() {
-        pendingAgentDM = nil
-        pendingDMRequestId = nil
+        retireConnectionWork()
         fetchChannels()
         send(.agentList)
         send(.commandList)
@@ -351,6 +481,7 @@ final class TeamViewModel: ObservableObject {
         // Use fetchHistory (not direct send) so cursor and loading state
         // are managed correctly and we don't race with seeding fetches.
         if let channelId = activeChannelId {
+            hasMoreHistory = true
             // Reset cursor so we get the latest page, not stale pagination
             if let context = modelContext {
                 let cid = channelId
@@ -460,27 +591,19 @@ final class TeamViewModel: ObservableObject {
     }
 
     func openAgentDM(agent: TeamAgentInfo) {
-        // 1. Search for existing DM with this agent
         if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agent.id) }) {
             selectChannel(dm.id)
             return
         }
-
-        // 2. Ignore if a /dm creation is already in flight (prevents overwriting
-        //    the pending request ID on rapid taps, which would break suppression).
         guard pendingAgentDM == nil else { return }
-
-        // 3. Not found — create via /dm command. Send agent id so the server's
-        // AgentResolver doesn't have to do a display-name lookup (KPR-11).
         let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.id])
-        guard connectionState == .connected, let requestId = sendWithId(command) else {
+        guard let owner = currentRequestOwner, let requestId = sendWithId(command),
+              owner == currentRequestOwner else {
             lastError = UserFacingError(Self.notConnectedText)
             return
         }
-
         pendingNewCommands.insert(requestId)
-        pendingAgentDM = agent.id
-        pendingDMRequestId = requestId
+        armDM(requestId: requestId, agentId: agent.id, owner: owner)
     }
 
     // MARK: - Private: Incoming Message Handling
@@ -520,12 +643,9 @@ final class TeamViewModel: ObservableObject {
                 }
             }
 
-            // Suppress /dm system response when initiated from openAgentDM.
-            // Only clear pendingDMRequestId here; pendingAgentDM is cleared by
-            // syncChannels when it finds the DM (fetchChannels is async).
-            if let replyTo, replyTo == pendingDMRequestId {
-                pendingDMRequestId = nil
-                return  // Navigation is the feedback; don't insert message
+            if let replyTo, suppressedDMRequestIds.remove(replyTo) != nil {
+                if pendingDMRequestId == replyTo { pendingDMRequestId = nil }
+                return
             }
 
             guard let targetChannelId = channelId ?? activeChannelId else { return }
@@ -554,11 +674,11 @@ final class TeamViewModel: ObservableObject {
             // prematurely clear isLoadingHistory and corrupt the cursor.
             for info in channelInfos {
                 guard info.id != activeChannelId else { continue }
-                send(.history(channelId: info.id, before: nil, limit: 1))
+                seedHistory(channelId: info.id)
             }
 
-        case .history(let channelId, let messages, let hasMore, _):
-            processHistory(channelId: channelId, messages: messages, hasMore: hasMore, context: context)
+        case .history(let channelId, let messages, let hasMore, let id):
+            receiveHistory(id: id, channelId: channelId, messages: messages, hasMore: hasMore, context: context)
 
         case .channelEvent(let channelId, let event, let memberId, _):
             handleChannelEvent(channelId: channelId, event: event, memberId: memberId, context: context)
@@ -581,9 +701,9 @@ final class TeamViewModel: ObservableObject {
             break // Deliberately ignored: the current Team UI has no typing surface.
 
         case .error(let message):
-            pendingAgentDM = nil
-            pendingDMRequestId = nil
-            Log.team.error("server error: \(message, privacy: .private)")
+            retireFullHistory()
+            cancelDM()
+            Log.team.error("server error received")
             lastError = UserFacingError(message)
 
         case .pong:
@@ -602,50 +722,33 @@ final class TeamViewModel: ObservableObject {
 
     private func syncChannels(_ channelInfos: [TeamChannelInfo], context: ModelContext) {
         let serverIds = Set(channelInfos.map(\.id))
-
-        // Fetch all local channels
+        let protectedIds = protectedMessageIds
+        var inventoryFailure: Error?
         let descriptor = FetchDescriptor<TeamChannel>()
-        let localChannels = context.fetchOrEmpty(descriptor, "team.syncChannels.fetch")
-
-        // Remove channels no longer on server
+        let localChannels = context.fetchOrEmpty(descriptor, "team.syncChannels.fetch",
+            failure: &inventoryFailure, operation: { try channelInventoryOperation(context, $0) })
         for local in localChannels where !serverIds.contains(local.id) {
-            context.delete(local)
+            TeamStore.deleteChannel(local, in: context, protecting: protectedIds,
+                                    fetchOperation: cleanupMessageFetchOperation)
+            removedChannel(local.id)
         }
-
-        // Insert or update channels
         for info in channelInfos {
             if let existing = localChannels.first(where: { $0.id == info.id }) {
                 existing.name = info.name
                 existing.members = info.members
                 existing.updatedAt = .now
             } else {
-                let channel = TeamChannel(
-                    id: info.id,
-                    type: info.type.wireValue,
-                    name: info.name,
-                    members: info.members
-                )
-                context.insert(channel)
+                context.insert(TeamChannel(id: info.id, type: info.type.wireValue,
+                                           name: info.name, members: info.members))
             }
         }
-
+        if inventoryFailure == nil {
+            TeamStore.deleteOrphans(in: context, validChannelIds: serverIds, protecting: protectedIds,
+                                    fetchOperation: cleanupMessageFetchOperation)
+        }
         save(context, "team.syncChannels.save")
         loadChannels(context: context)
-
-        // Auto-select DM after /dm creation.
-        if let agentId = pendingAgentDM {
-            if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agentId) }) {
-                // Success: DM found — navigate and clear.
-                pendingAgentDM = nil
-                selectChannel(dm.id)
-            } else if pendingDMRequestId == nil {
-                // Failure: suppression already fired (cleared pendingDMRequestId)
-                // but the DM was not created. Clear to unblock openAgentDM.
-                pendingAgentDM = nil
-            }
-            // Otherwise pendingDMRequestId is still set (systemMessage hasn't arrived
-            // yet, e.g. channel_event "created" raced ahead) — keep waiting.
-        }
+        completeDMIfAvailable()
     }
 
     private func loadChannels(context: ModelContext) {
@@ -656,100 +759,74 @@ final class TeamViewModel: ObservableObject {
         recomputeSortedAgents()
     }
 
-    // MARK: - Private: History Processing with Dedup
+    // MARK: - Private: Correlated History
 
-    private func processHistory(channelId: String, messages: [TeamHistoryMessage], hasMore: Bool, context: ModelContext) {
-        let isActiveChannel = channelId == activeChannelId
-
-        if isActiveChannel {
+    private func receiveHistory(id: String, channelId: String, messages: [TeamHistoryMessage],
+                                hasMore: Bool, context: ModelContext) {
+        if let request = activeHistoryRequest, request.id == id {
+            guard request.channelId == channelId, activeChannelId == channelId,
+                  request.owner == currentRequestOwner else {
+                Log.team.debug("ignoring history with mismatched active ownership")
+                return
+            }
+            retireFullHistory()
             self.hasMoreHistory = hasMore
+            processHistory(channelId: channelId, messages: messages, context: context)
+            return
         }
-
-        // Update cursor to the oldest message in this batch for scroll-up pagination.
-        // Use min(createdAt) to be sort-order-agnostic. For seeding fetches (limit 1
-        // returning the newest message), only set if no cursor exists. For pagination
-        // fetches (isActiveChannel), always advance the cursor deeper into history.
-        if let oldestMsg = messages.min(by: { $0.createdAt < $1.createdAt }) {
-            let cid = channelId
-            let descriptor = FetchDescriptor<TeamChannel>(
-                predicate: #Predicate { $0.id == cid }
-            )
-            if let channel = context.fetchOrEmpty(descriptor, "team.history.cursor.fetch").first {
-                if isActiveChannel || channel.lastServerMessageId == nil {
-                    channel.lastServerMessageId = oldestMsg.id
-                }
+        if let request = seedHistoryRequests[id] {
+            guard request.channelId == channelId, request.owner == currentRequestOwner else {
+                Log.team.debug("ignoring history with mismatched preview ownership")
+                return
             }
+            seedHistoryRequests.removeValue(forKey: id)
+            if let newest = messages.max(by: HistoryMerger.chronological) {
+                updateChannelPreview(channelId: channelId, text: newest.text,
+                                     date: newest.createdAt, context: context)
+            }
+            return
         }
+        Log.team.debug("ignoring unregistered history response")
+    }
 
-        // Pre-fetch ALL existing messages for this channel once — O(1) fetch instead of O(N*4).
-        // Build lookup sets for in-memory dedup matching.
+    private func processHistory(channelId: String, messages: [TeamHistoryMessage], context: ModelContext) {
         let cid = channelId
-        let allDescriptor = FetchDescriptor<TeamMessage>(
-            predicate: #Predicate { $0.channelId == cid }
-        )
-        let existingMessages = context.fetchOrEmpty(allDescriptor, "team.history.messages.fetch")
-
-        // Build lookup structures for fast dedup
-        let existingIds = Set(existingMessages.map(\.id))
-        // Key: "senderId|text" for content-based matching
-        let existingContentKeys = Set(existingMessages.map { "\($0.senderId)|\($0.text)" })
-        // For user message time-windowed matching: store (key, createdAt) pairs
-        let userMessages = existingMessages.filter { $0.senderId == deviceId && !$0.pending }
-
-        for histMsg in messages {
-            // Step 1: ID match — already imported from history
-            if existingIds.contains(histMsg.id) {
-                continue
-            }
-
-            let contentKey = "\(histMsg.senderId)|\(histMsg.text)"
-
-            // Step 2: User message match (own messages, acked + ±30s window)
-            if histMsg.senderId == deviceId {
-                let hasMatch = userMessages.contains { local in
-                    local.text == histMsg.text &&
-                    abs(local.createdAt.timeIntervalSince(histMsg.createdAt)) < 30
-                }
-                if hasMatch { continue }
-            }
-
-            // Step 3: Agent message match
-            if histMsg.senderType == .agent && existingContentKeys.contains(contentKey) {
-                continue
-            }
-
-            // Step 4: System message match
-            if histMsg.senderId == "system" && existingContentKeys.contains(contentKey) {
-                continue
-            }
-
-            // Step 5: Insert as new message with server ObjectId
-            let message = TeamMessage(
-                id: histMsg.id,
-                channelId: channelId,
-                threadId: histMsg.threadId,
-                senderId: histMsg.senderId,
-                senderType: histMsg.senderType.wireValue,
-                senderName: histMsg.senderName,
-                text: histMsg.text,
-                createdAt: histMsg.createdAt,
-                pending: false
-            )
-            context.insert(message)
+        let channelDescriptor = FetchDescriptor<TeamChannel>(predicate: #Predicate { $0.id == cid })
+        if let oldest = messages.min(by: HistoryMerger.chronological),
+           let channel = context.fetchOrEmpty(channelDescriptor, "team.history.cursor.fetch").first {
+            channel.lastServerMessageId = oldest.id
         }
-
+        let descriptor = FetchDescriptor<TeamMessage>(predicate: #Predicate { $0.channelId == cid })
+        var historyFetchFailure: Error?
+        let fetched = context.fetchOrEmpty(descriptor, "team.history.messages.fetch", failure: &historyFetchFailure,
+            operation: { try historyMessageFetchOperation(context, $0) })
+        let foreignIds = Set(offlineEntries.filter { $0.hive != activeHive }.map(\.localId))
+        let rows = fetched.filter { !foreignIds.contains($0.id) }
+        let snapshots = rows.map { row in
+            TeamMessageSnapshot(id: row.id, serverId: row.serverId, channelId: row.channelId,
+                senderId: row.senderId, senderType: row.typedSenderType, senderName: row.senderName,
+                text: row.text, threadId: row.threadId, createdAt: row.createdAt, pending: row.pending)
+        }
+        let result = HistoryMerger.merge(existing: snapshots, incoming: messages,
+                                         ownDeviceId: deviceId, now: .now)
+        for row in rows {
+            if let serverId = result.serverIdStamps[row.id] { row.serverId = serverId }
+            if result.unpendIds.contains(row.id) { row.pending = false }
+        }
+        // Do not let a conflicting incoming local ID upsert a protected foreign row.
+        for incoming in result.inserts where !foreignIds.contains(incoming.id) {
+            context.insert(TeamMessage(id: incoming.id, serverId: incoming.id,
+                channelId: incoming.channelId, threadId: incoming.threadId,
+                senderId: incoming.senderId, senderType: incoming.senderType.wireValue,
+                senderName: incoming.senderName, text: incoming.text,
+                createdAt: incoming.createdAt, pending: false))
+        }
         save(context, "team.history.save")
-
-        // Update sidebar preview from the most recent history message.
-        // Use max(by:) since server may return messages in descending order.
-        if let newest = messages.max(by: { $0.createdAt < $1.createdAt }) {
-            updateChannelPreview(channelId: channelId, text: newest.text, date: newest.createdAt, context: context)
+        if let newest = messages.max(by: HistoryMerger.chronological) {
+            updateChannelPreview(channelId: channelId, text: newest.text,
+                                 date: newest.createdAt, context: context)
         }
-
-        if isActiveChannel {
-            isLoadingHistory = false
-            refreshActiveMessages()
-        }
+        refreshActiveMessages()
     }
 
     // MARK: - Private: Channel Events
@@ -778,13 +855,11 @@ final class TeamViewModel: ObservableObject {
                     predicate: #Predicate { $0.id == cid }
                 )
                 if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.left.fetch").first {
-                    context.delete(channel)
+                    TeamStore.deleteChannel(channel, in: context, protecting: protectedMessageIds,
+                                            fetchOperation: cleanupMessageFetchOperation)
+                    removedChannel(channel.id)
                     save(context, "team.channelEvent.left.save")
                     loadChannels(context: context)
-                    if activeChannelId == channelId {
-                        activeChannelId = nil
-                        activeMessages = []
-                    }
                 }
             }
         case "created":
@@ -795,13 +870,11 @@ final class TeamViewModel: ObservableObject {
                 predicate: #Predicate { $0.id == cid }
             )
             if let channel = context.fetchOrEmpty(descriptor, "team.channelEvent.archived.fetch").first {
-                context.delete(channel)
+                TeamStore.deleteChannel(channel, in: context, protecting: protectedMessageIds,
+                                        fetchOperation: cleanupMessageFetchOperation)
+                removedChannel(channel.id)
                 save(context, "team.channelEvent.archived.save")
                 loadChannels(context: context)
-                if activeChannelId == channelId {
-                    activeChannelId = nil
-                    activeMessages = []
-                }
             }
         default:
             break
@@ -810,20 +883,17 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Private: Helpers
 
-    private func updateChannelPreview(channelId: String, text: String, date: Date = .now, context: ModelContext) {
+    private func updateChannelPreview(channelId: String, text: String, date: Date = .now,
+                                      context: ModelContext) {
         let cid = channelId
-        let descriptor = FetchDescriptor<TeamChannel>(
-            predicate: #Predicate { $0.id == cid }
-        )
-        if let channel = context.fetchOrEmpty(descriptor, "team.preview.fetch").first {
-            channel.lastMessageText = String(text.prefix(100))
-            if channel.lastMessageAt == nil || date > channel.lastMessageAt! {
-                channel.lastMessageAt = date
-            }
-            save(context, "team.preview.save")
-            channels.sort { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
-            recomputeSortedAgents()
-        }
+        let descriptor = FetchDescriptor<TeamChannel>(predicate: #Predicate { $0.id == cid })
+        guard let channel = context.fetchOrEmpty(descriptor, "team.preview.fetch").first else { return }
+        if let previous = channel.lastMessageAt, date < previous { return }
+        channel.lastMessageText = String(text.prefix(100))
+        channel.lastMessageAt = date
+        save(context, "team.preview.save")
+        channels.sort { ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast) }
+        recomputeSortedAgents()
     }
 
 

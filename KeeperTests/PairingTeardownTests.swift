@@ -202,6 +202,35 @@ final class PairingTeardownTests: XCTestCase {
         XCTAssertEqual(try rows(f).first(where: { $0.text == "fresh-team" })?.pending, false)
         XCTAssertEqual(f.team.pendingMessageRequestCountForTesting, 0)
         XCTAssertEqual(try rows(f).count, oldRows.count + 1, "history is retained")
+        let freshRow = try XCTUnwrap(try rows(f).first { $0.text == "fresh-team" })
+        let stableID = freshRow.id
+        let oldDevice = TeamMessage(id: "same-text-old-device", channelId: "channel-1",
+            senderId: "old-device", senderType: "person", senderName: "Old Device",
+            text: "fresh-team", createdAt: freshRow.createdAt, pending: false)
+        f.context.insert(oldDevice)
+        try f.context.save()
+        let historyRequest = try XCTUnwrap(try frames(returnedTeamTask).last {
+            $0["type"] as? String == "history" && $0["channelId"] as? String == "channel-1"
+                && $0["limit"] as? Int == 50
+        }?["id"] as? String)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let reply: [String: Any] = ["type": "history", "id": historyRequest,
+            "channelId": "channel-1", "hasMore": false, "messages": [[
+                "id": "fresh-server", "senderId": "new-device", "senderType": "person",
+                "senderName": "New Device", "text": "fresh-team",
+                "createdAt": formatter.string(from: freshRow.createdAt)
+            ]]]
+        try await eventually("re-paired Team receiver armed") { returnedTeamTask.receiveRequested }
+        let data = try JSONSerialization.data(withJSONObject: reply)
+        returnedTeamTask.deliver(String(decoding: data, as: UTF8.self))
+        try await eventually("re-paired history handled") { freshRow.serverId == "fresh-server" }
+        XCTAssertEqual(freshRow.id, stableID)
+        XCTAssertEqual(freshRow.senderId, "new-device")
+        XCTAssertNil(oldDevice.serverId)
+        XCTAssertEqual(oldDevice.senderId, "old-device")
+        XCTAssertEqual(try rows(f).count, oldRows.count + 2)
+        XCTAssertEqual(f.team.pendingMessageRequestCountForTesting, 0)
     }
     func testManualUnpairClearsBothVMsBeforeReturning() async throws { try await lifecycle("manual") }
     func testChat4001ClearsBothVMs() async throws { try await lifecycle("chat") }
@@ -235,6 +264,8 @@ final class PairingTeardownTests: XCTestCase {
         for explicitDisconnect in [true, false] {
             let f = try Fixture()
             defer { f.close() }
+            f.context.insert(TeamChannel(id: "channel-1", type: "channel", name: "Original"))
+            try f.context.save()
             f.capabilities.selectedHive = "hive-1"
             f.team.connectIfPossible()
             f.team.pendingAttachment = AttachmentData(data: bytes, name: "keep.bin", mimeType: "application/octet-stream")
@@ -247,6 +278,12 @@ final class PairingTeardownTests: XCTestCase {
             let other = try XCTUnwrap(f.teamFactory.latest)
             other.completeHandshake()
             await settle()
+            try await eventually("other hive receive armed") { other.receiveRequested }
+            other.deliver(#"{"type":"channel_list","id":"b-list","channels":[{"id":"b-channel","type":"channel","name":"B","members":[]}]}"#)
+            try await eventually("other hive list cleanup") { f.team.channels.map(\.id) == ["b-channel"] }
+            XCTAssertEqual(try rows(f).map(\.id), original.map(\.localId))
+            XCTAssertEqual(try rows(f).first?.channelId, "channel-1")
+            XCTAssertNil(f.team.activeChannelId)
             XCTAssertEqual(f.team.offlineEntries, original)
             XCTAssertEqual(f.team.queuedAttachmentCountForTesting, 1)
             XCTAssertTrue(try payloads(other).isEmpty)
@@ -259,6 +296,7 @@ final class PairingTeardownTests: XCTestCase {
             XCTAssertEqual(sent.compactMap { $0["type"] as? String }, ["message", "file"])
             XCTAssertEqual(sent.last?["filename"] as? String, "keep.bin")
             XCTAssertEqual(sent.last?["data"] as? String, bytes.base64EncodedString())
+            XCTAssertTrue(sent.allSatisfy { $0["channelId"] as? String == "channel-1" })
             XCTAssertTrue(f.team.offlineEntries.isEmpty)
             XCTAssertEqual(f.team.queuedAttachmentCountForTesting, 0)
             XCTAssertEqual(f.credentials.clearAllCalls, 0)
