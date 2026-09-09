@@ -136,8 +136,8 @@ final class TeamWSMessageTests: XCTestCase {
         XCTAssertEqual(id, "req-1")
         XCTAssertEqual(channels.count, 2)
         XCTAssertEqual(channels[0].id, "general")
-        XCTAssertEqual(channels[0].type, "channel")
-        XCTAssertEqual(channels[1].type, "dm")
+        XCTAssertEqual(channels[0].type, .channel)
+        XCTAssertEqual(channels[1].type, .dm)
         XCTAssertEqual(channels[0].members, ["agent1", "device1"])
     }
 
@@ -337,14 +337,14 @@ final class TeamWSMessageTests: XCTestCase {
         XCTAssertEqual(agents[0].id, "rae")
         XCTAssertEqual(agents[0].name, "Rae")
         XCTAssertEqual(agents[0].title, "Receptionist")
-        XCTAssertEqual(agents[0].status, "idle")
+        XCTAssertEqual(agents[0].status, .idle)
         XCTAssertEqual(agents[0].tools, ["schedule", "crm-search"])
         XCTAssertEqual(agents[0].schedule.count, 1)
         XCTAssertEqual(agents[0].schedule[0]["cron"], "0 9 * * 1-5")
         XCTAssertEqual(agents[0].messagesProcessed, 142)
         XCTAssertEqual(agents[0].lastActivity, "2026-04-12T14:30:00Z")
         XCTAssertEqual(agents[1].name, "Jasper")
-        XCTAssertEqual(agents[1].status, "processing")
+        XCTAssertEqual(agents[1].status, .processing)
         XCTAssertNil(agents[1].lastActivity)
     }
 
@@ -363,7 +363,7 @@ final class TeamWSMessageTests: XCTestCase {
         XCTAssertEqual(agents.count, 1)
         XCTAssertEqual(agents[0].icon, "")     // defaults to empty
         XCTAssertNil(agents[0].title)           // optional
-        XCTAssertEqual(agents[0].status, "idle")           // defaults to idle
+        XCTAssertEqual(agents[0].status, .idle)           // defaults to idle
         XCTAssertEqual(agents[0].tools, [])               // defaults to empty
         XCTAssertEqual(agents[0].schedule, [])             // defaults to empty
         XCTAssertEqual(agents[0].messagesProcessed, 0)     // defaults to 0
@@ -447,12 +447,12 @@ final class TeamWSMessageTests: XCTestCase {
         let agentId = "rae"
 
         // DM lookup: type == "dm" && members.contains(agentId)
-        let dm = channels.first(where: { $0.type == "dm" && $0.members.contains(agentId) })
+        let dm = channels.first(where: { $0.type == .dm && $0.members.contains(agentId) })
         XCTAssertNotNil(dm, "Should find DM channel by agent ID in members")
         XCTAssertEqual(dm?.id, "dm:device1:rae")
 
         // Should not match channel type
-        let nonDM = channels.filter { $0.type != "dm" && $0.members.contains(agentId) }
+        let nonDM = channels.filter { $0.type != .dm && $0.members.contains(agentId) }
         XCTAssertEqual(nonDM.count, 1, "Agent is in group channel too, but openAgentDM only matches DMs")
     }
 

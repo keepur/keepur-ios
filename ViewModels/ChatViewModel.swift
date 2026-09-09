@@ -7,11 +7,11 @@ import os
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messageText = ""
-    @Published var sessionStatuses: [String: String] = [:]
+    @Published var sessionStatuses: [String: SessionStatus] = [:]
     @Published var sessionToolNames: [String: String] = [:]
 
-    func statusFor(_ sessionId: String) -> String {
-        sessionStatuses[sessionId] ?? "idle"
+    func statusFor(_ sessionId: String) -> SessionStatus {
+        sessionStatuses[sessionId] ?? .idle
     }
 
     func toolNameFor(_ sessionId: String) -> String? {
@@ -64,6 +64,8 @@ final class ChatViewModel: ObservableObject {
     private var lastErrorTimer: Task<Void, Never>?
     private let staleBusyTimeout: Duration
     private let lastErrorAutoClear: Duration
+    private let saveOperation: (ModelContext) throws -> Void
+    private let sessionFetchOperation: (ModelContext, FetchDescriptor<Session>) throws -> [Session]
     var autoReadAloud = false
     private var modelContext: ModelContext?
     private var streamingMessageIds: [String: String] = [:]
@@ -123,13 +125,17 @@ final class ChatViewModel: ObservableObject {
         credentials: CredentialStore = KeychainCredentialStore(),
         speech: SpeechManager? = nil,
         staleBusyTimeout: Duration = .seconds(90),
-        lastErrorAutoClear: Duration = .seconds(6)
+        lastErrorAutoClear: Duration = .seconds(6),
+        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        sessionFetchOperation: @escaping (ModelContext, FetchDescriptor<Session>) throws -> [Session] = { try $0.fetch($1) }
     ) {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
         self.storedSpeech = speech
         self.staleBusyTimeout = staleBusyTimeout
         self.lastErrorAutoClear = lastErrorAutoClear
+        self.saveOperation = saveOperation
+        self.sessionFetchOperation = sessionFetchOperation
         // Subscribed in init, not configure, so Settings and the list views observe
         // truth before configure runs and independently of it.
         stateSubscription = self.socket.$state.sink { [weak self] state in
@@ -225,13 +231,13 @@ final class ChatViewModel: ObservableObject {
         let message = Message(
             sessionId: sessionId,
             text: effectiveText,
-            role: "user",
+            role: MessageRole.user.rawValue,
             attachmentName: attachment?.name,
             attachmentType: attachment?.mimeType,
             attachmentData: attachment?.data
         )
         context.insert(message)
-        try? context.save()
+        save(context, "chat.sendText.save")
 
         let entry = PendingMessage(text: text, messageId: message.id, sessionId: sessionId, attachment: attachment)
         if connectionState != .connected {
@@ -242,7 +248,7 @@ final class ChatViewModel: ObservableObject {
                 $0.sessionId == sessionId && pendingReasons[$0.messageId] == .offline
             }
             enqueue(entry, reason: hasOffline ? .offline : .busy)
-        } else if statusFor(sessionId) != "idle" {
+        } else if statusFor(sessionId) != .idle {
             enqueue(entry, reason: .busy)
         } else {
             sendToServer(entry)
@@ -329,6 +335,12 @@ final class ChatViewModel: ObservableObject {
 
     // MARK: - Private
 
+    private func save(_ context: ModelContext, _ what: StaticString) {
+        if context.saveReporting(what, operation: { try saveOperation(context) }) != nil {
+            lastError = UserFacingError("Couldn't save. Your last change may not be kept.")
+        }
+    }
+
     private func handleIncoming(_ incoming: WSIncoming) {
         guard let context = modelContext else { return }
 
@@ -349,7 +361,7 @@ final class ChatViewModel: ObservableObject {
                 sessionStatuses[effectiveId] = state
 
                 // Store or clear tool name based on state
-                if state == "tool_running" || state == "tool_starting" {
+                if state == .toolRunning || state == .toolStarting {
                     if let toolName {
                         sessionToolNames[effectiveId] = toolName
                     } else {
@@ -361,7 +373,7 @@ final class ChatViewModel: ObservableObject {
 
                 // Clear streaming ID on round boundaries so the next
                 // streaming segment creates a new message bubble.
-                if state == "thinking" || state == "tool_starting" || state == "tool_running" {
+                if state == .thinking || state == .toolStarting || state == .toolRunning {
                     streamingMessageIds.removeValue(forKey: effectiveId)
                 }
 
@@ -372,13 +384,13 @@ final class ChatViewModel: ObservableObject {
                 }
 
                 // Flush next pending message when session becomes idle
-                if state == "idle" {
+                if state == .idle {
                     releaseQueuedHead(for: effectiveId)
                 } else {
                     reclassifyOfflineAsBusy(for: effectiveId)
                 }
 
-                if state == "session_ended" {
+                if state == .sessionEnded {
                     endSession(effectiveId)
                 }
             }
@@ -396,13 +408,13 @@ final class ChatViewModel: ObservableObject {
             // We still update currentSessionId/currentPath/sessionStatuses so
             // ConciergeViewModel can detect arrival via its Combine observation
             // and ChatView's status indicator works inside the concierge tab.
-            let isConcierge = mode == "concierge"
+            let isConcierge = mode == .concierge
                 || sessionId == knownConciergeSessionId
                 || sessionId == ConciergeSessionStore.cachedSessionId
             if isConcierge {
                 currentSessionId = sessionId
                 currentPath = path
-                sessionStatuses[sessionId] = "idle"
+                sessionStatuses[sessionId] = .idle
                 cancelBusyWatchdog(for: sessionId)
                 break
             }
@@ -416,7 +428,7 @@ final class ChatViewModel: ObservableObject {
             let existingDescriptor = FetchDescriptor<Session>(
                 predicate: #Predicate { $0.id == sessionId }
             )
-            if let existing = try? context.fetch(existingDescriptor).first {
+            if let existing = context.fetchOrEmpty(existingDescriptor, "chat.sessionInfo.existing.fetch").first {
                 existing.path = path
                 existing.isStale = false
                 if let handoff, existing.name == nil {
@@ -426,10 +438,10 @@ final class ChatViewModel: ObservableObject {
                 let session = Session(id: sessionId, path: path, name: handoff?.oldName)
                 context.insert(session)
             }
-            try? context.save()
+            save(context, "chat.sessionInfo.upsert.save")
             currentSessionId = sessionId
             currentPath = path
-            sessionStatuses[sessionId] = "idle"
+            sessionStatuses[sessionId] = .idle
             cancelBusyWatchdog(for: sessionId)
             if let handoff {
                 // Now delete the old (already-wiped) Session row.
@@ -437,9 +449,9 @@ final class ChatViewModel: ObservableObject {
                 let oldDescriptor = FetchDescriptor<Session>(
                     predicate: #Predicate { $0.id == oldId }
                 )
-                if let oldRow = try? context.fetch(oldDescriptor).first {
+                if let oldRow = context.fetchOrEmpty(oldDescriptor, "chat.sessionInfo.old.fetch").first {
                     context.delete(oldRow)
-                    try? context.save()
+                    save(context, "chat.sessionInfo.old.save")
                 }
             }
             saveWorkspace(path: path, context: context)
@@ -476,7 +488,7 @@ final class ChatViewModel: ObservableObject {
             let sessionDescriptor = FetchDescriptor<Session>(
                 predicate: #Predicate { $0.id == oldSessionId }
             )
-            let oldSession = try? context.fetch(sessionDescriptor).first
+            let oldSession = context.fetchOrEmpty(sessionDescriptor, "chat.contextCleared.old.fetch").first
             if let oldSession {
                 pendingClearHandoffs[oldSession.path] = ClearHandoff(
                     oldSessionId: oldSessionId,
@@ -487,9 +499,12 @@ final class ChatViewModel: ObservableObject {
             let msgDescriptor = FetchDescriptor<Message>(
                 predicate: #Predicate { $0.sessionId == oldSessionId }
             )
-            if let messages = try? context.fetch(msgDescriptor) {
+            var messageFetchFailure: Error?
+            let messages = context.fetchOrEmpty(msgDescriptor, "chat.contextCleared.messages.fetch",
+                                                failure: &messageFetchFailure)
+            if messageFetchFailure == nil {
                 for msg in messages { context.delete(msg) }
-                try? context.save()
+                save(context, "chat.contextCleared.messages.save")
             }
             // Clear per-session transient state.
             streamingMessageIds.removeValue(forKey: oldSessionId)
@@ -510,13 +525,13 @@ final class ChatViewModel: ObservableObject {
             let oldSessDescriptor = FetchDescriptor<Session>(
                 predicate: #Predicate { $0.id == oldSessionId }
             )
-            let oldSession = try? context.fetch(oldSessDescriptor).first
+            let oldSession = context.fetchOrEmpty(oldSessDescriptor, "chat.sessionReplaced.old.fetch").first
             let preservedName = oldSession?.name
 
             let existingNewDescriptor = FetchDescriptor<Session>(
                 predicate: #Predicate { $0.id == newSessionId }
             )
-            if let existingNew = try? context.fetch(existingNewDescriptor).first {
+            if let existingNew = context.fetchOrEmpty(existingNewDescriptor, "chat.sessionReplaced.new.fetch").first {
                 existingNew.path = path
                 existingNew.isStale = false
                 if existingNew.name == nil { existingNew.name = preservedName }
@@ -524,16 +539,19 @@ final class ChatViewModel: ObservableObject {
                 let newSession = Session(id: newSessionId, path: path, name: preservedName)
                 context.insert(newSession)
             }
-            try? context.save()
+            save(context, "chat.sessionReplaced.upsert.save")
 
             // 2. Migrate messages from old → new session ID so the user keeps
             //    their conversation history.
             let msgDescriptor = FetchDescriptor<Message>(
                 predicate: #Predicate { $0.sessionId == oldSessionId }
             )
-            if let messages = try? context.fetch(msgDescriptor) {
+            var messageFetchFailure: Error?
+            let messages = context.fetchOrEmpty(msgDescriptor, "chat.sessionReplaced.messages.fetch",
+                                                failure: &messageFetchFailure)
+            if messageFetchFailure == nil {
                 for msg in messages { msg.sessionId = newSessionId }
-                try? context.save()
+                save(context, "chat.sessionReplaced.messages.save")
             }
 
             // 3. Flip currentSessionId so the view navigation follows.
@@ -577,16 +595,16 @@ final class ChatViewModel: ObservableObject {
             // 5. Delete the old Session row.
             if let oldSession {
                 context.delete(oldSession)
-                try? context.save()
+                save(context, "chat.sessionReplaced.old.save")
             }
 
             saveWorkspace(path: path, context: context)
 
         case .error(let message, let sessionId):
             if let sessionId {
-                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: "system")
+                let msg = Message(sessionId: sessionId, text: "Error: \(message)", role: MessageRole.system.rawValue)
                 context.insert(msg)
-                try? context.save()
+                save(context, "chat.error.save")
             } else if isBrowsePending {
                 isBrowsePending = false
                 browseError = message                    // the picker shows it inline; no banner
@@ -598,15 +616,15 @@ final class ChatViewModel: ObservableObject {
             break
 
         case .toolOutput(let toolName, let output, _, let sessionId):
-            let msg = Message(sessionId: sessionId, text: "[\(toolName)]\n\(output)", role: "tool")
+            let msg = Message(sessionId: sessionId, text: "[\(toolName)]\n\(output)", role: MessageRole.tool.rawValue)
             context.insert(msg)
-            try? context.save()
+            save(context, "chat.toolOutput.save")
 
         case .unknown(let raw):
             let targetSessionId = currentSessionId ?? "unknown"
-            let msg = Message(sessionId: targetSessionId, text: raw, role: "unknown")
+            let msg = Message(sessionId: targetSessionId, text: raw, role: MessageRole.unknown.rawValue)
             context.insert(msg)
-            try? context.save()
+            save(context, "chat.unknown.save")
         }
     }
 
@@ -651,7 +669,7 @@ final class ChatViewModel: ObservableObject {
 
     @discardableResult
     private func flushNextPendingMessage(for sessionId: String) -> Bool {
-        guard connectionState == .connected, statusFor(sessionId) == "idle",
+        guard connectionState == .connected, statusFor(sessionId) == .idle,
               !queueReleasePendingIdle.contains(sessionId),
               let index = pendingMessages.firstIndex(where: { $0.sessionId == sessionId }) else {
             return false
@@ -692,8 +710,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func isActiveBusy(_ id: String) -> Bool {
-        guard let state = sessionStatuses[id] else { return false }
-        return state != "idle" && state != "session_ended"
+        statusFor(id).isActive
     }
 
     private func cancelBusyWatchdog(for id: String) {
@@ -731,7 +748,7 @@ final class ChatViewModel: ObservableObject {
         reclassifyOfflineAsBusy()   // no-op on the sync path; real work on the fallback path
         var seen = Set<String>()
         for sessionId in pendingMessages.map(\.sessionId) where seen.insert(sessionId).inserted {
-            guard statusFor(sessionId) == "idle", !flushed.contains(sessionId) else { continue }
+            guard statusFor(sessionId) == .idle, !flushed.contains(sessionId) else { continue }
             flushNextPendingMessage(for: sessionId)
         }
     }
@@ -754,22 +771,23 @@ final class ChatViewModel: ObservableObject {
                 let descriptor = FetchDescriptor<Message>(
                     predicate: #Predicate { $0.id == existingId }
                 )
-                if let msg = try? context.fetch(descriptor).first {
+                if let msg = context.fetchOrEmpty(descriptor, "chat.stream.final.fetch").first {
                     msg.text += text
-                    try? context.save()
+                    save(context, "chat.stream.final.save")
                 }
             } else if !text.isEmpty {
                 // Single-shot final message (e.g. AskUserQuestion) — no prior chunks existed
-                let msg = Message(sessionId: sessionId, text: text, role: "assistant")
+                let msg = Message(sessionId: sessionId, text: text, role: MessageRole.assistant.rawValue)
                 context.insert(msg)
-                try? context.save()
+                save(context, "chat.stream.single.save")
                 streamingMessageIds[sessionId] = msg.id
             }
             if autoReadAloud, let completedId = streamingMessageIds[sessionId] ?? lastCompletedMessageIds[sessionId] {
                 let descriptor = FetchDescriptor<Message>(
                     predicate: #Predicate { $0.id == completedId }
                 )
-                if let msg = try? context.fetch(descriptor).first, msg.role == "assistant" {
+                if let msg = context.fetchOrEmpty(descriptor, "chat.stream.speech.fetch").first,
+                   msg.typedRole == .assistant {
                     speechManager.speak(msg.text)
                 }
             }
@@ -782,28 +800,33 @@ final class ChatViewModel: ObservableObject {
             let descriptor = FetchDescriptor<Message>(
                 predicate: #Predicate { $0.id == existingId }
             )
-            if let msg = try? context.fetch(descriptor).first {
+            if let msg = context.fetchOrEmpty(descriptor, "chat.stream.append.fetch").first {
                 msg.text += text
-                try? context.save()
+                save(context, "chat.stream.append.save")
             }
         } else {
-            let msg = Message(sessionId: sessionId, text: text, role: "assistant")
+            let msg = Message(sessionId: sessionId, text: text, role: MessageRole.assistant.rawValue)
             context.insert(msg)
-            try? context.save()
+            save(context, "chat.stream.first.save")
             streamingMessageIds[sessionId] = msg.id
         }
     }
 
     private func syncSessions(serverSessions: [ServerSession], context: ModelContext) {
         let allServerIds = Set(serverSessions.map(\.sessionId))
-        var conciergeIds = Set(serverSessions.filter { $0.mode == "concierge" }.map(\.sessionId))
+        var conciergeIds = Set(serverSessions.filter { $0.mode == .concierge }.map(\.sessionId))
         if let knownConciergeSessionId { conciergeIds.insert(knownConciergeSessionId) }
         if let cached = ConciergeSessionStore.cachedSessionId { conciergeIds.insert(cached) }
         let tableRows = serverSessions.filter {
-            $0.mode == "sessions" && !conciergeIds.contains($0.sessionId)
+            $0.mode == .sessions && !conciergeIds.contains($0.sessionId)
         }
         let tableIds = Set(tableRows.map(\.sessionId))
-        guard let fetched = try? context.fetch(FetchDescriptor<Session>()) else { return }
+        var sessionFetchFailure: Error?
+        let fetched = context.fetchOrEmpty(FetchDescriptor<Session>(), "chat.syncSessions.fetch",
+                                           failure: &sessionFetchFailure) { descriptor in
+            try sessionFetchOperation(context, descriptor)
+        }
+        guard sessionFetchFailure == nil else { return }
 
         // Snapshot every release-only identity before consuming reconnect bookkeeping.
         let knownIds = Set(sessionStatuses.keys).union(pendingMessages.map(\.sessionId))
@@ -843,8 +866,10 @@ final class ChatViewModel: ObservableObject {
         for server in serverSessions {
             let id = server.sessionId
             let wasBusy = isActiveBusy(id)
-            if server.state == "idle" {
-                sessionStatuses[id] = "idle"
+            if server.state == .sessionEnded {
+                endSession(id)
+            } else if server.state == .idle {
+                sessionStatuses[id] = .idle
                 sessionToolNames.removeValue(forKey: id)
                 cancelBusyWatchdog(for: id)
                 if wasBusy, !flushed.contains(id), releaseQueuedHead(for: id) {
@@ -856,7 +881,7 @@ final class ChatViewModel: ObservableObject {
                 armBusyWatchdog(for: id)
             }
         }
-        try? context.save()
+        save(context, "chat.syncSessions.save")
         if let currentSessionId, localSessions.first(where: { $0.id == currentSessionId })?.isStale == true {
             self.currentSessionId = nil
         }
@@ -875,18 +900,18 @@ final class ChatViewModel: ObservableObject {
         let msgDescriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.sessionId == sessionId }
         )
-        if let messages = try? context.fetch(msgDescriptor) {
-            for msg in messages { context.delete(msg) }
+        for msg in context.fetchOrEmpty(msgDescriptor, "chat.deleteLocal.messages.fetch") {
+            context.delete(msg)
         }
 
         let sessionDescriptor = FetchDescriptor<Session>(
             predicate: #Predicate { $0.id == sessionId }
         )
-        if let session = try? context.fetch(sessionDescriptor).first {
+        if let session = context.fetchOrEmpty(sessionDescriptor, "chat.deleteLocal.session.fetch").first {
             context.delete(session)
         }
 
-        try? context.save()
+        save(context, "chat.deleteLocal.save")
     }
 
     private func saveWorkspace(path: String, context: ModelContext) {
@@ -894,7 +919,7 @@ final class ChatViewModel: ObservableObject {
         let descriptor = FetchDescriptor<Workspace>(
             predicate: #Predicate { $0.path == path }
         )
-        if let existing = try? context.fetch(descriptor).first {
+        if let existing = context.fetchOrEmpty(descriptor, "chat.workspace.existing.fetch").first {
             existing.lastUsed = .now
         } else {
             let workspace = Workspace(path: path)
@@ -906,13 +931,11 @@ final class ChatViewModel: ObservableObject {
             sortBy: [SortDescriptor(\Workspace.lastUsed, order: .reverse)]
         )
         allDescriptor.fetchOffset = maxRecent
-        if let stale = try? context.fetch(allDescriptor) {
-            for workspace in stale {
-                context.delete(workspace)
-            }
+        for workspace in context.fetchOrEmpty(allDescriptor, "chat.workspace.stale.fetch") {
+            context.delete(workspace)
         }
 
-        try? context.save()
+        save(context, "chat.workspace.save")
     }
 
     deinit {

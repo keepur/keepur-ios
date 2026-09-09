@@ -80,7 +80,7 @@ final class ChatViewModelSocketTests: XCTestCase {
         vm.configure(context: context)
         let task = try XCTUnwrap(factory.latest)
         vm.currentSessionId = "s1"
-        vm.sessionStatuses["s1"] = "idle"
+        vm.sessionStatuses["s1"] = .idle
         vm.messageText = "hi"
         vm.sendText()
         let rowId = try XCTUnwrap(rows(role: "user").first?.id)
@@ -115,7 +115,7 @@ final class ChatViewModelSocketTests: XCTestCase {
         task.deliver(#"{"type":"status","state":"busy","sessionId":"s1"}"#)
         await settle()
 
-        XCTAssertEqual(vm.sessionStatuses["s1"], "busy")
+        XCTAssertEqual(vm.sessionStatuses["s1"], .busy)
     }
 
     func testSendIsGatedOnConnectionAndForwardsEncodedFrame() async throws {
@@ -174,7 +174,7 @@ final class ChatViewModelSocketTests: XCTestCase {
         let task = try XCTUnwrap(factory.latest)
         for (sessionId, texts) in [("s1", ["s1-first", "s1-second"]), ("s2", ["s2-first", "s2-second"])] {
             vm.currentSessionId = sessionId
-            vm.sessionStatuses[sessionId] = "idle"
+            vm.sessionStatuses[sessionId] = .idle
             for text in texts {
                 vm.messageText = text
                 vm.sendText()
@@ -282,7 +282,7 @@ final class ChatViewModelSocketTests: XCTestCase {
         vm.configure(context: context)
         let task = try XCTUnwrap(factory.latest)
         vm.currentSessionId = "s1"
-        vm.sessionStatuses["s1"] = "idle"
+        vm.sessionStatuses["s1"] = .idle
         vm.pendingAttachment = AttachmentData(data: Data([0x89, 0x50, 0x4E, 0x47]), name: "pic.png", mimeType: "image/png")
         vm.sendText()
         let row = try XCTUnwrap(rows(role: "user").first)
@@ -339,7 +339,7 @@ final class ChatViewModelSocketTests: XCTestCase {
         vm.configure(context: context)
         let task = try XCTUnwrap(factory.latest)
         vm.currentSessionId = "gone"
-        vm.sessionStatuses["gone"] = "thinking"
+        vm.sessionStatuses["gone"] = .thinking
         vm.messageText = "late"
         vm.sendText()
         let rowId = try XCTUnwrap(rows(role: "user").first?.id)
@@ -404,7 +404,7 @@ private final class QueueReleaseHarness {
         self.vm = vm
         task = try XCTUnwrap(factory.latest)
         vm.currentSessionId = "s1"
-        vm.sessionStatuses["s1"] = "idle"
+        vm.sessionStatuses["s1"] = .idle
     }
     func settle() async { for _ in 0..<8 { await Task.yield() } }
     func handshake() async { task.completeHandshake(); await settle() }
@@ -703,15 +703,15 @@ extension ChatViewModelSocketTests {
                 }
                 XCTAssertTrue(h.vm.pendingReasons.isEmpty)
                 XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 0)
-                h.vm.sessionStatuses["s1"] = "idle"
+                h.vm.sessionStatuses["s1"] = .idle
                 try h.send("fresh")
                 XCTAssertEqual(try h.messages(), ["A", "fresh"], "release-only admission gate must be cleared")
                 // For cleanup paths that did not consume initial sync, prove the old skip ID is gone too.
                 if cleanup != "absent" {
-                    h.vm.sessionStatuses["s1"] = "busy"
+                    h.vm.sessionStatuses["s1"] = .busy
                     let next = try h.send("new-queued")
                     XCTAssertEqual(h.vm.pendingReasons[next], .busy)
-                    h.vm.sessionStatuses["s1"] = "idle"
+                    h.vm.sessionStatuses["s1"] = .idle
                     try await h.list()
                     XCTAssertEqual(try h.messages(), ["A", "fresh", "new-queued"])
                 }
@@ -768,7 +768,7 @@ extension ChatViewModelSocketTests {
         try XCTUnwrap(stateSubscription).cancel()
         h.socket.disconnect()
         XCTAssertTrue(h.vm.pendingReasons.isEmpty)
-        XCTAssertEqual(h.vm.statusFor("s1"), "idle")
+        XCTAssertEqual(h.vm.statusFor("s1"), .idle)
         XCTAssertEqual(h.vm.connectionState, .connected)
         XCTAssertEqual(h.socket.state, .disconnected)
         let aID = try h.send("A", attachment: h.attachment())

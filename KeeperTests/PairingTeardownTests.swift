@@ -60,7 +60,7 @@ final class PairingTeardownTests: XCTestCase {
             chat.configure(context: context)
             team.configure(context: context, capabilityManager: capabilities)
             chat.currentSessionId = "s1"
-            chat.sessionStatuses["s1"] = "idle"
+            chat.sessionStatuses["s1"] = .idle
             team.activeChannelId = "channel-1"
         }
         func close() { chat.disconnect(); team.disconnect() }

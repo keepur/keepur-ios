@@ -8,16 +8,16 @@ struct MessageBubble: View {
     @State private var isPulsing = false
 
     var body: some View {
-        switch message.role {
-        case "user":
+        switch message.typedRole {
+        case .user:
             userBubble
-        case "tool":
+        case .tool:
             toolBubble
-        case "system":
+        case .system:
             systemBubble
-        case "unknown":
+        case .unknown:
             unknownBubble
-        default:
+        case .assistant, nil:
             assistantBubble
         }
     }

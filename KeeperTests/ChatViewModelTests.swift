@@ -103,7 +103,7 @@ final class ChatViewModelTests: XCTestCase {
         let streamId = try XCTUnwrap(h.messages("a", role: "assistant").first?.id)
         try await h.receive(["type": "session_replaced", "oldSessionId": "a", "newSessionId": "new", "path": "/work"])
         XCTAssertEqual(h.vm.currentSessionId, "new"); XCTAssertNil(h.vm.sessionStatuses["a"])
-        XCTAssertEqual(h.vm.sessionStatuses["new"], "tool_running"); XCTAssertEqual(h.vm.sessionToolNames["new"], "shell")
+        XCTAssertEqual(h.vm.sessionStatuses["new"], .toolRunning); XCTAssertEqual(h.vm.sessionToolNames["new"], "shell")
         XCTAssertNotNil(h.vm.pendingApprovals["new"]); XCTAssertNil(h.vm.pendingApprovals["a"])
         XCTAssertEqual(try h.sessions().map(\.id), ["new"]); XCTAssertEqual(try h.sessions().first?.name, "Named")
         let migrated = try h.messages("new"); XCTAssertFalse(migrated.isEmpty)
@@ -127,7 +127,7 @@ final class ChatViewModelTests: XCTestCase {
             let queued = try h.send("held", id: "c")
             try await h.list([("normal", "idle", "sessions"), ("c", "busy", legacy ? "sessions" : "concierge")])
             XCTAssertEqual(h.vm.serverSessions.count, 2); XCTAssertEqual(h.vm.currentSessionId, "c")
-            XCTAssertEqual(h.vm.sessionStatuses["c"], "tool_running"); XCTAssertEqual(h.vm.pendingReasons[queued], .busy)
+            XCTAssertEqual(h.vm.sessionStatuses["c"], .toolRunning); XCTAssertEqual(h.vm.pendingReasons[queued], .busy)
             let rows = try h.sessions(); XCTAssertEqual(Set(rows.map(\.id)), ["old", "normal"])
             XCTAssertEqual(rows.first { $0.id == "old" }?.isStale, true)
             XCTAssertTrue(try h.workspaces().isEmpty)
@@ -170,17 +170,17 @@ final class ChatViewModelTests: XCTestCase {
         let a = try h.send("A", id: "c"), b = try h.send("B", id: "c")
         let initial = try h.frames("list_sessions").count
         try await eventually("first watchdog query") { try h.frames("list_sessions").count > initial }
-        XCTAssertEqual(h.vm.sessionStatuses["c"], "tool_running"); XCTAssertEqual(h.vm.sessionToolNames["c"], "shell")
+        XCTAssertEqual(h.vm.sessionStatuses["c"], .toolRunning); XCTAssertEqual(h.vm.sessionToolNames["c"], "shell")
         XCTAssertNotNil(h.vm.pendingApprovals["c"]); XCTAssertEqual(h.vm.pendingReasons, [a: .busy, b: .busy])
         XCTAssertTrue(try h.frames("message").isEmpty)
         let first = try h.frames("list_sessions").count
         try await eventually("no-reply watch remains armed") { try h.frames("list_sessions").count > first }
         try await h.list([("c", "busy", "concierge")])
         let reset = try h.frames("list_sessions").count
-        XCTAssertEqual(h.vm.sessionStatuses["c"], "tool_running")
+        XCTAssertEqual(h.vm.sessionStatuses["c"], .toolRunning)
         try await eventually("busy reply rearms") { try h.frames("list_sessions").count > reset }
         try await h.list([("c", "idle", "concierge")])
-        XCTAssertEqual(h.vm.sessionStatuses["c"], "idle"); XCTAssertNil(h.vm.sessionToolNames["c"])
+        XCTAssertEqual(h.vm.sessionStatuses["c"], .idle); XCTAssertNil(h.vm.sessionToolNames["c"])
         XCTAssertEqual(try h.frames("message").compactMap { $0["text"] as? String }, ["A"])
         XCTAssertEqual(h.vm.pendingReasons, [b: .busy])
         try await h.list([("c", "idle", "concierge")])
@@ -235,8 +235,8 @@ extension ChatViewModelTests {
             case .sessionList(let sessions):
                 XCTAssertEqual(Set(sessions.map(\.sessionId)), ["n", "c"])
                 XCTAssertEqual(h.vm.serverSessions.count, 2)
-                XCTAssertEqual(h.vm.sessionStatuses["n"], "idle")
-                XCTAssertEqual(h.vm.sessionStatuses["c"], "busy")
+                XCTAssertEqual(h.vm.sessionStatuses["n"], .idle)
+                XCTAssertEqual(h.vm.sessionStatuses["c"], .busy)
                 XCTAssertNil(try? h.sessions().first { $0.id == "c" })
                 return "list"
             case .unknown(let raw):
@@ -352,12 +352,12 @@ extension ChatViewModelTests {
             let queued = try h.send("held", id: "watched", attachment: AttachmentData(
                 data: Data([4, 5]), name: "held.bin", mimeType: "application/octet-stream"))
             let oldStream = try XCTUnwrap(h.messages("watched", role: "assistant").first?.id)
-            XCTAssertEqual(h.vm.sessionStatuses["watched"], "tool_running")
+            XCTAssertEqual(h.vm.sessionStatuses["watched"], .toolRunning)
             XCTAssertEqual(h.vm.sessionToolNames["watched"], "shell")
             XCTAssertEqual(h.vm.pendingApprovals["watched"]?.id, "use")
             XCTAssertEqual(h.vm.pendingReasons[queued], .busy)
             XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
-            XCTAssertEqual(h.vm.sessionStatuses["other"], "idle")
+            XCTAssertEqual(h.vm.sessionStatuses["other"], .idle)
             XCTAssertNotNil(try h.sessions().first { $0.id == "other" })
 
             try await h.list([("other", "idle", "sessions")])
@@ -366,7 +366,7 @@ extension ChatViewModelTests {
             XCTAssertNil(h.vm.pendingApprovals["watched"])
             XCTAssertNil(h.vm.pendingReasons[queued])
             XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 0)
-            XCTAssertEqual(h.vm.sessionStatuses["other"], "idle")
+            XCTAssertEqual(h.vm.sessionStatuses["other"], .idle)
             XCTAssertNotNil(try h.sessions().first { $0.id == "other" })
             XCTAssertTrue(try h.frames("message").isEmpty)
             let queries = try h.frames("list_sessions").count
@@ -390,7 +390,7 @@ extension ChatViewModelTests {
             try await h.approval("use")
             let queued = try h.send("held", attachment: AttachmentData(
                 data: Data([7]), name: "held.bin", mimeType: "application/octet-stream"))
-            XCTAssertEqual(h.vm.sessionStatuses["a"], "tool_running")
+            XCTAssertEqual(h.vm.sessionStatuses["a"], .toolRunning)
             XCTAssertEqual(h.vm.sessionToolNames["a"], "shell")
             XCTAssertEqual(h.vm.pendingApprovals["a"]?.id, "use")
             XCTAssertEqual(h.vm.pendingReasons[queued], .busy)
@@ -412,7 +412,7 @@ extension ChatViewModelTests {
                            countAfterAction, "obsolete watchdog fired after \(action)")
 
             if action == "disconnect" {
-                XCTAssertEqual(h.vm.sessionStatuses["a"], "tool_running")
+                XCTAssertEqual(h.vm.sessionStatuses["a"], .toolRunning)
                 XCTAssertEqual(h.vm.pendingReasons[queued], .busy)
                 XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
                 h.vm.reconnect()
@@ -464,8 +464,8 @@ extension ChatViewModelTests {
             try await Task.sleep(for: .milliseconds(350))
             XCTAssertEqual(try h.frames("list_sessions").count, queries)
             XCTAssertTrue(try h.frames("message").isEmpty)
-            XCTAssertEqual(h.vm.sessionStatuses["old"], "idle")
-            XCTAssertEqual(h.vm.sessionStatuses["new"], "idle")
+            XCTAssertEqual(h.vm.sessionStatuses["old"], .idle)
+            XCTAssertEqual(h.vm.sessionStatuses["new"], .idle)
         }
         do {
             let h = try ChatTestHarness(watchdog: .milliseconds(150)); defer { h.close() }
@@ -478,7 +478,7 @@ extension ChatViewModelTests {
             try await eventually("replacement busy lifecycle remains watched") {
                 try h.frames("list_sessions").count > queries
             }
-            XCTAssertEqual(h.vm.sessionStatuses["new"], "busy")
+            XCTAssertEqual(h.vm.sessionStatuses["new"], .busy)
         }
     }
 
@@ -496,7 +496,7 @@ extension ChatViewModelTests {
         try await eventually("reset deadline eventually fires", timeout: .milliseconds(250)) {
             try h.frames("list_sessions").count == reset + 1
         }
-        XCTAssertEqual(h.vm.sessionStatuses["a"], "tool_running")
+        XCTAssertEqual(h.vm.sessionStatuses["a"], .toolRunning)
         XCTAssertEqual(h.vm.sessionToolNames["a"], "shell")
         XCTAssertTrue(h.vm.pendingReasons.isEmpty)
         XCTAssertTrue(try h.frames("message").isEmpty)
@@ -518,7 +518,7 @@ extension ChatViewModelTests {
         h.vm.registerConciergeSession(h.store.cachedSession?.sessionId)
         var observed = false
         let observer = h.vm.incoming.sink { frame in
-            guard case .sessionInfo("cached", "/cached", "sessions") = frame else { return }
+            guard case .sessionInfo("cached", "/cached", .sessions) = frame else { return }
             observed = true
             XCTAssertEqual(h.vm.currentSessionId, "cached")
             XCTAssertEqual(h.vm.currentPath, "/cached")

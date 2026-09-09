@@ -69,9 +69,9 @@ struct BeekeeperRootView: View {
         let descriptor = FetchDescriptor<Session>(
             predicate: #Predicate { $0.id == cachedId }
         )
-        guard let row = try? modelContext.fetch(descriptor).first else { return }
+        guard let row = modelContext.fetchOrEmpty(descriptor, "view.conciergeCleanup.fetch").first else { return }
         modelContext.delete(row)
-        try? modelContext.save()
+        modelContext.saveReporting("view.conciergeCleanup.save")
     }
 }
 
@@ -277,7 +277,7 @@ final class ConciergeViewModel: ObservableObject {
 
         let spawned = await request(run, timeout: .seconds(5), match: { frame in
             guard case .sessionInfo(let id, let path, let mode) = frame,
-                  mode == "concierge", !path.isEmpty else { return nil }
+                  mode == .concierge, !path.isEmpty else { return nil }
             return .info(Identity(sessionId: id, path: path))
         }, send: { run.viewModel.newConciergeSession() })
         guard run.mayContinue(after: spawned) else { return }

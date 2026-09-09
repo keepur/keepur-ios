@@ -73,7 +73,10 @@ final class ChatTestHarness {
     private var observer: AnyCancellable?
 
     init(watchdog: Duration = .seconds(90), configure: Bool = true,
-         speech: SpeechManager? = nil) throws {
+         speech: SpeechManager? = nil,
+         saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+         sessionFetchOperation: @escaping (ModelContext, FetchDescriptor<Session>) throws -> [Session] = { try $0.fetch($1) },
+         lastErrorAutoClear: Duration = .seconds(6)) throws {
         let credentials = FakeCredentialStore(), factory = FakeWebSocketTaskFactory()
         let suiteName = "ChatTestHarness.\(UUID().uuidString)"
         let container = try ModelContainer(for: Session.self, Message.self, Workspace.self,
@@ -84,7 +87,10 @@ final class ChatTestHarness {
             endpoint: { URL(string: "wss://unit.test")! },
             taskFactory: { factory.make(url: $0) })
         let vm = ChatViewModel(socket: socket, credentials: credentials,
-                              speech: speech, staleBusyTimeout: watchdog)
+                              speech: speech, staleBusyTimeout: watchdog,
+                              lastErrorAutoClear: lastErrorAutoClear,
+                              saveOperation: saveOperation,
+                              sessionFetchOperation: sessionFetchOperation)
         self.credentials = credentials
         self.factory = factory
         self.suiteName = suiteName

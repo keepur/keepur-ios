@@ -277,9 +277,9 @@ final class ConciergeViewModelTests: XCTestCase {
             } catch {
                 XCTFail("Failed to capture synchronous flow probe: \(error)")
             }
-            h.vm.incoming.send(.sessionInfo(sessionId: "other", path: "/other", mode: "sessions"))
-            h.vm.incoming.send(.sessionInfo(sessionId: "cached", path: "/first", mode: "sessions"))
-            h.vm.incoming.send(.sessionInfo(sessionId: "cached", path: "/second", mode: "concierge"))
+            h.vm.incoming.send(.sessionInfo(sessionId: "other", path: "/other", mode: .sessions))
+            h.vm.incoming.send(.sessionInfo(sessionId: "cached", path: "/first", mode: .sessions))
+            h.vm.incoming.send(.sessionInfo(sessionId: "cached", path: "/second", mode: .concierge))
         }
         coordinator.start(viewModel: h.vm, store: h.store)
         try await eventually("synchronous reply consumed") {

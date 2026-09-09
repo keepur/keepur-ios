@@ -21,8 +21,10 @@ final class TeamViewModelTests: XCTestCase {
     private var factory: FakeWebSocketTaskFactory!
     private var capability: CapabilityManager!   // held here: TeamViewModel keeps it weak
     private var vm: TeamViewModel!
+    private var savedHive: String?
 
     override func setUp() async throws {
+        savedHive = UserDefaults.standard.string(forKey: "selectedHive")
         UserDefaults.standard.removeObject(forKey: "selectedHive")
         let schema = Schema([TeamChannel.self, TeamMessage.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -39,13 +41,17 @@ final class TeamViewModelTests: XCTestCase {
         capability = nil
         context = nil
         container = nil
-        UserDefaults.standard.removeObject(forKey: "selectedHive")
+        if let savedHive { UserDefaults.standard.set(savedHive, forKey: "selectedHive") }
+        else { UserDefaults.standard.removeObject(forKey: "selectedHive") }
     }
 
     // MARK: - Helpers
 
     /// (Re)build `vm` on a fresh socket; `setUp` uses the default auto-clear.
-    private func makeViewModel(lastErrorAutoClear: Duration = .seconds(6)) {
+    private func makeViewModel(
+        lastErrorAutoClear: Duration = .seconds(6),
+        saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() }
+    ) {
         let factory = self.factory!
         let socket = BeekeeperSocket(
             config: .standard,
@@ -53,7 +59,12 @@ final class TeamViewModelTests: XCTestCase {
             endpoint: { URL(string: "wss://unit.test")! },
             taskFactory: { factory.make(url: $0) }   // closure literal, not `factory.make`
         )
-        vm = TeamViewModel(socket: socket, credentials: credentials, lastErrorAutoClear: lastErrorAutoClear)
+        vm = TeamViewModel(
+            socket: socket,
+            credentials: credentials,
+            lastErrorAutoClear: lastErrorAutoClear,
+            saveOperation: saveOperation
+        )
         vm.configure(context: context, capabilityManager: capability)
         vm.activeChannelId = "channel-1"
     }
@@ -95,6 +106,13 @@ final class TeamViewModelTests: XCTestCase {
         await settle()
         XCTAssertEqual(vm.connectionState, .connected)
         return task
+    }
+
+    private func receivePersistenceFrame(_ object: [String: Any], on task: FakeWebSocketTask) async throws {
+        try await eventually("Team receive armed") { task.receiveRequested }
+        let data = try JSONSerialization.data(withJSONObject: object)
+        task.deliver(String(decoding: data, as: UTF8.self))
+        try await eventually("Team handler completed and receive rearmed") { task.receiveRequested }
     }
 
     // MARK: - Child A
@@ -322,5 +340,151 @@ final class TeamViewModelTests: XCTestCase {
         second.completeHandshake()
         await settle()
         XCTAssertTrue(try messageFrames(second).isEmpty, "nothing from the old pairing is re-sent")
+    }
+
+    func testFailedOptimisticSaveRetainsOfflineAttachmentAndResendsNormally() async throws {
+        let sentinel = NSError(domain: "TeamPersistenceTests", code: 1)
+        var fail = true, attempts = 0
+        makeViewModel(saveOperation: { context in
+            attempts += 1
+            if fail { throw sentinel }
+            try context.save()
+        })
+        context.autosaveEnabled = false
+        capability._setHivesForTesting(["hive-1"])
+        vm.connectIfPossible()
+        let task = try XCTUnwrap(factory.latest)
+        let bytes = Data([4, 4, 4])
+        vm.pendingAttachment = AttachmentData(data: bytes, name: "a.bin", mimeType: "application/octet-stream")
+        vm.messageText = "draft"
+        vm.sendMessage(text: "queued")
+        let row = try XCTUnwrap(rows().first)
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(vm.lastError?.text, "Couldn't save. Your last change may not be kept.")
+        let errorID = try XCTUnwrap(vm.lastError?.id)
+        XCTAssertEqual(vm.messageText, ""); XCTAssertNil(vm.pendingAttachment)
+        XCTAssertTrue(row.pending); XCTAssertEqual(row.typedSenderType, .person)
+        XCTAssertEqual(vm.offlineEntries, [.init(localId: row.id, hive: "hive-1")])
+        XCTAssertEqual(vm.queuedAttachmentCountForTesting, 1)
+        XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 0)
+        XCTAssertTrue(task.sentTexts.isEmpty)
+        fail = false
+        task.completeHandshake()
+        try await eventually("Team queued payload resent") { try self.messageFrames(task).count == 1 }
+        XCTAssertEqual(try messageFrames(task).map(\.text), ["queued"])
+        let file = try XCTUnwrap(sentFrames(task).first { $0["type"] as? String == "file" })
+        XCTAssertEqual(file["data"] as? String, bytes.base64EncodedString())
+        XCTAssertTrue(vm.offlineEntries.isEmpty); XCTAssertEqual(vm.queuedAttachmentCountForTesting, 0)
+        XCTAssertTrue(row.pending, "socket acceptance is not ack")
+        XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 1)
+        let request = try XCTUnwrap(messageFrames(task).first?.id)
+        try await receivePersistenceFrame(["type": "ack", "id": request], on: task)
+        XCTAssertFalse(row.pending); XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 0)
+        XCTAssertEqual(vm.lastError?.id, errorID, "successful ack save leaves error timer/identity alone")
+        vm.disconnect()
+    }
+
+    func testFailedSaveKeepsConnectedSendAndConditionalAckContinuation() async throws {
+        let sentinel = NSError(domain: "TeamPersistenceTests", code: 2)
+        var fail = true, attempts = 0
+        makeViewModel(saveOperation: { context in
+            attempts += 1
+            if fail { throw sentinel }
+            try context.save()
+        })
+        context.autosaveEnabled = false
+        let task = try await connectHive1()
+        vm.messageText = "direct"; vm.sendMessage(text: "direct")
+        let row = try XCTUnwrap(rows().first), request = try XCTUnwrap(messageFrames(task).first?.id)
+        XCTAssertEqual(attempts, 1); XCTAssertEqual(vm.messageText, "")
+        XCTAssertTrue(row.pending); XCTAssertTrue(vm.offlineEntries.isEmpty)
+        XCTAssertEqual(try messageFrames(task).map(\.text), ["direct"])
+        XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 1)
+        XCTAssertEqual(vm.lastError?.text, "Couldn't save. Your last change may not be kept.")
+        vm.lastError = nil // normal supported dismissal; subsequent error comes from actual ack save.
+        try await receivePersistenceFrame(["type": "ack", "id": request], on: task)
+        XCTAssertEqual(attempts, 2)
+        XCTAssertEqual(vm.lastError?.text, "Couldn't save. Your last change may not be kept.")
+        XCTAssertFalse(row.pending); XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 0)
+        XCTAssertEqual(vm.activeMessages.first { $0.id == row.id }?.pending, false)
+        fail = false
+        let previous = try XCTUnwrap(vm.lastError?.id)
+        vm.sendMessage(text: "later")
+        XCTAssertEqual(vm.lastError?.id, previous)
+        vm.disconnect()
+    }
+
+    func testMissingOfflineRowDropsOnlyThatEntryAndPreservesResendOrder() async throws {
+        context.autosaveEnabled = false
+        capability._setHivesForTesting(["hive-1"]); vm.connectIfPossible()
+        let task = try XCTUnwrap(factory.latest)
+        vm.sendMessage(text: "first")
+        vm.pendingAttachment = AttachmentData(data: Data([9]), name: "gone.bin", mimeType: "application/octet-stream")
+        vm.sendMessage(text: "missing")
+        vm.sendMessage(text: "last")
+        let missing = try XCTUnwrap(rows().first { $0.text == "missing" })
+        let first = try XCTUnwrap(rows().first { $0.text == "first" })
+        let last = try XCTUnwrap(rows().first { $0.text == "last" })
+        XCTAssertEqual(vm.offlineMessageIds, [first.id, missing.id, last.id])
+        context.delete(missing); try context.save()
+        task.completeHandshake()
+        try await eventually("remaining rows resent") { try self.messageFrames(task).count == 2 }
+        XCTAssertEqual(try messageFrames(task).map(\.text), ["first", "last"])
+        XCTAssertTrue(vm.offlineEntries.isEmpty); XCTAssertEqual(vm.queuedAttachmentCountForTesting, 0)
+        XCTAssertEqual(vm.pendingMessageRequestCountForTesting, 2)
+        XCTAssertTrue(first.pending); XCTAssertTrue(last.pending)
+        XCTAssertTrue(try sentFrames(task).filter { $0["type"] as? String == "file" }.isEmpty)
+        vm.disconnect()
+    }
+
+    func testMissingChannelEventsRetainSelectionAndMessagesButJoinStillSends() async throws {
+        let task = try await connectHive1()
+        vm.sendMessage(text: "retained")
+        let id = try XCTUnwrap(rows().first?.id)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<TeamChannel>()).isEmpty)
+        for event in ["left", "archived"] {
+            try await receivePersistenceFrame([
+                "type": "channel_event", "channelId": "channel-1", "event": event,
+                "detail": ["memberId": "device-old"], "id": "event-\(event)"
+            ], on: task)
+            XCTAssertEqual(vm.activeChannelId, "channel-1")
+            XCTAssertEqual(vm.activeMessages.map(\.id), [id])
+        }
+        let before = try sentFrames(task).filter { $0["type"] as? String == "join" }.count
+        vm.joinChannel(channelId: "missing")
+        XCTAssertEqual(try sentFrames(task).filter { $0["type"] as? String == "join" }.count, before + 1)
+        vm.disconnect()
+    }
+
+    func testUnknownTeamKindsAndSendersPersistWithoutKnownTypeMembership() async throws {
+        let task = try await connectHive1()
+        vm.agents = [TeamAgentInfo(id: "agent-1", name: "Agent", icon: "", title: nil,
+                                  model: "", status: .idle, tools: [], schedule: [], channels: [],
+                                  messagesProcessed: 0, lastActivity: nil)]
+        try await receivePersistenceFrame([
+            "type": "channel_list", "id": "channels", "channels": [
+                ["id": "channel-1", "type": "future-kind", "name": "Raw name", "members": ["agent-1"]]
+            ]
+        ], on: task)
+        let channel = try XCTUnwrap(vm.channels.first)
+        XCTAssertEqual(channel.type, "future-kind"); XCTAssertEqual(channel.kind, .unknown("future-kind"))
+        XCTAssertEqual(vm.displayName(for: channel), "Raw name")
+        XCTAssertEqual(vm.sortedAgents.count, 1); XCTAssertNil(vm.sortedAgents.first?.dmChannel)
+        context.insert(TeamMessage(id: "live", channelId: "channel-1", senderId: "other",
+                                   senderType: SenderType.agent.wireValue, senderName: "Other", text: "same"))
+        try context.save()
+        let history: [[String: Any]] = ["one", "two"].map { id in
+            ["id": id, "senderId": "other", "senderType": "future-sender", "senderName": "Other",
+             "text": "same", "createdAt": "2026-09-07T12:00:00.000Z"]
+        }
+        try await receivePersistenceFrame([
+            "type": "history", "channelId": "channel-1", "hasMore": false, "id": "history", "messages": history
+        ], on: task)
+        let inserted = try rows().filter { $0.id == "one" || $0.id == "two" }
+        XCTAssertEqual(inserted.count, 2, "unknown sender must not enter agent content-key dedup")
+        XCTAssertTrue(inserted.allSatisfy { $0.senderType == "future-sender" && $0.typedSenderType == .unknown("future-sender") })
+        XCTAssertFalse(vm.isLoadingHistory); XCTAssertFalse(vm.hasMoreHistory)
+        XCTAssertEqual(channel.lastMessageText, "same"); XCTAssertEqual(vm.activeMessages.count, 3)
+        vm.disconnect()
     }
 }
