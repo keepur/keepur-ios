@@ -15,7 +15,9 @@ final class TeamTestHarness {
     var task: FakeWebSocketTask { factory.latest! }
     let date = Date(timeIntervalSince1970: 1_700_000_000)
 
-    init(saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+    init(dmTimeout: Duration = .seconds(10),
+         capabilityRefreshOperation: @escaping (CapabilityManager) async -> Void = { _ in },
+         saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
          channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
          cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }) throws {
         savedHive = UserDefaults.standard.string(forKey: "selectedHive")
@@ -28,6 +30,8 @@ final class TeamTestHarness {
         socket = BeekeeperSocket(credentials: credentials, endpoint: { URL(string: "wss://unit.test")! },
                                  taskFactory: { factory.make(url: $0) })
         vm = TeamViewModel(socket: socket, credentials: credentials, lastErrorAutoClear: .seconds(30),
+                           dmTimeout: dmTimeout,
+                           capabilityRefreshOperation: capabilityRefreshOperation,
                            saveOperation: saveOperation,
                            channelInventoryOperation: channelInventoryOperation,
                            cleanupMessageFetchOperation: cleanupMessageFetchOperation)
@@ -76,6 +80,23 @@ final class TeamTestHarness {
     func list(_ ids: [String]) async throws {
         try await receive(["type": "channel_list", "id": UUID().uuidString,
             "channels": ids.map { ["id": $0, "type": "channel", "name": $0, "members": ["device-old"]] }])
+    }
+    func agent(_ id: String) -> TeamAgentInfo {
+        TeamAgentInfo(id: id, name: id, icon: "", title: nil, model: "", status: .idle,
+                      tools: [], schedule: [], channels: [], messagesProcessed: 0, lastActivity: nil)
+    }
+    func dmRequest(_ agent: String) throws -> String {
+        try XCTUnwrap(frames("command").last {
+            $0["name"] as? String == "dm" && $0["args"] as? [String] == [agent]
+        }?["id"] as? String)
+    }
+    func systemReply(_ request: String, text: String = "created") async throws {
+        try await receive(["type": "message", "agentId": "system", "agentName": "System", "text": text, "replyTo": request])
+    }
+    func dmList(_ agent: String, kind: String = "dm", others: [String] = []) async throws {
+        var rows: [[String: Any]] = [["id": "dm-" + agent, "type": kind, "name": "DM", "members": ["device-old", agent]]]
+        rows += others.map { ["id": "dm-" + $0, "type": "dm", "name": "DM", "members": ["device-old", $0]] }
+        try await receive(["type": "channel_list", "id": UUID().uuidString, "channels": rows])
     }
     func history(_ request: String, channel: String, rows: [[String: Any]], more: Bool = false) async throws {
         try await receive(["type": "history", "id": request, "channelId": channel, "messages": rows, "hasMore": more])

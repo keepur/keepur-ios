@@ -86,6 +86,12 @@ final class TeamViewModel: ObservableObject {
         let generation: UUID
         let hive: String
     }
+    private struct DMAttempt {
+        let token: UUID
+        let requestId: String
+        let agentId: String
+        let owner: RequestOwner
+    }
     private struct HistoryRequest {
         let id: String
         let channelId: String
@@ -94,6 +100,9 @@ final class TeamViewModel: ObservableObject {
     private var connectionGeneration = UUID()
     private var activeHistoryRequest: HistoryRequest?
     private var seedHistoryRequests: [String: HistoryRequest] = [:]
+    private var dmAttempt: DMAttempt?
+    private var dmTask: Task<Void, Never>?
+    private var suppressedDMRequestIds = Set<String>()
 
     private var protectedMessageIds: Set<String> {
         Set(offlineEntries.map(\.localId)).union(pendingMessageIds.values)
@@ -103,6 +112,68 @@ final class TeamViewModel: ObservableObject {
         guard connectionState == .connected, let hive = activeHive else { return nil }
         return RequestOwner(generation: connectionGeneration, hive: hive)
     }
+    private func armDM(requestId: String, agentId: String, owner: RequestOwner) {
+        let attempt = DMAttempt(token: UUID(), requestId: requestId, agentId: agentId, owner: owner)
+        dmAttempt = attempt
+        pendingAgentDM = agentId
+        pendingDMRequestId = requestId
+        suppressedDMRequestIds.insert(requestId)
+        let delay = dmTimeout
+        dmTask?.cancel()
+        dmTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard !Task.isCancelled else { return }
+            self?.expireDM(token: attempt.token, owner: attempt.owner)
+        }
+    }
+
+    private func expireDM(token: UUID, owner: RequestOwner) {
+        guard let attempt = dmAttempt, attempt.token == token,
+              attempt.owner == owner, currentRequestOwner == owner else { return }
+        pendingAgentDM = nil
+        if pendingDMRequestId == attempt.requestId { pendingDMRequestId = nil }
+        pendingNewCommands.remove(attempt.requestId)
+        pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        suppressedDMRequestIds.remove(attempt.requestId)
+        dmAttempt = nil
+        dmTask = nil
+        lastError = UserFacingError("Couldn't open a direct message. Try again.")
+    }
+
+    private func cancelDM() {
+        if let attempt = dmAttempt {
+            pendingNewCommands.remove(attempt.requestId)
+            pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        }
+        dmTask?.cancel()
+        dmTask = nil
+        dmAttempt = nil
+        pendingAgentDM = nil
+        pendingDMRequestId = nil
+        suppressedDMRequestIds.removeAll()
+    }
+
+    private func completeDMIfAvailable() {
+        guard let attempt = dmAttempt, attempt.owner == currentRequestOwner,
+              let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(attempt.agentId) }) else { return }
+        dmTask?.cancel()
+        dmTask = nil
+        dmAttempt = nil
+        pendingAgentDM = nil
+        pendingNewCommands.remove(attempt.requestId)
+        pendingCommandChannels.removeValue(forKey: attempt.requestId)
+        // Keep its outstanding suppression ID even if the next tap begins another DM.
+        selectChannel(dm.id)
+    }
+
+    private func retireConnectionWork() {
+        pendingCommandChannels.removeAll()
+        pendingNewCommands.removeAll()
+        cancelDM()
+        retireHistoryRequests()
+        connectionGeneration = UUID()
+    }
+
     private func retireFullHistory() {
         activeHistoryRequest = nil
         isLoadingHistory = false
@@ -136,12 +207,16 @@ final class TeamViewModel: ObservableObject {
     private var activeHive: String?
     private var lastErrorTimer: Task<Void, Never>?
     private let lastErrorAutoClear: Duration
+    private let dmTimeout: Duration
+    private let capabilityRefreshOperation: (CapabilityManager) async -> Void
     private static let notConnectedText = "Not connected. Try again when reconnected."
 
     init(
         socket: BeekeeperSocket? = nil,
         credentials: CredentialStore = KeychainCredentialStore(),
         lastErrorAutoClear: Duration = .seconds(6),
+        dmTimeout: Duration = .seconds(10),
+        capabilityRefreshOperation: @escaping (CapabilityManager) async -> Void = { await $0.refresh() },
         saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
         channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
         cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }
@@ -149,6 +224,8 @@ final class TeamViewModel: ObservableObject {
         self.socket = socket ?? BeekeeperSocket(config: .standard, credentials: credentials)
         self.credentials = credentials
         self.lastErrorAutoClear = lastErrorAutoClear
+        self.dmTimeout = dmTimeout
+        self.capabilityRefreshOperation = capabilityRefreshOperation
         self.saveOperation = saveOperation
         self.channelInventoryOperation = channelInventoryOperation
         self.cleanupMessageFetchOperation = cleanupMessageFetchOperation
@@ -157,6 +234,11 @@ final class TeamViewModel: ObservableObject {
         self.socket.$state
             .sink { [weak self] state in self?.handleSocketState(state) }
             .store(in: &subscriptions)
+    }
+
+    deinit {
+        dmTask?.cancel()
+        lastErrorTimer?.cancel()
     }
 
     // MARK: - Setup
@@ -190,14 +272,11 @@ final class TeamViewModel: ObservableObject {
               let channel = manager.selectedHive,
               manager.hives.contains(channel) else {
             Log.team.info("connectIfPossible: no valid selectedHive; disconnecting")
-            socket.disconnect()
+            disconnect()
             return
         }
-        Log.team.info("connectIfPossible: channel=\(channel, privacy: .public)")
-        if activeHive != channel {
-            retireHistoryRequests()
-            connectionGeneration = UUID()
-        }
+        Log.team.info("connectIfPossible: connecting selected hive")
+        if activeHive != channel, connectionState != .connected { retireConnectionWork() }
         socket.connect(channel: channel)
         activeHive = channel   // after connect returns — see the activeHive doc comment
     }
@@ -218,8 +297,7 @@ final class TeamViewModel: ObservableObject {
         connectionState = state
         if previous == .connected, state != .connected {
             moveUnackedToOffline()
-            retireHistoryRequests()
-            connectionGeneration = UUID()
+            retireConnectionWork()
         }
         if case .reconnecting(let attempt) = state, state != previous, attempt == 1 {
             refreshCapabilitiesAfterConnectionLost()
@@ -228,8 +306,9 @@ final class TeamViewModel: ObservableObject {
 
     private func refreshCapabilitiesAfterConnectionLost() {
         guard let manager = capabilityManager else { return }
+        let refresh = capabilityRefreshOperation
         Task { [weak self] in
-            await manager.refresh()
+            await refresh(manager)
             guard let self else { return }
             if let current = manager.selectedHive, manager.hives.contains(current) {
                 // Hive still exists; the socket keeps backing off and the banner offers retry-now.
@@ -245,11 +324,8 @@ final class TeamViewModel: ObservableObject {
     /// Clears no queue state on purpose: entries keep their hive stamp and go out on
     /// the next connect to that hive (§7 *Hive switch*).
     func disconnect() {
-        retireHistoryRequests()
-        connectionGeneration = UUID()
-        pendingAgentDM = nil
-        pendingDMRequestId = nil
         socket.disconnect()
+        retireConnectionWork()
     }
 
     // MARK: - Sending
@@ -394,10 +470,7 @@ final class TeamViewModel: ObservableObject {
     // MARK: - Private: Connection
 
     private func onConnected() {
-        retireHistoryRequests()
-        connectionGeneration = UUID()
-        pendingAgentDM = nil
-        pendingDMRequestId = nil
+        retireConnectionWork()
         fetchChannels()
         send(.agentList)
         send(.commandList)
@@ -515,27 +588,19 @@ final class TeamViewModel: ObservableObject {
     }
 
     func openAgentDM(agent: TeamAgentInfo) {
-        // 1. Search for existing DM with this agent
         if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agent.id) }) {
             selectChannel(dm.id)
             return
         }
-
-        // 2. Ignore if a /dm creation is already in flight (prevents overwriting
-        //    the pending request ID on rapid taps, which would break suppression).
         guard pendingAgentDM == nil else { return }
-
-        // 3. Not found — create via /dm command. Send agent id so the server's
-        // AgentResolver doesn't have to do a display-name lookup (KPR-11).
         let command = TeamWSOutgoing.command(channelId: "", name: "dm", args: [agent.id])
-        guard connectionState == .connected, let requestId = sendWithId(command) else {
+        guard let owner = currentRequestOwner, let requestId = sendWithId(command),
+              owner == currentRequestOwner else {
             lastError = UserFacingError(Self.notConnectedText)
             return
         }
-
         pendingNewCommands.insert(requestId)
-        pendingAgentDM = agent.id
-        pendingDMRequestId = requestId
+        armDM(requestId: requestId, agentId: agent.id, owner: owner)
     }
 
     // MARK: - Private: Incoming Message Handling
@@ -575,12 +640,9 @@ final class TeamViewModel: ObservableObject {
                 }
             }
 
-            // Suppress /dm system response when initiated from openAgentDM.
-            // Only clear pendingDMRequestId here; pendingAgentDM is cleared by
-            // syncChannels when it finds the DM (fetchChannels is async).
-            if let replyTo, replyTo == pendingDMRequestId {
-                pendingDMRequestId = nil
-                return  // Navigation is the feedback; don't insert message
+            if let replyTo, suppressedDMRequestIds.remove(replyTo) != nil {
+                if pendingDMRequestId == replyTo { pendingDMRequestId = nil }
+                return
             }
 
             guard let targetChannelId = channelId ?? activeChannelId else { return }
@@ -637,9 +699,8 @@ final class TeamViewModel: ObservableObject {
 
         case .error(let message):
             retireFullHistory()
-            pendingAgentDM = nil
-            pendingDMRequestId = nil
-            Log.team.error("server error: \(message, privacy: .private)")
+            cancelDM()
+            Log.team.error("server error received")
             lastError = UserFacingError(message)
 
         case .pong:
@@ -684,14 +745,7 @@ final class TeamViewModel: ObservableObject {
         }
         save(context, "team.syncChannels.save")
         loadChannels(context: context)
-        if let agentId = pendingAgentDM {
-            if let dm = channels.first(where: { $0.kind == .dm && $0.members.contains(agentId) }) {
-                pendingAgentDM = nil
-                selectChannel(dm.id)
-            } else if pendingDMRequestId == nil {
-                pendingAgentDM = nil
-            }
-        }
+        completeDMIfAvailable()
     }
 
     private func loadChannels(context: ModelContext) {
