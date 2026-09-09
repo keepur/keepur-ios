@@ -75,6 +75,7 @@ final class TeamViewModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
     private var modelContext: ModelContext?
     private let saveOperation: (ModelContext) throws -> Void
+    private let historyMessageFetchOperation: (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage]
     private let channelInventoryOperation: (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel]
     private let cleanupMessageFetchOperation: (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage]
     /// Read on every use so a re-pair (new device id) is picked up immediately.
@@ -218,6 +219,7 @@ final class TeamViewModel: ObservableObject {
         dmTimeout: Duration = .seconds(10),
         capabilityRefreshOperation: @escaping (CapabilityManager) async -> Void = { await $0.refresh() },
         saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        historyMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) },
         channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
         cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }
     ) {
@@ -227,6 +229,7 @@ final class TeamViewModel: ObservableObject {
         self.dmTimeout = dmTimeout
         self.capabilityRefreshOperation = capabilityRefreshOperation
         self.saveOperation = saveOperation
+        self.historyMessageFetchOperation = historyMessageFetchOperation
         self.channelInventoryOperation = channelInventoryOperation
         self.cleanupMessageFetchOperation = cleanupMessageFetchOperation
         // In init, not configure: Settings observes truth before configure runs. The
@@ -794,7 +797,9 @@ final class TeamViewModel: ObservableObject {
             channel.lastServerMessageId = oldest.id
         }
         let descriptor = FetchDescriptor<TeamMessage>(predicate: #Predicate { $0.channelId == cid })
-        let fetched = context.fetchOrEmpty(descriptor, "team.history.messages.fetch")
+        var historyFetchFailure: Error?
+        let fetched = context.fetchOrEmpty(descriptor, "team.history.messages.fetch", failure: &historyFetchFailure,
+            operation: { try historyMessageFetchOperation(context, $0) })
         let foreignIds = Set(offlineEntries.filter { $0.hive != activeHive }.map(\.localId))
         let rows = fetched.filter { !foreignIds.contains($0.id) }
         let snapshots = rows.map { row in

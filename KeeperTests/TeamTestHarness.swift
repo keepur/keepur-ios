@@ -18,6 +18,7 @@ final class TeamTestHarness {
     init(dmTimeout: Duration = .seconds(10),
          capabilityRefreshOperation: @escaping (CapabilityManager) async -> Void = { _ in },
          saveOperation: @escaping (ModelContext) throws -> Void = { try $0.save() },
+         historyMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) },
          channelInventoryOperation: @escaping (ModelContext, FetchDescriptor<TeamChannel>) throws -> [TeamChannel] = { try $0.fetch($1) },
          cleanupMessageFetchOperation: @escaping (ModelContext, FetchDescriptor<TeamMessage>) throws -> [TeamMessage] = { try $0.fetch($1) }) throws {
         savedHive = UserDefaults.standard.string(forKey: "selectedHive")
@@ -33,6 +34,7 @@ final class TeamTestHarness {
                            dmTimeout: dmTimeout,
                            capabilityRefreshOperation: capabilityRefreshOperation,
                            saveOperation: saveOperation,
+                           historyMessageFetchOperation: historyMessageFetchOperation,
                            channelInventoryOperation: channelInventoryOperation,
                            cleanupMessageFetchOperation: cleanupMessageFetchOperation)
         vm.configure(context: context, capabilityManager: capability)

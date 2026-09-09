@@ -166,4 +166,47 @@ final class TeamCleanupTests: XCTestCase {
         XCTAssertEqual(try h.frames("message").compactMap { $0["text"] as? String }, ["first", "later"])
         XCTAssertEqual(try h.frames("file").last?["data"] as? String, Data([9]).base64EncodedString())
     }
+    func testAttachmentOwnershipSurvivesForeignHistoryThenOriginalHiveStampAndCleanup() async throws {
+        let h = try TeamTestHarness(); defer { h.close() }
+        h.vm.activeChannelId = "shared"; h.begin()
+        let bytes = Data([7, 7, 1])
+        h.vm.pendingAttachment = AttachmentData(data: bytes, name: "owned.bin", mimeType: "application/octet-stream")
+        h.vm.sendMessage(text: "owned")
+        let row = try XCTUnwrap(h.rows().first)
+        let original = TeamMessageSnapshot(id: row.id, serverId: row.serverId, channelId: row.channelId,
+            senderId: row.senderId, senderType: row.typedSenderType, senderName: row.senderName,
+            text: row.text, threadId: row.threadId, createdAt: row.createdAt, pending: row.pending)
+        try await h.connect("hive-b")
+        try await h.list(["shared"])
+        try await h.history(h.request("shared"), channel: "shared", rows: [
+            h.wire("foreign", text: "owned", sender: "device-old", date: row.createdAt),
+            h.wire(row.id, text: "foreign collision", sender: "different-device", type: "system",
+                   date: row.createdAt.addingTimeInterval(60))
+        ])
+        XCTAssertNil(row.serverId); XCTAssertTrue(row.pending)
+        let retained = try XCTUnwrap(h.rows().first { $0.id == original.id })
+        XCTAssertEqual(TeamMessageSnapshot(id: retained.id, serverId: retained.serverId,
+            channelId: retained.channelId, senderId: retained.senderId, senderType: retained.typedSenderType,
+            senderName: retained.senderName, text: retained.text, threadId: retained.threadId,
+            createdAt: retained.createdAt, pending: retained.pending), original)
+        XCTAssertEqual(Set(try h.rows().map(\.id)), [original.id, "foreign"])
+        XCTAssertEqual(retained.channelId, "shared")
+        XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
+        XCTAssertEqual(h.vm.offlineEntries, [.init(localId: row.id, hive: "hive-a")])
+        try await h.list([])
+        XCTAssertEqual(try h.rows().map(\.id), [row.id])
+        try await h.connect()
+        XCTAssertEqual(try h.frames("file").last?["data"] as? String, bytes.base64EncodedString())
+        XCTAssertEqual(h.vm.pendingMessageRequestCountForTesting, 1)
+        try await h.list(["shared"]); h.vm.selectChannel("shared")
+        try await h.history(h.request("shared"), channel: "shared", rows: [
+            h.wire("own-server", text: "owned", sender: "device-old", date: row.createdAt)
+        ])
+        XCTAssertEqual(row.serverId, "own-server"); XCTAssertFalse(row.pending)
+        try await h.list([])
+        XCTAssertEqual(try h.rows().map(\.id), [row.id])
+        XCTAssertEqual(h.vm.pendingMessageRequestCountForTesting, 1)
+        h.vm.disconnect()
+        XCTAssertEqual(h.vm.offlineEntries, [.init(localId: row.id, hive: "hive-a")])
+    }
 }

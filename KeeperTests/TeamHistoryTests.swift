@@ -187,8 +187,18 @@ final class TeamHistoryTests: XCTestCase {
         try await h.receive(["type": "message", "agentId": "system", "agentName": "System", "text": "system"])
         let rows = try h.rows(), bubbleIds = Set(rows.map(\.id)), lastLive = h.vm.lastLiveMessageId
         XCTAssertEqual(rows.first { $0.text == "system" }?.senderType, "agent")
+        let originalTypes = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.senderType) })
+        let originalNames = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.senderName) })
+        let originalDates = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.createdAt) })
+        let originalThreads = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.threadId) })
         let page = rows.map { h.wire("server-" + $0.text, text: $0.text, sender: $0.senderId, type: "future-wire", date: $0.createdAt) }
         try await h.history(h.request("c"), channel: "c", rows: page)
+        for row in rows {
+            XCTAssertEqual(row.senderType, originalTypes[row.id])
+            XCTAssertEqual(row.senderName, originalNames[row.id])
+            XCTAssertEqual(row.createdAt, originalDates[row.id])
+            XCTAssertEqual(row.threadId, originalThreads[row.id] ?? nil)
+        }
         XCTAssertEqual(Set(try h.rows().map(\.id)), bubbleIds)
         XCTAssertTrue(rows.allSatisfy { $0.serverId == "server-" + $0.text && !$0.pending })
         XCTAssertEqual(h.vm.pendingMessageRequestCountForTesting, 1)
@@ -217,6 +227,27 @@ final class TeamHistoryTests: XCTestCase {
         try await h.history(h.request("c"), channel: "c", rows: [])
         XCTAssertEqual(h.vm.lastError?.id, error)
         h.vm.joinChannel(channelId: "not-found")
+        XCTAssertEqual(h.vm.lastError?.id, error)
+    }
+    func testHistoryFetchFailureUsesEmptyInputAndKeepsExistingError() async throws {
+        var fail = true, calls = 0
+        let h = try TeamTestHarness(historyMessageFetchOperation: { context, descriptor in
+            calls += 1
+            if fail { throw NSError(domain: "HistoryFetch", code: 1) }
+            return try context.fetch(descriptor)
+        }); defer { h.close() }
+        try await h.connect(); try await h.list(["c"]); h.vm.selectChannel("c")
+        h.vm.lastError = UserFacingError("retained error")
+        let error = h.vm.lastError?.id
+        try await h.history(h.request("c"), channel: "c", rows: [h.wire("server")])
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(try h.rows().map(\.id), ["server"])
+        XCTAssertEqual(try h.rows().first?.serverId, "server")
+        XCTAssertFalse(h.vm.isLoadingHistory); XCTAssertFalse(h.vm.hasMoreHistory)
+        XCTAssertEqual(h.vm.lastError?.id, error)
+        fail = false; h.vm.fetchHistory(channelId: "c")
+        try await h.history(h.request("c"), channel: "c", rows: [h.wire("server")])
+        XCTAssertEqual(calls, 2); XCTAssertEqual(try h.rows().count, 1)
         XCTAssertEqual(h.vm.lastError?.id, error)
     }
 }
