@@ -458,6 +458,10 @@ final class TeamViewModelTests: XCTestCase {
 
     func testUnknownTeamKindsAndSendersPersistWithoutKnownTypeMembership() async throws {
         let task = try await connectHive1()
+        let historyRequest = try XCTUnwrap(sentFrames(task).last {
+            $0["type"] as? String == "history" && $0["channelId"] as? String == "channel-1"
+                && $0["limit"] as? Int == 50
+        }?["id"] as? String)
         vm.agents = [TeamAgentInfo(id: "agent-1", name: "Agent", icon: "", title: nil,
                                   model: "", status: .idle, tools: [], schedule: [], channels: [],
                                   messagesProcessed: 0, lastActivity: nil)]
@@ -478,10 +482,10 @@ final class TeamViewModelTests: XCTestCase {
              "text": "same", "createdAt": "2026-09-07T12:00:00.000Z"]
         }
         try await receivePersistenceFrame([
-            "type": "history", "channelId": "channel-1", "hasMore": false, "id": "history", "messages": history
+            "type": "history", "channelId": "channel-1", "hasMore": false, "id": historyRequest, "messages": history
         ], on: task)
         let inserted = try rows().filter { $0.id == "one" || $0.id == "two" }
-        XCTAssertEqual(inserted.count, 2, "unknown sender must not enter agent content-key dedup")
+        XCTAssertEqual(inserted.count, 2, "out-of-window unknown-sender history preserves distinct IDs and raw types")
         XCTAssertTrue(inserted.allSatisfy { $0.senderType == "future-sender" && $0.typedSenderType == .unknown("future-sender") })
         XCTAssertFalse(vm.isLoadingHistory); XCTAssertFalse(vm.hasMoreHistory)
         XCTAssertEqual(channel.lastMessageText, "same"); XCTAssertEqual(vm.activeMessages.count, 3)
