@@ -445,19 +445,19 @@ extension KeepurConnectionBanner.Presentation {
   **(a) Hand edit** — insert these four lines in `Keepur.xcodeproj/project.pbxproj` (tabs as in the neighbours; the two 24-hex ids are unused in the file — `grep -c B442C0EE` prints `0` before the edit). The `PBXBuildFile` and `PBXFileReference` sections are **id-sorted** — insert in sorted position, or the next Xcode save re-sorts them and produces a noisy unrelated diff; the group `children` and Sources `files` lists are insertion-ordered, so those go after the `KeepurChatHeader` neighbour:
   - In `/* Begin PBXBuildFile section */`, after the `A7E6E1EEC8C1CB9138421004 /* KeepurUnreadBadge.swift in Sources */` line (and before `DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */`):
     ```
-    		B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */; };
+            B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */; };
     ```
   - In `/* Begin PBXFileReference section */`, after the `B31BDB567D5A0BD76B26AA46 /* KeepurActionSheet.swift */` line (and before `CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */`):
     ```
-    		B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurConnectionBanner.swift; sourceTree = "<group>"; };
+            B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurConnectionBanner.swift; sourceTree = "<group>"; };
     ```
   - In the `86E3C5B2B906AAB8C221E5D9 /* Components */` group's `children`, after `4DEB9F85E98BE473CD9920FD /* KeepurChatHeader.swift */,`:
     ```
-    				B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */,
+                    B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */,
     ```
   - In `A1ABEBBD2F79E16C009B0AFC /* Sources */` `files`, after `94129812225D71F33A70FE11 /* KeepurChatHeader.swift in Sources */,`:
     ```
-    				B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */,
+                    B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */,
     ```
   (The `KeeperTests` target's Sources phase is empty — that group is synchronized — so nothing is added there.)
 
