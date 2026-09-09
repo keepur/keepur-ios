@@ -1,6 +1,6 @@
 # KPR-445 Team-layer correctness Implementation Plan
 
-> **For agentic workers:** Use dodi-dev:implement to execute this plan.
+> **For agentic workers:** Use dodi-dev:implement within the dodi-dev:implement-ticket delivery lane, after dodi-dev:pickup-ticket creates and records the child worktree.
 
 **Goal:** Reconcile Team history without losing legitimate repeats, correlate request ownership, retain runtime-owned rows during cleanup, and bound DM creation to ten seconds.
 
@@ -10,7 +10,7 @@
 
 **Authority:** Clean spec `docs/specs/2026-09-08-kpr-445-team-correctness-design.md` at `02918ad1a5f8f48bba427ad8111328f3fbfebf3b`; merged D `49c3423ddf3057e9ae2b893b23dee325fe545094`; Gate 1 delegation `21fb1443`; canon through D in `/Users/mokie/github/keepur-ios-epic-kpr-441/.dodi/current-canon-20260909.md`. Spec review 1 approved with no blockers. Its advisory requires A's channel → B creation → A's late system reply to suppress A without changing B's lock/deadline. This plan is a draft, not readiness or implementation approval.
 
-**Execution directory:** `/Users/mokie/github/keepur-ios-mature-kpr445`. All repository-relative paths below resolve there; shell commands run there. Root owns commits/pushes during maturity. During implementation, the lane owns the task commits shown below. Do not execute production changes while reviewing this plan.
+**Execution contract:** `/Users/mokie/github/keepur-ios-mature-kpr445` is drafting/review context only. After readiness, `dodi-dev:pickup-ticket` refreshes `epic-kpr-441`, creates the child branch/worktree from that epic branch, and records its absolute path on the ticket and in the lane manifest. `dodi-dev:implement-ticket` scopes every implementation worker to that recorded child worktree; `dodi-dev:implement` runs within that lane. All repository-relative paths, shell working directories, task commits and verification evidence below resolve against the recorded absolute child worktree. At lane start, record `pwd` and `git rev-parse --show-toplevel` and confirm both match that path. Root owns maturity commits/pushes; the delivery lane owns the task commits below. Do not execute production changes in the maturity checkout or while reviewing this plan.
 
 ## Testing Contract
 
@@ -97,6 +97,7 @@ Retain all B/C/D assertions: private sockets; dynamic credentials; ordered Team 
 | `KeeperTests/TeamCleanupTests.swift` | Three VM removal paths, orphan sweep, foreign-hive delivery. |
 | `KeeperTests/TeamDMLifecycleTests.swift` | DM lock/deadline/suppression/cancellation and hive refresh/command lifetime. |
 | `KeeperTests/TeamViewModelTests.swift`, `KeeperTests/PairingTeardownTests.swift` | Additive predecessor fixture/assertion extensions. |
+| `KeeperTests/PersistenceTests.swift` | Retain persisted raw/kind assertions and route fetched Team-channel title assertions through the VM. |
 | `Scripts/verify-kpr445.sh` | Named signed simulator groups and macOS build. |
 | `Scripts/verify-kpr445-migration.sh`, `Scripts/KPR445MigrationCheck.swift` | Reproducible baseline→E store migration, outside synchronized app/test folders. |
 | `CLAUDE.md` | Document implemented E boundaries after source changes. |
@@ -241,6 +242,20 @@ final class HistoryMergerTests: XCTestCase {
         let overlap = merge(apply(result, to: rows), [history("a"), history("new")])
         XCTAssertEqual(overlap.inserts.map(\.id), ["new"])
         XCTAssertTrue(overlap.serverIdStamps.isEmpty)
+        let legacy = local("exact-legacy", offset: -600, sender: "local-sender",
+                           text: "local contents", pending: true, type: .unknown("legacy-type"))
+        let exactPage = [history("exact-legacy", offset: 600, sender: "server-sender",
+                                 text: "different server contents", type: .person)]
+        let exact = merge([legacy], exactPage)
+        XCTAssertTrue(exact.inserts.isEmpty, "exact identity bypasses date/content/sender heuristics")
+        XCTAssertEqual(exact.serverIdStamps, [legacy.id: legacy.id])
+        XCTAssertEqual(exact.unpendIds, [legacy.id])
+        let adopted = apply(exact, to: [legacy])
+        XCTAssertEqual(adopted, [TeamMessageSnapshot(id: legacy.id, serverId: legacy.id,
+            channelId: legacy.channelId, senderId: legacy.senderId, senderType: legacy.senderType,
+            senderName: legacy.senderName, text: legacy.text, threadId: legacy.threadId,
+            createdAt: legacy.createdAt, pending: false)])
+        assertReplay([legacy], exactPage)
     }
     func testAgentSystemAndOwnRowsStampWithoutChangingLocalFields() {
         for sender in ["agent", "system", "device"] {
@@ -589,7 +604,7 @@ private func seedHistory(channelId: String) {
 
 There is no suspension between accepted send and registration. Socket frame delivery hops to a later main-actor turn. A direct `fetchHistory` for a nonselected channel is a no-op.
 
-- [ ] **Step 3:** Wire retirement at every existing lifecycle boundary. In `previous == .connected && state != .connected`, immediately after `moveUnackedToOffline()`, add `retireHistoryRequests()` and `connectionGeneration = UUID()`. At explicit `disconnect()` entry and `onConnected()` entry add the same two lines, before existing bookkeeping. At actual hive change (`activeHive != channel`) inside `connectIfPossible`, add those lines immediately before `socket.connect(channel:)`; retain `activeHive = channel` **after** that call. This is idempotent and sends nothing in a state sink. In `.error`, add `retireFullHistory()` before existing banner handling. Task 4 consolidates these retirement lines with DM/command cleanup without changing their order.
+- [ ] **Step 3:** Wire retirement at every existing lifecycle boundary. In `previous == .connected && state != .connected`, immediately after `moveUnackedToOffline()`, add `retireHistoryRequests()` and `connectionGeneration = UUID()`. At explicit `disconnect()` entry and `onConnected()` entry add the same two lines, before existing bookkeeping. In `onConnected()`'s `if let channelId = activeChannelId` block, add `hasMoreHistory = true` before the existing cursor reset so its fresh latest-page request resets both pagination values. At actual hive change (`activeHive != channel`) inside `connectIfPossible`, add the two retirement lines immediately before `socket.connect(channel:)`; retain `activeHive = channel` **after** that call. This is idempotent and sends nothing in a state sink. In `.error`, add `retireFullHistory()` before existing banner handling. Task 4 consolidates retirement with DM/command cleanup and replaces explicit disconnect with socket-first ordering so unacked movement precedes command-map clearing.
 
 - [ ] **Step 4:** Replace the channel-list seed `send(.history(...limit: 1))` with `seedHistory(channelId: info.id)`. Keep its active-channel skip. Change the `.history` switch binding to `case .history(let channelId, let messages, let hasMore, let id):` and call `receiveHistory(id: id, channelId: channelId, messages: messages, hasMore: hasMore, context: context)`. Replace the entire old history-dedup section with:
 
@@ -910,6 +925,65 @@ final class TeamHistoryTests: XCTestCase {
         try await h.connect("hive-b")
         try await h.history(third, channel: "missing", rows: [h.wire("late-hive")])
         XCTAssertTrue(try h.rows().isEmpty); XCTAssertTrue(h.vm.isLoadingHistory)
+
+        // Establish real pagination before reconnecting; a missing channel cannot prove reset.
+        try await h.connect()
+        try await h.list(["c", "seed"]); h.vm.selectChannel("c")
+        let completed = try h.request("c")
+        try await h.history(completed, channel: "c", rows: [
+            h.wire("a-page", text: "A preview")
+        ], more: false)
+        let channel = try h.channel("c"), seedChannel = try h.channel("seed")
+        XCTAssertEqual(channel.lastServerMessageId, "a-page")
+        XCTAssertFalse(h.vm.hasMoreHistory); XCTAssertFalse(h.vm.isLoadingHistory)
+        h.vm.disconnect(); XCTAssertFalse(h.vm.isLoadingHistory)
+        try await h.connect()
+        let outstandingFull = try h.request("c")
+        XCTAssertNotEqual(outstandingFull, completed)
+        XCTAssertEqual(try h.frames("history").count, 1)
+        XCTAssertEqual(try h.frames("history").last?["limit"] as? Int, 50)
+        XCTAssertNil(try h.frames("history").last?["before"])
+        XCTAssertNil(channel.lastServerMessageId)
+        XCTAssertTrue(h.vm.hasMoreHistory); XCTAssertTrue(h.vm.isLoadingHistory)
+
+        // Leave both A request kinds unanswered, then switch directly while connected.
+        try await h.list(["c", "seed"])
+        let outstandingSeed = try h.request("seed", limit: 1), departing = h.task
+        XCTAssertNotEqual(outstandingFull, outstandingSeed)
+        try await h.connect("hive-b")
+        XCTAssertEqual(departing.lastCloseCode, .goingAway)
+        let currentB = try h.request("c")
+        XCTAssertNotEqual(currentB, outstandingFull); XCTAssertNotEqual(currentB, outstandingSeed)
+        XCTAssertNil(try h.frames("history").last?["before"])
+        let savedRows = Set(try h.rows().map(\.id))
+        let savedActiveRows = h.vm.activeMessages.map(\.id)
+        let savedText = channel.lastMessageText, savedDate = channel.lastMessageAt
+        let savedCursor = channel.lastServerMessageId
+        XCTAssertEqual(savedRows, ["a-page"])
+        XCTAssertEqual(savedText, "A preview"); XCTAssertEqual(savedDate, h.date)
+        XCTAssertNil(savedCursor); XCTAssertTrue(h.vm.hasMoreHistory)
+        for (request, channelId) in [(outstandingFull, "c"), (outstandingSeed, "seed")] {
+            try await h.history(request, channel: channelId, rows: [
+                h.wire("late-" + channelId, text: "stale " + channelId,
+                       date: h.date.addingTimeInterval(60))
+            ], more: false)
+            XCTAssertEqual(Set(try h.rows().map(\.id)), savedRows)
+            XCTAssertEqual(h.vm.activeMessages.map(\.id), savedActiveRows)
+            XCTAssertEqual(channel.lastMessageText, savedText)
+            XCTAssertEqual(channel.lastMessageAt, savedDate)
+            XCTAssertEqual(channel.lastServerMessageId, savedCursor)
+            XCTAssertNil(seedChannel.lastMessageText); XCTAssertNil(seedChannel.lastMessageAt)
+            XCTAssertNil(seedChannel.lastServerMessageId)
+            XCTAssertTrue(h.vm.hasMoreHistory); XCTAssertTrue(h.vm.isLoadingHistory)
+        }
+        try await h.history(currentB, channel: "c", rows: [
+            h.wire("b-page", text: "B accepted", date: h.date.addingTimeInterval(20))
+        ], more: false)
+        XCTAssertEqual(Set(try h.rows().map(\.id)), ["a-page", "b-page"])
+        XCTAssertEqual(channel.lastMessageText, "B accepted")
+        XCTAssertEqual(channel.lastMessageAt, h.date.addingTimeInterval(20))
+        XCTAssertEqual(channel.lastServerMessageId, "b-page")
+        XCTAssertFalse(h.vm.hasMoreHistory); XCTAssertFalse(h.vm.isLoadingHistory)
     }
     func testRealLiveOwnAndSystemMergeIsSilentAndKeepsUnackedOwnership() async throws {
         let h = try TeamTestHarness(); defer { h.close() }
@@ -1301,11 +1375,15 @@ final class TeamCleanupTests: XCTestCase {
         }
         current.completeHandshake()
         try await eventually("bookkeeping disconnected before resend") { h.vm.connectionState == .disconnected }
+        let retiredHistory = try h.request("c", on: current)
+        XCTAssertFalse(h.vm.isLoadingHistory)
         XCTAssertEqual(h.vm.offlineMessageIds, original)
         XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
         XCTAssertTrue(try h.frames("message").isEmpty)
         current.onSend = nil
         try await h.connect()
+        XCTAssertNotEqual(try h.request("c"), retiredHistory)
+        XCTAssertTrue(h.vm.isLoadingHistory)
         XCTAssertEqual(try h.frames("message").compactMap { $0["text"] as? String }, ["first", "later"])
         XCTAssertEqual(try h.frames("file").last?["data"] as? String, Data([9]).base64EncodedString())
     }
@@ -1437,7 +1515,16 @@ moveUnackedToOffline()
 retireConnectionWork()
 ```
 
-This ordering is mandatory even if `moveUnackedToOffline` returns early with no mappings. Replace the two history-retirement lines at `disconnect()` entry with `retireConnectionWork()`, remove its two now-redundant DM-nil assignments, then call `socket.disconnect()`. Replace the retirement lines and two DM-nil assignments at `onConnected()` entry with `retireConnectionWork()`; keep channel/agent/command list requests, cursor reset and final resend in existing order, adding `hasMoreHistory = true` with the active-channel latest-page reset. At a hive change before `socket.connect`, retire only when already **not** connected:
+This ordering is mandatory even if `moveUnackedToOffline` returns early with no mappings. Replace the complete explicit `disconnect()` implementation with the following. The socket's synchronous departure invokes the state sink above first; the subsequent idempotent retirement also covers an already-disconnected VM. Remove Task 2's entry retirement and the predecessor's two DM-nil assignments.
+
+```swift
+func disconnect() {
+    socket.disconnect()
+    retireConnectionWork()
+}
+```
+
+Replace the retirement lines and two DM-nil assignments at `onConnected()` entry with `retireConnectionWork()`; keep channel/agent/command list requests, Task 2's `hasMoreHistory = true` and cursor reset, and final resend in existing order. At a hive change before `socket.connect`, retire only when already **not** connected:
 
 ```swift
 if activeHive != channel, connectionState != .connected { retireConnectionWork() }
@@ -1627,34 +1714,61 @@ final class TeamDMLifecycleTests: XCTestCase {
         }
     }
     func testSleepingDMTaskDoesNotRetainViewModel() async throws {
-        let h = try TeamTestHarness(dmTimeout: .milliseconds(200)); defer { h.close() }
-        try await h.connect(); h.vm.openAgentDM(agent: h.agent("a"))
+        let h = try TeamTestHarness(dmTimeout: .milliseconds(500)); defer { h.close() }
+        try await h.connect()
+        let armedAt = ContinuousClock.now
+        h.vm.openAgentDM(agent: h.agent("a"))
+        try await Task.sleep(for: .milliseconds(20)) // Let the task enter its sleep before releasing the VM.
+        XCTAssertLessThan(armedAt.duration(to: .now), .milliseconds(250),
+                          "the release assertion must begin before the DM deadline")
+        XCTAssertNil(h.vm.lastError)
+        let sentBeforeRelease = h.task.sentTexts
         weak var released = h.vm
+        let releasedAt = ContinuousClock.now
         h.vm = nil
-        try await eventually("VM deallocated while DM task sleeping") { released == nil }
-        try await Task.sleep(for: .milliseconds(260))
+        try await eventually("VM deallocated while DM task sleeping", timeout: .milliseconds(100)) {
+            released == nil
+        }
+        XCTAssertLessThan(releasedAt.duration(to: .now), .milliseconds(150),
+                          "retention until the 500 ms deadline must fail even after a delayed poll")
+        try await Task.sleep(for: .milliseconds(550))
         XCTAssertNil(released)
+        XCTAssertEqual(h.task.sentTexts, sentBeforeRelease)
     }
     func testCommandMapsRetireAfterUnackedMovementIncludingEmptyMap() async throws {
-        for withMessage in [false, true] {
-            let h = try TeamTestHarness(); defer { h.close() }
-            try await h.connect(); h.vm.activeChannelId = "old-channel"
-            if withMessage { h.vm.sendMessage(text: "queued old") }
-            h.vm.sendMessage(text: "/new room")
-            h.vm.sendMessage(text: "/dm agent")
-            h.vm.openAgentDM(agent: h.agent("button-agent"))
-            let requests = try h.frames("command").compactMap { $0["id"] as? String }
-            try await h.connect("hive-b")
-            h.vm.activeChannelId = "new-channel"
-            XCTAssertEqual(h.vm.offlineEntries.count, withMessage ? 1 : 0)
-            XCTAssertTrue(h.vm.offlineEntries.allSatisfy { $0.hive == "hive-a" })
-            XCTAssertTrue(try h.frames("message").isEmpty)
-            let lists = try h.frames("channel_list").count
-            for request in requests { try await h.systemReply(request, text: request) }
-            XCTAssertEqual(try h.frames("channel_list").count, lists)
-            let routed = try h.rows().filter { requests.contains($0.text) }
-            XCTAssertEqual(routed.count, requests.count)
-            XCTAssertTrue(routed.allSatisfy { $0.channelId == "new-channel" })
+        for departure in ["disconnect", "switch"] {
+            for withMessage in [false, true] {
+                let h = try TeamTestHarness(); defer { h.close() }
+                try await h.connect(); h.vm.activeChannelId = "old-channel"
+                if withMessage { h.vm.sendMessage(text: "queued old") }
+                h.vm.sendMessage(text: "/new room")
+                h.vm.sendMessage(text: "/dm agent")
+                h.vm.openAgentDM(agent: h.agent("button-agent"))
+                let requests = try h.frames("command").compactMap { $0["id"] as? String }
+                let departing = h.task
+                if departure == "disconnect" {
+                    h.vm.disconnect()
+                    XCTAssertEqual(h.vm.connectionState, .disconnected)
+                    XCTAssertEqual(h.vm.offlineEntries.count, withMessage ? 1 : 0)
+                    XCTAssertTrue(h.vm.offlineEntries.allSatisfy { $0.hive == "hive-a" })
+                    XCTAssertEqual(h.vm.pendingMessageRequestCountForTesting, 0)
+                    let queued = h.vm.offlineEntries
+                    h.vm.disconnect() // Already-disconnected retirement remains idempotent.
+                    XCTAssertEqual(h.vm.offlineEntries, queued)
+                }
+                try await h.connect("hive-b")
+                XCTAssertEqual(departing.lastCloseCode, departure == "disconnect" ? .normalClosure : .goingAway)
+                h.vm.activeChannelId = "new-channel"
+                XCTAssertEqual(h.vm.offlineEntries.count, withMessage ? 1 : 0)
+                XCTAssertTrue(h.vm.offlineEntries.allSatisfy { $0.hive == "hive-a" })
+                XCTAssertTrue(try h.frames("message").isEmpty)
+                let lists = try h.frames("channel_list").count
+                for request in requests { try await h.systemReply(request, text: request) }
+                XCTAssertEqual(try h.frames("channel_list").count, lists)
+                let routed = try h.rows().filter { requests.contains($0.text) }
+                XCTAssertEqual(routed.count, requests.count)
+                XCTAssertTrue(routed.allSatisfy { $0.channelId == "new-channel" })
+            }
         }
     }
     func testVanishedHiveRefreshPreservesQueueBytesAndDoesNotSendFromStateSink() async throws {
@@ -1840,7 +1954,7 @@ for row in rows {
 
 History calls no `speak` and never changes `lastLiveMessageId`; the existing VM has optional weak speech and the bridge remains headless. Do not create a speech instance just to run history.
 
-- [ ] **Step 5:** Add this test to `TeamCleanupTests`. It follows the same row and attachment through foreign-hive exclusion, original-hive submission, a history stamp that clears pending, and channel cleanup while the text still has unacked ownership.
+- [ ] **Step 5:** Add this test to `TeamCleanupTests`. It follows the same row and attachment through foreign-hive exclusion, a conflicting incoming server ID that must not upsert the protected local ID, original-hive submission, a history stamp that clears pending, and channel cleanup while the text still has unacked ownership. Capture all local fields before the foreign reply; retained queue count/stamp plus the later exact attachment payload prove ownership and bytes survive both foreign insertion paths.
 
 ```swift
 func testAttachmentOwnershipSurvivesForeignHistoryThenOriginalHiveStampAndCleanup() async throws {
@@ -1850,12 +1964,24 @@ func testAttachmentOwnershipSurvivesForeignHistoryThenOriginalHiveStampAndCleanu
     h.vm.pendingAttachment = AttachmentData(data: bytes, name: "owned.bin", mimeType: "application/octet-stream")
     h.vm.sendMessage(text: "owned")
     let row = try XCTUnwrap(h.rows().first)
+    let original = TeamMessageSnapshot(id: row.id, serverId: row.serverId, channelId: row.channelId,
+        senderId: row.senderId, senderType: row.typedSenderType, senderName: row.senderName,
+        text: row.text, threadId: row.threadId, createdAt: row.createdAt, pending: row.pending)
     try await h.connect("hive-b")
     try await h.list(["shared"])
     try await h.history(h.request("shared"), channel: "shared", rows: [
-        h.wire("foreign", text: "owned", sender: "device-old", date: row.createdAt)
+        h.wire("foreign", text: "owned", sender: "device-old", date: row.createdAt),
+        h.wire(row.id, text: "foreign collision", sender: "different-device", type: "system",
+               date: row.createdAt.addingTimeInterval(60))
     ])
     XCTAssertNil(row.serverId); XCTAssertTrue(row.pending)
+    let retained = try XCTUnwrap(h.rows().first { $0.id == original.id })
+    XCTAssertEqual(TeamMessageSnapshot(id: retained.id, serverId: retained.serverId,
+        channelId: retained.channelId, senderId: retained.senderId, senderType: retained.typedSenderType,
+        senderName: retained.senderName, text: retained.text, threadId: retained.threadId,
+        createdAt: retained.createdAt, pending: retained.pending), original)
+    XCTAssertEqual(Set(try h.rows().map(\.id)), [original.id, "foreign"])
+    XCTAssertEqual(retained.channelId, "shared")
     XCTAssertEqual(h.vm.queuedAttachmentCountForTesting, 1)
     XCTAssertEqual(h.vm.offlineEntries, [.init(localId: row.id, hive: "hive-a")])
     try await h.list([])
@@ -1887,7 +2013,7 @@ git commit -m "test: preserve pairing queue and persistence contracts through Te
 
 ## Task 6: Remove dead naming, update canon-facing documentation and complete implementer audit
 
-**Files:** Modify `Models/TeamChannel.swift`, `KeeperTests/TeamHistoryTests.swift`, `CLAUDE.md`. Review all changed production/test/scripts files and all predecessor assertions. Record evidence in the lane's durable checkpoint; do not commit machine-local logs or the migration store.
+**Files:** Modify `Models/TeamChannel.swift`, `KeeperTests/TeamHistoryTests.swift`, `KeeperTests/PersistenceTests.swift`, `CLAUDE.md`. Review all changed production/test/scripts files and all predecessor assertions. Record evidence in the lane's durable checkpoint; do not commit machine-local logs or the migration store.
 
 - [ ] **Step 1:** Remove exactly this unused computed property from `TeamChannel`:
 
@@ -1897,7 +2023,19 @@ var displayName: String {
 }
 ```
 
-`TeamViewModel.displayName(for:)` remains the single Team name rule. `Session.displayName` and `Workspace.displayName` are unrelated and stay. Add the following test inside `TeamHistoryTests` for the retained VM title rule:
+`TeamViewModel.displayName(for:)` remains the single Team name rule. `Session.displayName` and `Workspace.displayName` are unrelated and stay. In the existing `PersistenceTests.testStoredAccessorsRoundTripWithoutRewritingUnknownValues`, replace only the final fetched-channel assertion block with the following. The disconnected VM uses injected fake credentials and needs no configure or connect call to resolve names. Retain every preceding insertion, save/fresh-context fetch and assertion, including all four `kinds` inputs (`.channel`, `.dm`, `.unknown("future-kind")`, `.unknown("")`). This adapts the model-property consumer while preserving persisted raw values, exact kind membership and expected titles; even focused selections compile this entire test target.
+
+```swift
+let channels = fresh.fetchOrEmpty(FetchDescriptor<TeamChannel>(), "test.kinds")
+let titles = TeamViewModel(credentials: FakeCredentialStore())
+for (index, expected) in kinds.enumerated() {
+    let row = try XCTUnwrap(channels.first { $0.id == "kind-\(index)" })
+    XCTAssertEqual(row.kind, expected); XCTAssertEqual(row.type, expected.wireValue)
+    XCTAssertEqual(titles.displayName(for: row), expected == .channel ? "#raw" : "raw")
+}
+```
+
+Add the following test inside `TeamHistoryTests` for the retained VM title rule:
 
 ```swift
 func testTeamDisplayNameRetainsExactTypedMembership() throws {
@@ -1937,14 +2075,14 @@ rg -n 'try\?[^\n]*(\.save\(|\.fetch\()' --glob '*.swift' Models Managers ViewMod
 rg -n 'print\(' Managers ViewModels
 rg -n 'WebSocketManager|TeamSocketManager|viewModel\.socket|teamViewModel\.socket' --glob '*.swift' Managers Models ViewModels Views
 rg -n 'existingContentKeys|contentKey|userMessages' ViewModels/TeamViewModel.swift
-rg -n 'displayName' Models/TeamChannel.swift Views/Team KeeperTests/TeamHistoryTests.swift
+rg -n 'displayName' --glob '*.swift' .
 rg -n 'context\.(fetch|save)\(' Models/TeamStore.swift ViewModels/TeamViewModel.swift
 rg -n 'Log\.team|Log\.persistence' Models/HistoryMerger.swift Models/TeamStore.swift ViewModels/TeamViewModel.swift Managers/Persistence.swift
 rg -n 'serverId|@Relationship|@Attribute' Models/TeamMessage.swift Models/TeamChannel.swift
 git diff 49c3423ddf3057e9ae2b893b23dee325fe545094 -- KeepurApp.swift Models/TeamWSMessage.swift Managers/Persistence.swift
 ```
 
-Expected: zero production optional-try saves/fetches, prints, old socket managers/access or content-key logic; no model `TeamChannel.displayName`; only the intended VM/test title references; raw context fetch/save calls occur only in the explicitly defaulted injected operation closures (plus the pre-existing `saveOperation` default), with all production invocations through the shared reporting helper. Logging is static except D's approved safe type/code helper output. `serverId` alone is new stored state; no relationship, unique server ID or change to container/codec/reporting catch.
+Expected: zero production optional-try saves/fetches, prints, old socket managers/access or content-key logic; no model `TeamChannel.displayName` declaration or consumer anywhere in app/test Swift files. Inspect the full title search by receiver type: Team titles use `TeamViewModel.displayName(for:)`, including the fetched rows in `PersistenceTests`; unrelated Session/Workspace title references remain. Raw context fetch/save calls occur only in the explicitly defaulted injected operation closures (plus the pre-existing `saveOperation` default), with all production invocations through the shared reporting helper. Logging is static except D's approved safe type/code helper output. `serverId` alone is new stored state; no relationship, unique server ID or change to container/codec/reporting catch.
 
 - [ ] **Step 4:** Compare the predecessor test inventory and assertions before broad verification. Use this read-only command to list baseline test methods that disappeared; expected output is empty. Inspect `git diff` for assertion weakening separately—the name inventory alone does not prove coverage.
 
@@ -1969,7 +2107,7 @@ raise SystemExit(bool(missing))
 PY
 ```
 
-- [ ] **Step 5:** Run `bash Scripts/verify-kpr445.sh history`, then the whole approved local regression group, migration and macOS build:
+- [ ] **Step 5:** Run `bash Scripts/verify-kpr445.sh history` and `bash Scripts/verify-kpr445.sh retained` to execute the new VM titles and adapted persistence assertions, then the whole approved local regression group, migration and macOS build:
 
 ```bash
 bash Scripts/verify-kpr445.sh regression
@@ -1982,16 +2120,16 @@ Expected: signed iOS tests succeed with only the approved local twelve Capabilit
 - [ ] **Step 6:** Record a concrete implementer audit: changed files; Testing Contract group→executed test class mapping; exact evidence directories; discovered/passed/failed counts; migration source versions and four process results; macOS result; static audit; baseline assertion retention; unresolved risks or blockers. The implementer must finish this audit, not hand verification work back as “later.” Then run `git diff --check` and commit:
 
 ```bash
-git add Models/TeamChannel.swift KeeperTests/TeamHistoryTests.swift CLAUDE.md
+git add Models/TeamChannel.swift KeeperTests/TeamHistoryTests.swift KeeperTests/PersistenceTests.swift CLAUDE.md
 git commit -m "docs: record implemented Team correctness boundaries"
 ```
 
 ## Delivery ownership after implementation
 
-1. **Implementer:** complete Tasks 1–6 with focused verification, commits and the audit above; do not self-approve or create the child PR as part of plan drafting.
+1. **Pickup and implementer:** after readiness, `dodi-dev:pickup-ticket` refreshes `epic-kpr-441`, creates the child branch/worktree from it and records the absolute child path. The delivery lane passes that path and clean artifacts to `dodi-dev:implement-ticket`; its `dodi-dev:implement` workers complete Tasks 1–6 there with focused verification, commits and the audit above. The maturity checkout is not an implementation target. Pickup uses the existing delegated lifecycle and adds no human gate; do not self-approve or create the child PR as part of plan drafting.
 2. **Lane pre-PR review:** fresh review using `dodi-dev:review`, fix loop to clean Frontier final round. Review compares against merged D and the approved spec/canon, including the DM advisory and storage migration evidence.
 3. **Lane coverage/verify:** verify the complete Testing Contract and local quality-gate evidence after fixes. Apply the repository's compliance → coverage → pre-submit checks in the approved epic lifecycle; a reviewed code fix gets fresh affected tests and, where material, broader checks. No claimed full-CI result yet.
-4. **Lane submit:** `dodi-dev:submit-ticket-pr` opens a child PR targeting `epic-kpr-441` with concrete behavior and verification evidence. The PR trigger starts the existing unexcluded GitHub workflow. KPR-446's local exception must be described accurately in the PR; never add it to CI.
+4. **Lane submit:** `dodi-dev:submit-ticket-pr` opens a child PR targeting `epic-kpr-441` with concrete behavior and verification evidence. The PR trigger starts the existing unexcluded GitHub workflow. `.github/workflows/test.yml` runs for PRs to `main`/`epic-*` and pushes to `main`; pushing a maturity or child branch alone does not start this CI gate. KPR-446's local exception must be described accurately in the PR; never add it to CI.
 5. **Lane child-PR review and full CI:** collect full `KeeperTests` signed iOS CI at the final reviewed PR head; the required workflow must have no exclusions. Resolve review/CI issues and repeat final-head checks after every subsequent commit. Clean local evidence is not a substitute for this final CI gate.
 6. **Resident driver:** serial child merge and coherence ruling per dedicated skills; maintain decision-register propagation and tracked follow-ups. The epic-to-main merge remains operator-owned Gate 2. This plan grants no main merge or server work.
 
