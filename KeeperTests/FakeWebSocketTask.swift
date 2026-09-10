@@ -45,8 +45,12 @@ final class FakeWebSocketTask: WebSocketTasking {
         receiveHandler = completionHandler
     }
 
-    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
+    func performHandshake(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
         pingHandler = pongReceiveHandler
+    }
+
+    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
+        pongReceiveHandler(nil)
     }
 
     // MARK: Test controls

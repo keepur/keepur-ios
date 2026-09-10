@@ -267,9 +267,16 @@ final class ChatViewModel: ObservableObject {
         send(.newSession(path: path))
     }
 
-    func clearSession(sessionId: String) {
-        send(.clearSession(sessionId: sessionId))
+    @discardableResult
+    func clearSession(sessionId: String) -> Bool {
+        let sent = requestSessionClear(sessionId: sessionId)
         deleteLocalSession(sessionId: sessionId)
+        return sent
+    }
+
+    @discardableResult
+    func requestSessionClear(sessionId: String) -> Bool {
+        send(.clearSession(sessionId: sessionId))
     }
 
     @discardableResult

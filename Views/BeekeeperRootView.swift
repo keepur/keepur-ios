@@ -61,6 +61,17 @@ struct BeekeeperRootView: View {
                 concierge.retryIfBailedOffline(viewModel: viewModel, store: store)
             }
         }
+        .onReceive(viewModel.incoming) { frame in
+            concierge.recoverIfConversationMissing(
+                frame,
+                viewModel: viewModel,
+                store: store
+            )
+        }
+        .onChange(of: concierge.state) { _, newState in
+            guard case .ready(let sessionId, _) = newState else { return }
+            recoverPersistedMissingConversation(sessionId: sessionId)
+        }
     }
 
     private func cleanupVestigialConciergeRow() {
@@ -72,6 +83,24 @@ struct BeekeeperRootView: View {
         guard let row = modelContext.fetchOrEmpty(descriptor, "view.conciergeCleanup.fetch").first else { return }
         modelContext.delete(row)
         modelContext.saveReporting("view.conciergeCleanup.save")
+    }
+
+    private func recoverPersistedMissingConversation(sessionId: String) {
+        let descriptor = FetchDescriptor<Message>(
+            predicate: #Predicate { $0.sessionId == sessionId }
+        )
+        let hasMissingConversationError = modelContext
+            .fetchOrEmpty(descriptor, "view.conciergeRecovery.fetch")
+            .contains { ConciergeViewModel.isPersistedMissingConversationError($0) }
+        guard hasMissingConversationError else { return }
+        concierge.recoverIfConversationMissing(
+            .error(
+                message: "No conversation found with session ID: \(sessionId)",
+                sessionId: sessionId
+            ),
+            viewModel: viewModel,
+            store: store
+        )
     }
 }
 
@@ -97,9 +126,16 @@ final class ConciergeViewModel: ObservableObject {
     private enum Reply: Sendable {
         case info(Identity)
         case discovery(Identity?)  // .discovery(nil) is a received no-match list.
+        case cleared
     }
     private enum WaitResult {
         case reply(Reply), timeout, offline, stopped
+    }
+
+    static func isPersistedMissingConversationError(_ message: Message) -> Bool {
+        message.typedRole == .system
+            && message.text.localizedCaseInsensitiveContains("error:")
+            && message.text.localizedCaseInsensitiveContains("no conversation found with session id")
     }
     private final class ReplyLatch {
         let relay = CurrentValueSubject<Reply?, Never>(nil)
@@ -188,6 +224,36 @@ final class ConciergeViewModel: ObservableObject {
         retry(viewModel: viewModel, store: store)
     }
 
+    func recoverIfConversationMissing(
+        _ frame: WSIncoming,
+        viewModel: ChatViewModel,
+        store: ConciergeSessionStore
+    ) {
+        guard case .ready(let currentSessionId, _) = state,
+              case .error(let message, let failedSessionId) = frame,
+              failedSessionId == currentSessionId,
+              message.localizedCaseInsensitiveContains("no conversation found with session id") else {
+            return
+        }
+
+        cancelFlow()
+        hasStarted = true
+        bailedOffline = false
+        state = .loading
+
+        let run = Run(owner: self, viewModel: viewModel, store: store)
+        activeRun = run
+        run.authSubscription = viewModel.$isAuthenticated.dropFirst().sink { [weak self] authenticated in
+            if !authenticated { self?.cancelFlow() }
+        }
+        flowTask = Task { @MainActor in
+            await Self.replaceMissingConversation(
+                currentSessionId,
+                run: run
+            )
+        }
+    }
+
     private static func waitForSocketConnected(_ run: Run) async -> Bool {
         if run.viewModel.connectionState == .connected { return true }
         let result: Bool? = await withTimeout(.seconds(5)) {
@@ -241,6 +307,44 @@ final class ConciergeViewModel: ObservableObject {
         }, send: {
             run.viewModel.resumeSession(sessionId: identity.sessionId, path: identity.path)
         })
+    }
+
+    private static func replaceMissingConversation(_ sessionId: String, run: Run) async {
+        defer {
+            run.authSubscription?.cancel()
+            run.authSubscription = nil
+            run.owner?.finished(run)
+        }
+        guard run.isCurrent else { return }
+
+        let cleared = await request(run, timeout: .seconds(3), match: { frame in
+            guard case .sessionCleared(let clearedId) = frame,
+                  clearedId == sessionId else { return nil }
+            return .cleared
+        }, send: {
+            run.viewModel.requestSessionClear(sessionId: sessionId)
+        })
+        guard run.mayContinue(after: cleared) else { return }
+        guard case .reply(.cleared) = cleared else {
+            run.owner?.state = .error("Could not replace the unavailable concierge")
+            return
+        }
+        run.store.clear()
+        run.viewModel.registerConciergeSession(nil)
+
+        let spawned = await request(run, timeout: .seconds(5), match: { frame in
+            guard case .sessionInfo(let id, let path, let mode) = frame,
+                  mode == .concierge, !path.isEmpty else { return nil }
+            return .info(Identity(sessionId: id, path: path))
+        }, send: {
+            run.viewModel.newConciergeSession()
+        })
+        guard run.mayContinue(after: spawned) else { return }
+        if case .reply(.info(let info)) = spawned {
+            run.ready(info)
+        } else {
+            run.owner?.state = .error("Concierge did not respond in time")
+        }
     }
     private static func runFlow(_ run: Run) async {
         defer {

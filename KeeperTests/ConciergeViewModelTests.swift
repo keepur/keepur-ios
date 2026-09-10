@@ -191,6 +191,105 @@ final class ConciergeViewModelTests: XCTestCase {
         )
     }
 
+    func testMissingCachedConversationIsClearedAndReplaced() async throws {
+        let h = try ChatTestHarness(); defer { h.close() }; try await h.connect()
+        h.store.cache(sessionId: "stale", path: "/concierge")
+        let coordinator = ConciergeViewModel()
+        coordinator.start(viewModel: h.vm, store: h.store)
+        try await eventually("cached concierge resume sent") {
+            try h.frames("resume_session").count == 1
+        }
+        try await h.receive([
+            "type": "session_info", "sessionId": "stale",
+            "path": "/concierge", "mode": "concierge"
+        ])
+        try await eventually("cached concierge becomes ready") {
+            coordinator.state == .ready(sessionId: "stale", path: "/concierge")
+        }
+
+        coordinator.recoverIfConversationMissing(
+            .error(
+                message: "Query failed: No conversation found with session ID: stale",
+                sessionId: "stale"
+            ),
+            viewModel: h.vm,
+            store: h.store
+        )
+        try await eventually("stale concierge clear sent") {
+            try h.frames("clear_session").count == 1
+        }
+        XCTAssertEqual(coordinator.state, .loading)
+        XCTAssertEqual(h.store.cachedSession?.sessionId, "stale")
+
+        try await h.receive(["type": "session_cleared", "sessionId": "stale"])
+        try await eventually("replacement concierge requested") {
+            try h.frames("new_session").count == 1
+        }
+        XCTAssertNil(h.store.cachedSession)
+        try await h.receive([
+            "type": "session_info", "sessionId": "fresh",
+            "path": "/concierge", "mode": "concierge"
+        ])
+        try await eventually("replacement concierge becomes ready") {
+            coordinator.state == .ready(sessionId: "fresh", path: "/concierge")
+        }
+        XCTAssertEqual(h.store.cachedSession?.sessionId, "fresh")
+    }
+
+    func testPersistedRecoveryAcceptsOnlySystemErrors() {
+        let text = "Error: No conversation found with session ID: stale"
+        let actualError = Message(sessionId: "stale", text: text, role: MessageRole.system.rawValue)
+        XCTAssertTrue(ConciergeViewModel.isPersistedMissingConversationError(actualError))
+
+        for role in [MessageRole.user, .assistant, .tool, .unknown] {
+            let quote = Message(sessionId: "stale", text: text, role: role.rawValue)
+            XCTAssertFalse(
+                ConciergeViewModel.isPersistedMissingConversationError(quote),
+                "quoted error text in a \(role.rawValue) message must preserve the session"
+            )
+        }
+    }
+
+    func testDisconnectBeforeRecoveryClearPreservesRetryEvidence() async throws {
+        let h = try ChatTestHarness(); defer { h.close() }; try await h.connect()
+        h.store.cache(sessionId: "stale", path: "/concierge")
+        let coordinator = ConciergeViewModel()
+        coordinator.start(viewModel: h.vm, store: h.store)
+        try await eventually("cached concierge resume sent") {
+            try h.frames("resume_session").count == 1
+        }
+        try await h.receive([
+            "type": "session_info", "sessionId": "stale",
+            "path": "/concierge", "mode": "concierge"
+        ])
+        try await eventually("cached concierge becomes ready") {
+            coordinator.state == .ready(sessionId: "stale", path: "/concierge")
+        }
+        let error = WSIncoming.error(
+            message: "Query failed: No conversation found with session ID: stale",
+            sessionId: "stale"
+        )
+        try await h.receive([
+            "type": "error",
+            "message": "Query failed: No conversation found with session ID: stale",
+            "sessionId": "stale"
+        ])
+
+        h.vm.disconnect()
+        coordinator.recoverIfConversationMissing(error, viewModel: h.vm, store: h.store)
+
+        try await eventually("failed clear bails offline") {
+            coordinator.bailedOffline
+        }
+        XCTAssertEqual(h.store.cachedSession?.sessionId, "stale")
+        XCTAssertEqual(try h.frames("clear_session").count, 0)
+        XCTAssertTrue(
+            try h.messages("stale", role: MessageRole.system.rawValue)
+                .contains { ConciergeViewModel.isPersistedMissingConversationError($0) },
+            "the persisted error must remain so reconnect can retry replacement"
+        )
+    }
+
     /// 19: offline cold start bails at once — no sends, no dead timeouts, cache kept.
     func testRunFlowBailsWithoutClearingCacheWhenDisconnected() async throws {
         let (store, concierge) = try await bailOffline()

@@ -91,6 +91,35 @@ final class BeekeeperSocketTests: XCTestCase {
         XCTAssertEqual(factory.made.count, 1, "backoff is 2 s; no second task yet")
     }
 
+    func testProductionAdapterReportsFailureRegisteredAfterTaskTerminates() async throws {
+        for channel in ["beekeeper", "hive-dodi"] {
+            let url = try XCTUnwrap(URL(string: "ws://127.0.0.1:1/?channel=\(channel)"))
+            let adapter = URLSessionWebSocketTaskAdapter(url: url)
+            adapter.resume()
+            try await Task.sleep(for: .milliseconds(250))
+
+            let failed = expectation(description: "\(channel) terminal failure reaches handshake")
+            adapter.performHandshake { error in
+                XCTAssertNotNil(error)
+                failed.fulfill()
+            }
+            await fulfillment(of: [failed], timeout: 2)
+            adapter.cancel(with: .goingAway, reason: nil)
+        }
+    }
+
+    func testProductionAdapterReleasesWithoutExplicitCancellation() throws {
+        weak var released: URLSessionWebSocketTaskAdapter?
+        autoreleasepool {
+            let adapter = URLSessionWebSocketTaskAdapter(
+                url: URL(string: "ws://127.0.0.1:1/?channel=beekeeper")!
+            )
+            released = adapter
+            XCTAssertNotNil(released)
+        }
+        XCTAssertNil(released, "the URLSession delegate must not retain its adapter")
+    }
+
     func testCloseCode4001FiresAuthFailureAndDoesNotReconnect() async throws {
         let socket = makeSocket()
         var authFailures = 0
@@ -98,6 +127,22 @@ final class BeekeeperSocketTests: XCTestCase {
         let task = await connectAndHandshake(socket)
 
         task.failReceive(closeCode: URLSessionWebSocketTask.CloseCode(rawValue: 4001)!)
+        await settle()
+
+        XCTAssertEqual(authFailures, 1)
+        XCTAssertEqual(socket.state, .disconnected)
+        XCTAssertEqual(factory.made.count, 1)
+    }
+
+    func testCloseCode4001DuringHandshakeFiresAuthFailureAndDoesNotReconnect() async throws {
+        let socket = makeSocket()
+        var authFailures = 0
+        socket.onAuthFailure = { authFailures += 1 }
+        socket.connect(channel: "beekeeper")
+        let task = try XCTUnwrap(factory.latest)
+        task.closeCode = URLSessionWebSocketTask.CloseCode(rawValue: 4001)!
+
+        task.completeHandshake(error: URLError(.userAuthenticationRequired))
         await settle()
 
         XCTAssertEqual(authFailures, 1)
