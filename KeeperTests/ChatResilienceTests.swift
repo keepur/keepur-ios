@@ -118,7 +118,7 @@ final class ChatResilienceTests: XCTestCase {
         guard case .status(let state, let sessionId, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "busy")
+        XCTAssertEqual(state, .busy)
         XCTAssertEqual(sessionId, "sess-1")
     }
 
@@ -131,7 +131,7 @@ final class ChatResilienceTests: XCTestCase {
         guard case .status(let state, let sessionId, _) = WSIncoming.decode(from: data) else {
             XCTFail("Expected status"); return
         }
-        XCTAssertEqual(state, "busy")
+        XCTAssertEqual(state, .busy)
         XCTAssertNil(sessionId)
     }
 

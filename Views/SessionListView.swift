@@ -92,7 +92,7 @@ struct SessionListView: View {
         Group {
             ToolbarItem(placement: .navigation) {
                 Circle()
-                    .fill(viewModel.socket.isConnected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
+                    .fill(viewModel.connectionState == .connected ? KeepurTheme.Color.success : KeepurTheme.Color.danger)
                     .frame(width: 8, height: 8)
             }
             ToolbarItem(placement: .primaryAction) {
@@ -135,7 +135,7 @@ struct SessionListView: View {
                 Button("Save") {
                     if let session = renamingSession {
                         session.name = renameText.isEmpty ? nil : renameText
-                        try? modelContext.save()
+                        modelContext.saveReporting("view.sessionList.rename.iOS.save")
                     }
                     renamingSession = nil
                 }
@@ -203,7 +203,7 @@ struct SessionListView: View {
             Button("Save") {
                 if let session = renamingSession {
                     session.name = renameText.isEmpty ? nil : renameText
-                    try? modelContext.save()
+                    modelContext.saveReporting("view.sessionList.rename.macOS.save")
                 }
                 renamingSession = nil
             }
@@ -327,6 +327,6 @@ struct SessionRow: View {
 
     private var lastMessagePreview: String? {
         guard let msg = latestMessages.first else { return nil }
-        return msg.role == "user" ? msg.text : "Claude: \(msg.text)"
+        return msg.typedRole == .user ? msg.text : "Claude: \(msg.text)"
     }
 }

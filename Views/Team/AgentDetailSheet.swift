@@ -67,8 +67,8 @@ struct AgentDetailSheet: View {
                     .foregroundStyle(KeepurTheme.Color.fgSecondaryDynamic)
             }
             KeepurStatusPill(
-                AgentDetailSheet.statusDisplay(for: agent.status),
-                tint: AgentDetailSheet.statusTint(for: agent.status)
+                agent.status.presentation.label,
+                tint: agent.status.presentation.tint
             )
         }
         .padding(.top)
@@ -145,19 +145,6 @@ struct AgentDetailSheet: View {
     }
 
     // MARK: - Pure helpers (testable)
-
-    static func statusTint(for status: String) -> KeepurStatusPill.Tint {
-        switch status {
-        case "idle":             return .success
-        case "processing":       return .warning
-        case "error", "stopped": return .danger
-        default:                 return .muted
-        }
-    }
-
-    static func statusDisplay(for status: String) -> String {
-        status.prefix(1).uppercased() + status.dropFirst()
-    }
 
     static func lastActiveDisplay(from iso: String?) -> String {
         guard let iso, let date = parseISO8601(iso) else { return "Never" }

@@ -20,6 +20,7 @@
 		A1ABEBC52F79E16C009B0AFC /* KeepurApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABEBC42F79E16C009B0AFC /* KeepurApp.swift */; };
 		A1ABEBC92F79E16D009B0AFC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */; };
 		A7E6E1EEC8C1CB9138421004 /* KeepurUnreadBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B669DE13B938A5E448DA899 /* KeepurUnreadBadge.swift */; };
+		B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */; };
 		DD3B48812F866DF4002EA052 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* MarkdownUI */; };
 		DE4C74105DCA01AF9285FDB1 /* KeepurActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31BDB567D5A0BD76B26AA46 /* KeepurActionSheet.swift */; };
 		DF5AC392B7D729D76FFA902C /* KeepurChipCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */; };
@@ -50,6 +51,7 @@
 		A1ABEBC82F79E16D009B0AFC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AC2BA5C58174213390F489BC /* JetBrainsMono-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-Medium.ttf"; sourceTree = "<group>"; };
 		B31BDB567D5A0BD76B26AA46 /* KeepurActionSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurActionSheet.swift; sourceTree = "<group>"; };
+		B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurConnectionBanner.swift; sourceTree = "<group>"; };
 		CA606BA21C3A5266389DD07E /* KeepurChipCluster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurChipCluster.swift; sourceTree = "<group>"; };
 		D0D8A6030BDFBECF4C5E21E0 /* JetBrainsMono-SemiBold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		D153EC33642E244594FD4D4F /* KeepurAvatar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeepurAvatar.swift; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 				4C8028E7EE5A4AA84BBD6866 /* KeepurCard.swift */,
 				B31BDB567D5A0BD76B26AA46 /* KeepurActionSheet.swift */,
 				4DEB9F85E98BE473CD9920FD /* KeepurChatHeader.swift */,
+				B442C0EE1A2B3C4D5E6F7A01 /* KeepurConnectionBanner.swift */,
 			);
 			name = Components;
 			path = Components;
@@ -317,6 +320,7 @@
 				809AF38C35B3EAD3349473EF /* KeepurCard.swift in Sources */,
 				DE4C74105DCA01AF9285FDB1 /* KeepurActionSheet.swift in Sources */,
 				94129812225D71F33A70FE11 /* KeepurChatHeader.swift in Sources */,
+				B442C0EE1A2B3C4D5E6F7A02 /* KeepurConnectionBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

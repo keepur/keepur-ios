@@ -1,10 +1,79 @@
 import Foundation
 
+enum SenderType: Equatable {
+    case person, agent, system
+    case unknown(String)
+
+    init(wire: String) {
+        switch wire {
+        case "person": self = .person
+        case "agent": self = .agent
+        case "system": self = .system
+        default: self = .unknown(wire)
+        }
+    }
+
+    var wireValue: String {
+        switch self {
+        case .person: return "person"
+        case .agent: return "agent"
+        case .system: return "system"
+        case .unknown(let raw): return raw
+        }
+    }
+}
+
+enum ChannelKind: Equatable {
+    case channel, dm
+    case unknown(String)
+
+    init(wire: String) {
+        switch wire {
+        case "channel": self = .channel
+        case "dm": self = .dm
+        default: self = .unknown(wire)
+        }
+    }
+
+    var wireValue: String {
+        switch self {
+        case .channel: return "channel"
+        case .dm: return "dm"
+        case .unknown(let raw): return raw
+        }
+    }
+}
+
+enum AgentStatus: Equatable {
+    case idle, processing, error, stopped
+    case unknown(String)
+
+    init(wire: String) {
+        switch wire {
+        case "idle": self = .idle
+        case "processing": self = .processing
+        case "error": self = .error
+        case "stopped": self = .stopped
+        default: self = .unknown(wire)
+        }
+    }
+
+    var wireValue: String {
+        switch self {
+        case .idle: return "idle"
+        case .processing: return "processing"
+        case .error: return "error"
+        case .stopped: return "stopped"
+        case .unknown(let raw): return raw
+        }
+    }
+}
+
 // MARK: - Supporting Types
 
 struct TeamChannelInfo {
     let id: String
-    let type: String        // "channel" or "dm"
+    let type: ChannelKind
     let name: String
     let members: [String]
 }
@@ -20,7 +89,7 @@ struct TeamAgentInfo {
     let icon: String
     let title: String?
     let model: String
-    let status: String      // "idle", "processing", "error", "stopped"
+    let status: AgentStatus
     let tools: [String]
     let schedule: [[String: String]]   // [{ "cron": "...", "task": "..." }]
     let channels: [String]
@@ -32,7 +101,7 @@ struct TeamHistoryMessage {
     let id: String          // Server ObjectId
     let channelId: String
     let senderId: String
-    let senderType: String  // "agent" or "person"
+    let senderType: SenderType
     let senderName: String
     let text: String
     let createdAt: Date
@@ -154,7 +223,7 @@ enum TeamWSIncoming {
                       let channelType = dict["type"] as? String,
                       let name = dict["name"] as? String else { return nil }
                 let members = dict["members"] as? [String] ?? []
-                return TeamChannelInfo(id: channelId, type: channelType, name: name, members: members)
+                return TeamChannelInfo(id: channelId, type: ChannelKind(wire: channelType), name: name, members: members)
             }
             return .channelList(channels: channels, id: id)
         case "command_list":
@@ -183,7 +252,7 @@ enum TeamWSIncoming {
                 let lastActivity = dict["lastActivity"] as? String
                 return TeamAgentInfo(
                     id: agentId, name: name, icon: icon, title: title,
-                    model: model, status: status, tools: tools,
+                    model: model, status: AgentStatus(wire: status), tools: tools,
                     schedule: schedule, channels: channels,
                     messagesProcessed: messagesProcessed, lastActivity: lastActivity
                 )
@@ -205,7 +274,7 @@ enum TeamWSIncoming {
                 let threadId = dict["threadId"] as? String
                 return TeamHistoryMessage(
                     id: msgId, channelId: channelId, senderId: senderId,
-                    senderType: senderType, senderName: senderName,
+                    senderType: SenderType(wire: senderType), senderName: senderName,
                     text: text, createdAt: createdAt, threadId: threadId
                 )
             }

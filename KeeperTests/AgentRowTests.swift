@@ -21,8 +21,13 @@ final class AgentRowTests: XCTestCase {
     }
 
     func testStatusTintMapping() {
-        for status in ["idle", "processing", "error", "stopped", "unknown"] {
-            let agent = makeAgent(status: status)
+        let pairs: [(String, KeepurStatusPill.Tint)] = [
+            ("idle", .success), ("processing", .warning), ("error", .danger),
+            ("stopped", .danger), ("unknown", .muted), ("", .muted)
+        ]
+        for (raw, expected) in pairs {
+            let agent = makeAgent(status: AgentStatus(wire: raw))
+            XCTAssertEqual(agent.status.presentation.tint, expected)
             let row = AgentRow(agent: agent, dmChannel: nil, isActive: false)
             _ = row.body
         }
@@ -34,7 +39,7 @@ final class AgentRowTests: XCTestCase {
         _ = row.body
     }
 
-    private func makeAgent(name: String = "Test", status: String = "idle") -> TeamAgentInfo {
+    private func makeAgent(name: String = "Test", status: AgentStatus = .idle) -> TeamAgentInfo {
         TeamAgentInfo(
             id: "a1",
             name: name,

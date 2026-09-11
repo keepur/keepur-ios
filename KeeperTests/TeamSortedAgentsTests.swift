@@ -28,7 +28,7 @@ final class TeamSortedAgentsTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func makeAgent(id: String, name: String, status: String = "idle") -> TeamAgentInfo {
+    private func makeAgent(id: String, name: String, status: AgentStatus = .idle) -> TeamAgentInfo {
         TeamAgentInfo(
             id: id,
             name: name,

@@ -13,7 +13,11 @@ final class FakeWebSocketTask: WebSocketTasking {
     var closeCode: URLSessionWebSocketTask.CloseCode = .invalid
     private(set) var resumed = false
     private(set) var cancelled = false
+    /// The code the socket cancelled this task with (`disconnect()` → `.normalClosure`,
+    /// failure/channel-switch teardown → `.goingAway`).
+    private(set) var lastCloseCode: URLSessionWebSocketTask.CloseCode?
     private(set) var sentTexts: [String] = []
+    var onSend: ((String) -> Void)?
     private var pingHandler: (@Sendable (Error?) -> Void)?
     private var receiveHandler: (@Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void)?
 
@@ -25,11 +29,15 @@ final class FakeWebSocketTask: WebSocketTasking {
 
     func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         cancelled = true
+        lastCloseCode = closeCode
     }
 
     func send(_ message: URLSessionWebSocketTask.Message,
               completionHandler: @escaping @Sendable (Error?) -> Void) {
-        if case .string(let text) = message { sentTexts.append(text) }
+        if case .string(let text) = message {
+            sentTexts.append(text)
+            onSend?(text)
+        }
         completionHandler(nil)
     }
 
@@ -37,13 +45,18 @@ final class FakeWebSocketTask: WebSocketTasking {
         receiveHandler = completionHandler
     }
 
-    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
+    func performHandshake(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
         pingHandler = pongReceiveHandler
+    }
+
+    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
+        pongReceiveHandler(nil)
     }
 
     // MARK: Test controls
 
     var handshakeRequested: Bool { pingHandler != nil }
+    var receiveRequested: Bool { receiveHandler != nil }
 
     func completeHandshake(error: Error? = nil) {
         let handler = pingHandler
@@ -62,6 +75,16 @@ final class FakeWebSocketTask: WebSocketTasking {
         let handler = receiveHandler
         receiveHandler = nil
         handler?(.failure(URLError(.networkConnectionLost)))
+    }
+
+    func savedHandshakeCompletion() -> () -> Void {
+        let handler = pingHandler
+        return { handler?(nil) }
+    }
+
+    func savedDelivery(_ text: String) -> () -> Void {
+        let handler = receiveHandler
+        return { handler?(.success(.string(text))) }
     }
 }
 

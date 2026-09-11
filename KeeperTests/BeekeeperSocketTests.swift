@@ -24,11 +24,13 @@ final class BeekeeperSocketTests: XCTestCase {
 
     private func makeSocket(
         pingInterval: Duration = .seconds(30),
+        maxReconnectDelay: TimeInterval = 30,
         tokenReadRetryDelay: Duration = .seconds(2),
         maxTokenReadRetries: Int = 3
     ) -> BeekeeperSocket {
         var config = BeekeeperSocket.Config.standard
         config.pingInterval = pingInterval
+        config.maxReconnectDelay = maxReconnectDelay
         config.tokenReadRetryDelay = tokenReadRetryDelay
         config.maxTokenReadRetries = maxTokenReadRetries
         let factory = self.factory!
@@ -89,6 +91,35 @@ final class BeekeeperSocketTests: XCTestCase {
         XCTAssertEqual(factory.made.count, 1, "backoff is 2 s; no second task yet")
     }
 
+    func testProductionAdapterReportsFailureRegisteredAfterTaskTerminates() async throws {
+        for channel in ["beekeeper", "hive-dodi"] {
+            let url = try XCTUnwrap(URL(string: "ws://127.0.0.1:1/?channel=\(channel)"))
+            let adapter = URLSessionWebSocketTaskAdapter(url: url)
+            adapter.resume()
+            try await Task.sleep(for: .milliseconds(250))
+
+            let failed = expectation(description: "\(channel) terminal failure reaches handshake")
+            adapter.performHandshake { error in
+                XCTAssertNotNil(error)
+                failed.fulfill()
+            }
+            await fulfillment(of: [failed], timeout: 2)
+            adapter.cancel(with: .goingAway, reason: nil)
+        }
+    }
+
+    func testProductionAdapterReleasesWithoutExplicitCancellation() throws {
+        weak var released: URLSessionWebSocketTaskAdapter?
+        autoreleasepool {
+            let adapter = URLSessionWebSocketTaskAdapter(
+                url: URL(string: "ws://127.0.0.1:1/?channel=beekeeper")!
+            )
+            released = adapter
+            XCTAssertNotNil(released)
+        }
+        XCTAssertNil(released, "the URLSession delegate must not retain its adapter")
+    }
+
     func testCloseCode4001FiresAuthFailureAndDoesNotReconnect() async throws {
         let socket = makeSocket()
         var authFailures = 0
@@ -96,6 +127,22 @@ final class BeekeeperSocketTests: XCTestCase {
         let task = await connectAndHandshake(socket)
 
         task.failReceive(closeCode: URLSessionWebSocketTask.CloseCode(rawValue: 4001)!)
+        await settle()
+
+        XCTAssertEqual(authFailures, 1)
+        XCTAssertEqual(socket.state, .disconnected)
+        XCTAssertEqual(factory.made.count, 1)
+    }
+
+    func testCloseCode4001DuringHandshakeFiresAuthFailureAndDoesNotReconnect() async throws {
+        let socket = makeSocket()
+        var authFailures = 0
+        socket.onAuthFailure = { authFailures += 1 }
+        socket.connect(channel: "beekeeper")
+        let task = try XCTUnwrap(factory.latest)
+        task.closeCode = URLSessionWebSocketTask.CloseCode(rawValue: 4001)!
+
+        task.completeHandshake(error: URLError(.userAuthenticationRequired))
         await settle()
 
         XCTAssertEqual(authFailures, 1)
@@ -205,5 +252,58 @@ final class BeekeeperSocketTests: XCTestCase {
         let keepAliveFrame = BeekeeperSocket.Config.standard.keepAliveFrame
         XCTAssertEqual(keepAliveFrame, try WSOutgoing.ping.encode())
         XCTAssertEqual(keepAliveFrame, try TeamWSOutgoing.ping.encode())
+    }
+
+    // MARK: - Child B carried-in fixes
+
+    /// Fix 1: a `scheduleReconnect` bail (not paired) must reset the attempt count, or the
+    /// next `connect` skips `.connecting` and the next failure starts backoff at attempt 2.
+    func testBailedReconnectResetsAttemptCount() async throws {
+        let socket = makeSocket(maxReconnectDelay: 0.01, tokenReadRetryDelay: .milliseconds(1), maxTokenReadRetries: 1)
+        socket.connect(channel: "beekeeper")
+        try XCTUnwrap(factory.latest).completeHandshake(error: URLError(.cannotConnectToHost))
+        await settle()
+        XCTAssertEqual(socket.state, .reconnecting(attempt: 1))
+
+        credentials.token = nil                          // the 10 ms backoff retry finds no token
+        try await Task.sleep(for: .milliseconds(100))    // backoff + one 1 ms token retry + hops; generous for a loaded CI simulator
+        XCTAssertEqual(socket.state, .disconnected, "unpaired, so the retry bails out of backoff")
+        XCTAssertEqual(factory.made.count, 1, "no task was opened without a token")
+
+        credentials.token = "test-token"
+        socket.connect(channel: "beekeeper")
+        XCTAssertEqual(socket.state, .connecting, "a bailed reconnect must reset the attempt count, or .connecting is skipped")
+        try XCTUnwrap(factory.latest).completeHandshake(error: URLError(.cannotConnectToHost))
+        await settle()
+        XCTAssertEqual(socket.state, .reconnecting(attempt: 1), "backoff restarts at attempt 1, not 2")
+    }
+
+    /// Fix 2: `disconnect()` clears `lastChannel`, so `reconnect()` is a no-op afterwards.
+    func testReconnectAfterDisconnectIsNoOp() async throws {
+        let socket = makeSocket()
+        _ = await connectAndHandshake(socket)
+
+        socket.disconnect()
+        socket.reconnect()
+
+        XCTAssertEqual(factory.made.count, 1)
+        XCTAssertNil(socket.lastChannel)
+        XCTAssertEqual(socket.state, .disconnected)
+    }
+
+    /// Fix 3: user close is `.normalClosure`; failure teardown stays `.goingAway`.
+    func testDisconnectClosesNormallyAndFailureClosesGoingAway() async throws {
+        let socket = makeSocket()
+        let task = await connectAndHandshake(socket)
+        socket.disconnect()
+        XCTAssertEqual(task.lastCloseCode, .normalClosure)
+
+        let other = makeSocket()
+        other.connect(channel: "beekeeper")
+        let failing = try XCTUnwrap(factory.latest)
+        XCTAssertFalse(failing === task)
+        failing.completeHandshake(error: URLError(.cannotConnectToHost))
+        await settle()
+        XCTAssertEqual(failing.lastCloseCode, .goingAway)
     }
 }

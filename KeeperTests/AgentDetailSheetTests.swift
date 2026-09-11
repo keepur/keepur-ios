@@ -4,19 +4,19 @@ import XCTest
 final class AgentDetailSheetTests: XCTestCase {
 
     func testStatusTintMapping() {
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: "idle"),       .success)
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: "processing"), .warning)
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: "error"),      .danger)
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: "stopped"),    .danger)
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: "unknown"),    .muted)
-        XCTAssertEqual(AgentDetailSheet.statusTint(for: ""),           .muted)
+        XCTAssertEqual(AgentStatus(wire: "idle").presentation.tint,       .success)
+        XCTAssertEqual(AgentStatus(wire: "processing").presentation.tint, .warning)
+        XCTAssertEqual(AgentStatus(wire: "error").presentation.tint,      .danger)
+        XCTAssertEqual(AgentStatus(wire: "stopped").presentation.tint,    .danger)
+        XCTAssertEqual(AgentStatus(wire: "unknown").presentation.tint,    .muted)
+        XCTAssertEqual(AgentStatus(wire: "").presentation.tint,           .muted)
     }
 
     func testStatusDisplayTitleCases() {
-        XCTAssertEqual(AgentDetailSheet.statusDisplay(for: "idle"),       "Idle")
-        XCTAssertEqual(AgentDetailSheet.statusDisplay(for: "processing"), "Processing")
-        XCTAssertEqual(AgentDetailSheet.statusDisplay(for: "error"),      "Error")
-        XCTAssertEqual(AgentDetailSheet.statusDisplay(for: ""),           "")
+        XCTAssertEqual(AgentStatus(wire: "idle").presentation.label,       "Idle")
+        XCTAssertEqual(AgentStatus(wire: "processing").presentation.label, "Processing")
+        XCTAssertEqual(AgentStatus(wire: "error").presentation.label,      "Error")
+        XCTAssertEqual(AgentStatus(wire: "").presentation.label,           "")
     }
 
     func testLastActiveDisplayHandlesNilAndMalformed() {
@@ -74,7 +74,7 @@ final class AgentDetailSheetTests: XCTestCase {
         icon: String = "🤖",
         name: String = "Test Agent",
         model: String = "claude-sonnet-4",
-        status: String = "idle"
+        status: AgentStatus = .idle
     ) -> TeamAgentInfo {
         TeamAgentInfo(
             id: "a1",

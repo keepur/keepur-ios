@@ -12,6 +12,8 @@ final class Message {
     var attachmentType: String?
     @Attribute(.externalStorage) var attachmentData: Data?
 
+    var typedRole: MessageRole? { MessageRole(rawValue: role) }
+
     init(
         id: String = UUID().uuidString,
         sessionId: String,

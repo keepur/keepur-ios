@@ -15,7 +15,7 @@ struct TeamChatView: View {
     private var activeAgent: TeamAgentInfo? {
         guard let channelId = viewModel.activeChannelId,
               let channel = viewModel.channels.first(where: { $0.id == channelId }),
-              channel.type == "dm" else { return nil }
+              channel.kind == .dm else { return nil }
         return viewModel.agents.first { channel.members.contains($0.id) }
     }
 
@@ -102,18 +102,8 @@ struct TeamChatView: View {
         )
     }
 
-    static func mapAgentStatus(_ status: String?) -> (text: String?, isActive: Bool) {
-        switch status {
-        case nil, "idle": return (nil, false)
-        case "processing": return ("working", true)
-        case "error": return ("error", false)
-        case "stopped": return ("stopped", false)
-        case let other?: return (other, false)
-        }
-    }
-
-    private var headerStatusText: String? { Self.mapAgentStatus(activeAgent?.status).text }
-    private var headerIsStatusActive: Bool { Self.mapAgentStatus(activeAgent?.status).isActive }
+    private var headerStatusText: String? { activeAgent?.status.presentation.headerText }
+    private var headerIsStatusActive: Bool { activeAgent?.status.presentation.isActive ?? false }
     private var headerStatusDate: Date? { activeChannel?.lastMessageAt }
 
     private var backAction: (() -> Void)? {
@@ -166,7 +156,8 @@ struct TeamChatView: View {
                         TeamMessageBubble(
                             message: message,
                             isOwnMessage: message.senderId == deviceId,
-                            onSpeak: message.senderType == "agent" && message.senderId != "system" ? { text in
+                            isOffline: viewModel.offlineMessageIds.contains(message.id),
+                            onSpeak: message.typedSenderType == .agent && message.senderId != "system" ? { text in
                                 viewModel.speechManager?.speak(text, agentId: message.senderId)
                             } : nil
                         )

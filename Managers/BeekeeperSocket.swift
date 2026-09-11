@@ -5,8 +5,8 @@ import os   // required: the app target enables MemberImportVisibility, so every
 /// One WebSocket transport for both the Beekeeper and Team ("Hive") layers.
 ///
 /// - Emits raw `Data` frames on `frames`; callers decode with their own enum.
-/// - Reports connected only after a protocol-level ping round-trips (the old
-///   Beekeeper manager reported connected the moment the task resumed).
+/// - Reports connected only after the channel's opening round trip succeeds:
+///   Beekeeper uses its JSON ping/pong and Hive uses a WebSocket control ping.
 /// - Reconnects with exponential backoff (2^n s, capped) on any non-auth failure;
 ///   close code 4001 means the token is bad and routes to `onAuthFailure` instead.
 /// - Keep-alive is the app-level `{"type":"ping"}` frame both servers expect,
@@ -124,6 +124,11 @@ final class BeekeeperSocket: ObservableObject {
         connect(channel: channel)
     }
 
+    /// User-initiated close. Clears `lastChannel` (so `reconnect()` is a no-op until the
+    /// next `connect(channel:)`, matching the old Team manager) and closes with
+    /// `.normalClosure` — internal teardowns keep `.goingAway`. Safe: in `.disconnected`
+    /// `connect(channel:)` never consults `lastChannel`, and the generation bump means no
+    /// callback can reach `scheduleReconnect` afterwards.
     func disconnect() {
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -131,7 +136,8 @@ final class BeekeeperSocket: ObservableObject {
         tokenRetryTask = nil
         reconnectAttempts = 0
         tokenReadRetries = 0
-        teardown()
+        lastChannel = nil
+        teardown(closeCode: .normalClosure)
         setState(.disconnected)
     }
 
@@ -198,11 +204,12 @@ final class BeekeeperSocket: ObservableObject {
         task = newTask
         Log.socket.info("connecting channel=\(channel, privacy: .public) attempt=\(self.reconnectAttempts, privacy: .public)")
         newTask.resume()
-        newTask.sendPing { [weak self] error in
+        newTask.performHandshake { [weak self] error in
             Task { @MainActor in
                 guard let self, gen == self.generation else { return }
                 if let error {
                     Log.socket.error("handshake failed: \(error.localizedDescription, privacy: .private)")
+                    if self.routeAuthFailureIfNeeded() { return }
                     self.handleDisconnect()
                     return
                 }
@@ -246,16 +253,9 @@ final class BeekeeperSocket: ObservableObject {
                     guard gen == self.generation else { return }
                     self.receive()
                 case .failure:
-                    if task.closeCode.rawValue == 4001 {
-                        Log.socket.notice("close code 4001; auth failure")
-                        self.teardown()
-                        self.reconnectAttempts = 0
-                        self.setState(.disconnected)
-                        self.onAuthFailure?()
-                    } else {
-                        Log.socket.notice("receive failed; reconnecting")
-                        self.handleDisconnect()
-                    }
+                    if self.routeAuthFailureIfNeeded() { return }
+                    Log.socket.notice("receive failed; reconnecting")
+                    self.handleDisconnect()
                 }
             }
         }
@@ -270,6 +270,10 @@ final class BeekeeperSocket: ObservableObject {
 
     private func scheduleReconnect() {
         guard credentials.isPaired, let channel = lastChannel else {
+            // An exhausted token-read retry lands here with the count still set; without
+            // the reset the next `connect()` skips `.connecting` (`open` only sets it at 0)
+            // and the next failure starts backoff one exponent high.
+            reconnectAttempts = 0
             setState(.disconnected)
             return
         }
@@ -287,12 +291,13 @@ final class BeekeeperSocket: ObservableObject {
     }
 
     /// Cancels the task and the ping loop and invalidates their callbacks. Does not
-    /// touch `state`; callers set it.
-    private func teardown() {
+    /// touch `state`; callers set it. Failure and channel-switch teardowns close with
+    /// `.goingAway`; `disconnect()` passes `.normalClosure`.
+    private func teardown(closeCode: URLSessionWebSocketTask.CloseCode = .goingAway) {
         generation += 1
         pingTask?.cancel()
         pingTask = nil
-        task?.cancel(with: .goingAway, reason: nil)
+        task?.cancel(with: closeCode, reason: nil)
         task = nil
     }
 
@@ -306,11 +311,32 @@ final class BeekeeperSocket: ObservableObject {
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, let self else { return }
                 self.send(self.config.keepAliveFrame)
+                guard let task = self.task else { return }
+                let gen = self.generation
+                task.sendPing { [weak self] error in
+                    guard error != nil else { return }
+                    Task { @MainActor in
+                        guard let self, gen == self.generation else { return }
+                        if self.routeAuthFailureIfNeeded() { return }
+                        Log.socket.error("keep-alive ping failed; reconnecting")
+                        self.handleDisconnect()
+                    }
+                }
             }
         }
     }
 
     // MARK: - Private: helpers
+
+    private func routeAuthFailureIfNeeded() -> Bool {
+        guard task?.closeCode.rawValue == 4001 else { return false }
+        Log.socket.notice("close code 4001; auth failure")
+        teardown()
+        reconnectAttempts = 0
+        setState(.disconnected)
+        onAuthFailure?()
+        return true
+    }
 
     private func setState(_ new: State) {
         if state != new { state = new }

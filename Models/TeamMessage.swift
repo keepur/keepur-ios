@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class TeamMessage {
     @Attribute(.unique) var id: String
+    var serverId: String? = nil
     var channelId: String
     var threadId: String?
     var senderId: String
@@ -13,8 +14,11 @@ final class TeamMessage {
     var createdAt: Date
     var pending: Bool
 
+    var typedSenderType: SenderType { SenderType(wire: senderType) }
+
     init(
         id: String = UUID().uuidString,
+        serverId: String? = nil,
         channelId: String,
         threadId: String? = nil,
         senderId: String,
@@ -25,6 +29,7 @@ final class TeamMessage {
         pending: Bool = false
     ) {
         self.id = id
+        self.serverId = serverId
         self.channelId = channelId
         self.threadId = threadId
         self.senderId = senderId
